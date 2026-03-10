@@ -91,9 +91,9 @@ def take_snapshot(account: int) -> dict:
 
 
 def take_all_snapshots() -> list[dict]:
-    """Take snapshots for all 3 accounts."""
+    """Take snapshots for all 4 accounts."""
     results = []
-    for acct in (1, 2, 3):
+    for acct in (1, 2, 3, 4):
         try:
             results.append(take_snapshot(acct))
         except Exception as e:
@@ -149,9 +149,9 @@ def get_equity_history(account: int) -> list[dict]:
 
 
 def get_combined_equity_history() -> list[dict]:
-    """Sum equity across all 3 accounts by date."""
+    """Sum equity across all 4 accounts by date."""
     frames = []
-    for acct in (1, 2, 3):
+    for acct in (1, 2, 3, 4):
         df = load_snapshots(acct)
         if not df.empty:
             frames.append(df[["equity"]].rename(columns={"equity": f"acct_{acct}"}))
@@ -168,9 +168,9 @@ def get_combined_equity_history() -> list[dict]:
 
 
 def get_all_equity_histories() -> dict[str, list[dict]]:
-    """Return equity curves for all 3 accounts + combined, keyed for frontend."""
+    """Return equity curves for all 4 accounts + combined, keyed for frontend."""
     result = {}
-    for acct in (1, 2, 3):
+    for acct in (1, 2, 3, 4):
         result[f"acct_{acct}"] = get_equity_history(acct)
     result["combined"] = get_combined_equity_history()
     return result
@@ -188,9 +188,9 @@ def get_daily_returns(account: int) -> pd.Series:
 
 
 def get_all_daily_returns() -> pd.DataFrame:
-    """Daily returns for all 3 accounts, aligned by date."""
+    """Daily returns for all 4 accounts, aligned by date."""
     frames = {}
-    for acct in (1, 2, 3):
+    for acct in (1, 2, 3, 4):
         r = get_daily_returns(acct)
         if not r.empty:
             frames[f"acct_{acct}"] = r

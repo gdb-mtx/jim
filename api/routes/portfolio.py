@@ -44,7 +44,7 @@ async def list_accounts():
 
 @router.get("/summary")
 async def portfolio_summary(
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Get account summary — equity, cash, P&L, positions count."""
     broker = _get_broker(account)
@@ -66,7 +66,7 @@ async def portfolio_summary(
 
 @router.get("/positions")
 async def portfolio_positions(
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Get all open positions with P&L details."""
     broker = _get_broker(account)
@@ -113,7 +113,7 @@ async def combined_summary():
 
 @router.get("/value")
 async def portfolio_value(
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Get just the portfolio value (lightweight)."""
     broker = _get_broker(account)
@@ -125,7 +125,7 @@ async def portfolio_value(
 
 @router.post("/snapshot")
 async def create_snapshot(
-    account: Optional[int] = Query(default=None, ge=1, le=3, description="Account (1-3) or omit for all"),
+    account: Optional[int] = Query(default=None, ge=1, le=4, description="Account (1-4) or omit for all"),
 ):
     """Take an equity snapshot now. Idempotent — skips if today already recorded.
 
@@ -138,7 +138,7 @@ async def create_snapshot(
             pass
         return take_snapshot(account)
     else:
-        for acct in (1, 2, 3):
+        for acct in ACCOUNT_INFO:
             try:
                 backfill_from_alpaca(acct)
             except Exception:
@@ -148,7 +148,7 @@ async def create_snapshot(
 
 @router.get("/history")
 async def equity_history(
-    account: int = Query(default=0, ge=0, le=3, description="0=combined, 1-3=individual"),
+    account: int = Query(default=0, ge=0, le=4, description="0=combined, 1-4=individual"),
 ):
     """Get historical equity time series for charting."""
     if account == 0:

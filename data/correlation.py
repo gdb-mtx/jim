@@ -1,7 +1,8 @@
 """Inter-account correlation monitoring.
 
-Computes pairwise Pearson correlation between daily returns of the 3 accounts.
-Backtest expects 0.56-0.66; alert threshold at 0.80 signals degrading diversification.
+Computes pairwise Pearson correlation between daily returns of all accounts.
+Backtest expects 0.56-0.66 for equity accounts; crypto correlation ~0.12-0.18.
+Alert threshold at 0.80 signals degrading diversification.
 """
 
 import pandas as pd
@@ -13,9 +14,15 @@ BACKTEST_EXPECTED = {
     "acct_1_acct_2": 0.56,
     "acct_1_acct_3": 0.62,
     "acct_2_acct_3": 0.66,
+    "acct_1_acct_4": 0.18,
+    "acct_2_acct_4": 0.15,
+    "acct_3_acct_4": 0.12,
 }
 
-ACCOUNT_PAIRS = [("acct_1", "acct_2"), ("acct_1", "acct_3"), ("acct_2", "acct_3")]
+ACCOUNT_PAIRS = [
+    ("acct_1", "acct_2"), ("acct_1", "acct_3"), ("acct_2", "acct_3"),
+    ("acct_1", "acct_4"), ("acct_2", "acct_4"), ("acct_3", "acct_4"),
+]
 
 
 def _pair_key(a: str, b: str) -> str:
