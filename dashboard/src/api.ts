@@ -23,3 +23,15 @@ export async function fetchEquityCurve(strategyId: string, start = "2010-01-01")
   );
   return res.json();
 }
+
+export async function fetchPositions() {
+  const res = await fetch(`${BASE_URL}/portfolio/positions`);
+  return res.json();
+}
+
+export async function fetchOrders(status = "all", limit = 50) {
+  const res = await fetch(
+    `${BASE_URL}/orders/history?status=${status}&limit=${limit}`
+  );
+  return res.json();
+}

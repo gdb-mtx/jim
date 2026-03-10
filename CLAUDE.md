@@ -61,8 +61,9 @@ dashboard/               — React + Vite + TradingView Charts
 ```
 
 ### Running the Project
-- **Backend**: `uv run uvicorn api.main:app --reload` (from project root)
-- **Frontend**: `cd dashboard && npm run dev` → http://localhost:5173
+- **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
+- **Backend only**: `uv run uvicorn api.main:app --reload` (from project root)
+- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5173
 - **Validation**: `uv run python3 -c "from backtesting.validation import full_validation; ..."`
 
 ### Development Rules
@@ -78,4 +79,6 @@ dashboard/               — React + Vite + TradingView Charts
 - **Alpaca paper trading connected** — $100k paper account, rebalance preview/execute endpoints live
 - Rebalance flow: `POST /api/orders/rebalance/preview` → review orders → `POST /api/orders/rebalance/execute`
 - Known risk: momentum crash vulnerability during sharp regime changes (COVID). VIX + SPY trend filter together provide strong but imperfect protection.
-- Next: Execute first paper trade, add live portfolio dashboard view, set up monthly rebalance scheduler
+- **First paper trade executed** 2026-03-10: 15 stocks via SM + SPY Filter, all filled
+- Dashboard has tab switcher: "Live Portfolio" (Alpaca positions/P&L/orders) and "Backtests" (historical equity curves)
+- Next: Monthly rebalance scheduler, reconciliation, track paper trading performance

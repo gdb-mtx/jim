@@ -33,11 +33,42 @@ export interface BacktestResult {
 }
 
 export interface PortfolioSummary {
-  total_value: number;
-  cash: number;
-  positions: unknown[];
-  daily_pnl: number;
-  total_pnl: number;
-  drawdown: number;
+  account_id: string;
   status: string;
+  equity: number;
+  cash: number;
+  buying_power: number;
+  portfolio_value: number;
+  last_equity: number;
+  daily_pnl: number;
+  is_paper: boolean;
+  positions_count: number;
+  total_unrealized_pl: number;
+  market_open: boolean;
+}
+
+export interface Position {
+  symbol: string;
+  qty: number;
+  side: string;
+  market_value: number;
+  cost_basis: number;
+  avg_entry_price: number;
+  current_price: number;
+  unrealized_pl: number;
+  unrealized_plpc: number;
+  change_today: number;
+}
+
+export interface Order {
+  order_id: string;
+  symbol: string;
+  qty: string;
+  filled_qty: string;
+  side: string;
+  type: string;
+  status: string;
+  submitted_at: string;
+  filled_at: string | null;
+  filled_avg_price: number | null;
 }

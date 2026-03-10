@@ -436,9 +436,12 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] Connection verified: paper account ACTIVE, $100k equity, $200k buying power
 - [x] First rebalance preview successful: SM + SPY Filter → 15 stock positions (GOOG, AMD, NEM, WBD, etc.)
 
+**Also completed:**
+- [x] First paper trade executed (2026-03-10): 15 stocks, all filled instantly, ~$37k invested / $63k cash
+- [x] Dashboard live portfolio view: tab switcher (Live Portfolio / Backtests), account summary cards, positions table with P&L, recent orders table, auto-refresh every 30s, market status indicator
+- [x] `scripts/start.sh` — one-command startup for both backend + frontend servers
+
 **Remaining:**
-- [ ] Execute first paper trade rebalance
-- [ ] Update dashboard with live portfolio view (positions, P&L, order log)
 - [ ] Set up cron/scheduler for monthly rebalance execution
 - [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
 - [ ] Track paper trading performance over 3+ months before any live money
