@@ -1,0 +1,254 @@
+direction: right
+
+classes: {
+  green: {
+    style: {
+      fill: "#0a2a1a"
+      stroke: "#00d4aa"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
+  blue: {
+    style: {
+      fill: "#0a1a2e"
+      stroke: "#4d8eff"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
+  purple: {
+    style: {
+      fill: "#1a0a2e"
+      stroke: "#7c4dff"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
+  red: {
+    style: {
+      fill: "#2e0a1a"
+      stroke: "#ff4d6a"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
+  yellow: {
+    style: {
+      fill: "#2e2a0a"
+      stroke: "#ffc04d"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
+}
+
+# ── Data Sources ──
+
+sources: External {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  yfinance: "yfinance\nETFs · S&P 500 · VIX" { class: blue }
+  alpaca: "Alpaca API\n3 Paper Accounts" { class: blue }
+}
+
+# ── Data Layer ──
+
+data: Data Layer {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  pipeline: "pipeline.py\nsp500.py\nParquet cache" { class: green }
+  snapshots: "snapshots.py\nEquity snapshots\nAlpaca backfill" { class: green }
+  correlation: "correlation.py\n21-day rolling\ncorrelation" { class: green }
+}
+
+# ── Strategy Engine ──
+
+engine: Strategy Engine {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  sm: "Stock Momentum\n+ SPY Filter" { class: purple }
+  tlv: "Multi-Asset Trend\n+ Low-Vol\n+ Vol-Scaling" { class: purple }
+  rev: "Short-Term Reversal\n+ Momentum Blend" { class: purple }
+  combiner: "portfolio.py\n3-Account Combiner" {
+    class: purple
+    style.stroke: "#b388ff"
+    style.stroke-width: 2
+  }
+}
+
+# ── Execution ──
+
+exec: Execution {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  rebalance: "rebalance.py\nWeights to Orders" { class: red }
+  risk: "risk_manager.py\nKelly · 2% Rule\nCircuit Breakers" { class: red }
+  broker: "alpaca_broker.py\nMulti-Account" { class: red }
+}
+
+# ── Live Accounts ──
+
+accounts: Live Paper Trading {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#ffc04d"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  a1: "FIRE 0.1\nMomentum\n15 stocks" {
+    class: green
+    style.stroke: "#00d4aa"
+  }
+  a2: "FIRE 0.2\nTrend + Low-Vol\n34 stocks" {
+    class: blue
+    style.stroke: "#4d8eff"
+  }
+  a3: "FIRE 0.3\nReversal\n52 stocks" {
+    class: yellow
+    style.stroke: "#ffc04d"
+  }
+}
+
+# ── API ──
+
+api: "FastAPI :8000" {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  portfolio: "/portfolio\nHistory · Correlation" { class: blue }
+  orders: "/orders\nRebalance" { class: blue }
+  backtests: "/backtests" { class: blue }
+  strategies: "/strategies" { class: blue }
+}
+
+# ── Dashboard ──
+
+dashboard: "Dashboard :5173" {
+  style: {
+    fill: "#0d0d14"
+    stroke: "#2a2a3e"
+    font-color: "#8888a0"
+    border-radius: 10
+  }
+  live: "Live Portfolio\nAccount Switcher" { class: green }
+  equity: "Equity Charts\nTradingView" { class: green }
+  corr: "Correlation\nMonitor" { class: green }
+  bt: "Backtests\nStrategy Panel" { class: green }
+}
+
+# ── Connections ──
+
+sources.yfinance -> data.pipeline: prices {
+  style.stroke: "#4d8eff"
+}
+sources.alpaca -> data.snapshots: history {
+  style.stroke: "#4d8eff"
+}
+data.snapshots -> data.correlation {
+  style.stroke: "#00d4aa"
+}
+
+data.pipeline -> engine {
+  style.stroke: "#00d4aa"
+}
+
+engine.sm -> engine.combiner {
+  style.stroke: "#7c4dff"
+}
+engine.tlv -> engine.combiner {
+  style.stroke: "#7c4dff"
+}
+engine.rev -> engine.combiner {
+  style.stroke: "#7c4dff"
+}
+
+engine.combiner -> exec.rebalance: weights {
+  style.stroke: "#7c4dff"
+}
+exec.rebalance -> exec.risk: validated {
+  style.stroke: "#ff4d6a"
+}
+exec.risk -> exec.broker: orders {
+  style.stroke: "#ff4d6a"
+}
+
+exec.broker -> accounts.a1 {
+  style.stroke: "#00d4aa"
+}
+exec.broker -> accounts.a2 {
+  style.stroke: "#4d8eff"
+}
+exec.broker -> accounts.a3 {
+  style.stroke: "#ffc04d"
+}
+
+sources.alpaca -> exec.broker: positions {
+  style.stroke-dash: 3
+  style.stroke: "#4d8eff"
+}
+
+# Monitoring
+data.snapshots -> api.portfolio {
+  style.stroke: "#00d4aa"
+  style.stroke-dash: 3
+}
+data.correlation -> api.portfolio {
+  style.stroke: "#00d4aa"
+  style.stroke-dash: 3
+}
+exec.broker -> api.portfolio {
+  style.stroke: "#ff4d6a"
+  style.stroke-dash: 3
+}
+exec.broker -> api.orders {
+  style.stroke: "#ff4d6a"
+  style.stroke-dash: 3
+}
+engine -> api.backtests {
+  style.stroke: "#7c4dff"
+  style.stroke-dash: 3
+}
+engine -> api.strategies {
+  style.stroke: "#7c4dff"
+  style.stroke-dash: 3
+}
+
+# Dashboard
+api.portfolio -> dashboard.live {
+  style.stroke: "#4d8eff"
+}
+api.portfolio -> dashboard.equity {
+  style.stroke: "#4d8eff"
+}
+api.portfolio -> dashboard.corr {
+  style.stroke: "#4d8eff"
+}
+api.orders -> dashboard.live {
+  style.stroke: "#4d8eff"
+}
+api.backtests -> dashboard.bt {
+  style.stroke: "#4d8eff"
+}
+api.strategies -> dashboard.bt {
+  style.stroke: "#4d8eff"
+}

@@ -245,73 +245,9 @@ Backtests assume perfect fills at the closing price. Reality is different:
 
 ## 6. Modern Architecture & Tech Stack
 
-```mermaid
-flowchart TB
-    subgraph sources["External Data Sources"]
-        YF["yfinance\nETFs · S&P 500 · VIX"]
-        ALPACA["Alpaca API\n3 Paper Accounts"]
-    end
+![System Architecture](docs/architecture.svg)
 
-    subgraph data["Data Layer"]
-        PIPE["pipeline.py · sp500.py\nMarket data & parquet cache"]
-        SNAP["snapshots.py\nDaily equity snapshots"]
-        CORR["correlation.py\nRolling 21-day pairwise"]
-    end
-
-    subgraph strategies["Strategy Engine"]
-        SM["Stock Momentum\n+ SPY Filter"]
-        TLV["Multi-Asset Trend\n+ Low-Vol + Vol-Scaling"]
-        REV["Short-Term Reversal\n+ Momentum Blend"]
-        PORT["portfolio.py\n3-Account Combiner"]
-    end
-
-    subgraph execution["Execution Layer"]
-        REB["rebalance.py\nTarget Weights → Orders"]
-        RISK["risk_manager.py\nKelly · 2% Rule · Breakers"]
-        BROKER["alpaca_broker.py\nMulti-Account Client"]
-    end
-
-    subgraph accounts["3 Paper Accounts — $300k"]
-        direction LR
-        A1["FIRE 0.1\nMomentum\n15 stocks · Monthly"]
-        A2["FIRE 0.2\nTrend + Low-Vol\n34 stocks · Monthly"]
-        A3["FIRE 0.3\nReversal\n52 stocks · Weekly"]
-    end
-
-    subgraph api["FastAPI Backend :8000"]
-        direction LR
-        RP["/portfolio\nSummary · History\nCorrelation"]
-        RO["/orders\nRebalance"]
-        RB["/backtests\nEquity Curves"]
-        RS["/strategies\nLive Metrics"]
-    end
-
-    subgraph dashboard["React + TradingView Dashboard :5173"]
-        direction LR
-        LP["Live Portfolio\nAccount Switcher"]
-        EQ["Equity Charts\nPer-Account + Combined"]
-        CM["Correlation Monitor\nMatrix · Rolling · Alerts"]
-        BT["Backtests\nStrategy Panel"]
-    end
-
-    YF --> PIPE
-    ALPACA -- "portfolio history" --> SNAP
-    PIPE --> strategies
-    SNAP --> CORR
-
-    SM & TLV & REV --> PORT
-    PORT -- "target weights" --> REB --> RISK --> BROKER
-    ALPACA <-- "orders & positions" --> BROKER
-    BROKER --> A1 & A2 & A3
-
-    BROKER --> RP & RO
-    SNAP & CORR --> RP
-    strategies --> RB & RS
-
-    RP --> LP & EQ & CM
-    RO --> LP
-    RB & RS --> BT
-```
+*Source: [docs/architecture.d2](docs/architecture.d2) — rendered with [D2](https://d2lang.com)*
 
 ### File Structure
 
