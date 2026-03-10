@@ -7,6 +7,11 @@ Wraps the alpaca-trade-api SDK with methods tailored to our strategies:
 - Order submission (market and limit)
 - Order history and cancellation
 
+Supports 3 paper trading accounts for multi-factor strategy diversification:
+- Account 1: FIRE 0.1 — Momentum (SM + SPY Filter)
+- Account 2: FIRE 0.2 — Trend + Low-Vol
+- Account 3: FIRE 0.3 — Reversal + Momentum Blend
+
 All methods include error handling and return structured dicts
 suitable for our API endpoints.
 """
@@ -18,6 +23,13 @@ import alpaca_trade_api as tradeapi
 
 # Load .env from project root
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+# Account metadata: maps account number to name and default strategy
+ACCOUNT_INFO = {
+    1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum"},
+    2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol"},
+    3: {"name": "FIRE 0.3", "strategy": "reversal_blend", "label": "Reversal Blend"},
+}
 
 
 @dataclass
@@ -32,18 +44,30 @@ class OrderRequest:
 
 
 class AlpacaBroker:
-    """Alpaca trading client for paper and live trading."""
+    """Alpaca trading client for paper and live trading.
 
-    def __init__(self):
-        self.api_key = os.environ.get("ALPACA_API_KEY", "")
-        self.secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
+    Args:
+        account: Account number (1, 2, or 3). Selects credentials from .env.
+    """
+
+    def __init__(self, account: int = 1):
+        if account not in (1, 2, 3):
+            raise ValueError(f"Invalid account: {account}. Must be 1, 2, or 3.")
+
+        self.account = account
+        self.account_info = ACCOUNT_INFO[account]
+
+        # Account 1 uses base env vars, accounts 2/3 use suffixed vars
+        suffix = "" if account == 1 else f"_{account}"
+        self.api_key = os.environ.get(f"ALPACA_API_KEY{suffix}", "")
+        self.secret_key = os.environ.get(f"ALPACA_SECRET_KEY{suffix}", "")
         self.base_url = os.environ.get(
             "ALPACA_BASE_URL", "https://paper-api.alpaca.markets"
         )
 
         if not self.api_key or not self.secret_key:
             raise ValueError(
-                "ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env"
+                f"ALPACA_API_KEY{suffix} and ALPACA_SECRET_KEY{suffix} must be set in .env"
             )
 
         self.api = tradeapi.REST(

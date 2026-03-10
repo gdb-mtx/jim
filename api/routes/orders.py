@@ -1,45 +1,50 @@
-"""Order & rebalance endpoints — preview and execute trades."""
+"""Order & rebalance endpoints — preview and execute trades.
+
+Supports 3 paper trading accounts via ?account=1|2|3 query param.
+"""
 
 from fastapi import APIRouter, HTTPException, Query
-from execution.alpaca_broker import AlpacaBroker
+from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
 from execution.rebalance import compute_rebalance, execute_rebalance
 from execution.risk_manager import RiskManager
 
 router = APIRouter()
 
-_broker: AlpacaBroker | None = None
+# Per-account broker cache (lazy-init)
+_brokers: dict[int, AlpacaBroker] = {}
 _risk_manager = RiskManager()
 
 
-def _get_broker() -> AlpacaBroker:
-    global _broker
-    if _broker is None:
+def _get_broker(account: int) -> AlpacaBroker:
+    if account not in _brokers:
         try:
-            _broker = AlpacaBroker()
+            _brokers[account] = AlpacaBroker(account=account)
         except ValueError as e:
             raise HTTPException(status_code=500, detail=str(e))
-    return _broker
+    return _brokers[account]
 
 
 @router.get("/history")
 async def order_history(
+    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
     status: str = Query(default="all", description="open, closed, or all"),
     limit: int = Query(default=50, le=200),
 ):
     """Get recent order history from Alpaca."""
-    broker = _get_broker()
+    broker = _get_broker(account)
     return broker.get_orders(status=status, limit=limit)
 
 
 @router.post("/rebalance/preview")
 async def preview_rebalance(
     strategy_id: str = Query(description="Strategy or portfolio ID"),
+    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
 ):
     """Preview a rebalance — compute target positions and orders without executing.
 
     Returns the full rebalance plan: target weights, position diffs, and orders.
     """
-    broker = _get_broker()
+    broker = _get_broker(account)
 
     try:
         result = compute_rebalance(
@@ -53,6 +58,7 @@ async def preview_rebalance(
         raise HTTPException(status_code=500, detail=f"Rebalance computation failed: {e}")
 
     return {
+        "account": account,
         "strategy_id": result.strategy_id,
         "portfolio_value": result.portfolio_value,
         "target_weights": result.target_weights,
@@ -78,13 +84,14 @@ async def preview_rebalance(
 @router.post("/rebalance/execute")
 async def execute_rebalance_endpoint(
     strategy_id: str = Query(description="Strategy or portfolio ID"),
+    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
 ):
     """Execute a rebalance — compute and submit orders to Alpaca.
 
     WARNING: This submits real orders (paper or live depending on config).
     Always preview first with /rebalance/preview.
     """
-    broker = _get_broker()
+    broker = _get_broker(account)
 
     try:
         result = compute_rebalance(
@@ -107,6 +114,7 @@ async def execute_rebalance_endpoint(
     if not result.orders:
         return {
             "message": "No trades needed — portfolio already at target",
+            "account": account,
             "strategy_id": strategy_id,
         }
 
@@ -114,6 +122,7 @@ async def execute_rebalance_endpoint(
     order_results = execute_rebalance(broker, result)
 
     return {
+        "account": account,
         "strategy_id": result.strategy_id,
         "portfolio_value": result.portfolio_value,
         "orders_submitted": len(order_results),
@@ -124,8 +133,10 @@ async def execute_rebalance_endpoint(
 
 
 @router.post("/cancel-all")
-async def cancel_all_orders():
+async def cancel_all_orders(
+    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+):
     """Cancel all open orders."""
-    broker = _get_broker()
+    broker = _get_broker(account)
     count = broker.cancel_all_orders()
-    return {"cancelled": count}
+    return {"account": account, "cancelled": count}

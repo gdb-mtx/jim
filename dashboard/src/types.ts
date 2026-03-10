@@ -32,8 +32,18 @@ export interface BacktestResult {
   };
 }
 
+export interface AccountInfo {
+  account: number;
+  name: string;
+  strategy: string;
+  label: string;
+}
+
 export interface PortfolioSummary {
   account_id: string;
+  account_number: number;
+  account_label: string;
+  default_strategy: string;
   status: string;
   equity: number;
   cash: number;

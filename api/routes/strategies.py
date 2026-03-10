@@ -12,7 +12,7 @@ from strategies.stock_momentum import StockMomentum
 from strategies.multi_asset_trend import MultiAssetTrend
 from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
-from strategies.portfolio import PORTFOLIOS, run_portfolio
+from strategies.portfolio import PORTFOLIOS, run_portfolio, run_combined_portfolio
 from backtesting.metrics import full_report
 
 router = APIRouter()
@@ -108,6 +108,23 @@ async def list_strategies():
             })
     except Exception as e:
         print(f"Warning: Could not load portfolio strategies: {e}")
+
+    # Combined 3-account portfolio
+    try:
+        name, returns = run_combined_portfolio(start="2010-01-01")
+        report = full_report(returns, name=name)
+        results.append({
+            "name": name,
+            "id": "combined_3account",
+            "status": "backtesting",
+            "annualized_return": report["annualized_return"],
+            "sharpe_ratio": report["sharpe_ratio"],
+            "max_drawdown": report["max_drawdown"],
+            "win_rate": report["win_rate"],
+            "validation_passed": report["sharpe_ratio"] >= 1.0,
+        })
+    except Exception as e:
+        print(f"Warning: Could not load combined portfolio: {e}")
 
     _cached_metrics = results
     return results

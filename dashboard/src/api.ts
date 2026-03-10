@@ -5,8 +5,13 @@ export async function fetchStrategies() {
   return res.json();
 }
 
-export async function fetchPortfolio() {
-  const res = await fetch(`${BASE_URL}/portfolio/summary`);
+export async function fetchAccounts() {
+  const res = await fetch(`${BASE_URL}/portfolio/accounts`);
+  return res.json();
+}
+
+export async function fetchPortfolio(account = 1) {
+  const res = await fetch(`${BASE_URL}/portfolio/summary?account=${account}`);
   return res.json();
 }
 
@@ -24,14 +29,19 @@ export async function fetchEquityCurve(strategyId: string, start = "2010-01-01")
   return res.json();
 }
 
-export async function fetchPositions() {
-  const res = await fetch(`${BASE_URL}/portfolio/positions`);
+export async function fetchPositions(account = 1) {
+  const res = await fetch(`${BASE_URL}/portfolio/positions?account=${account}`);
   return res.json();
 }
 
-export async function fetchOrders(status = "all", limit = 50) {
+export async function fetchOrders(account = 1, status = "all", limit = 50) {
   const res = await fetch(
-    `${BASE_URL}/orders/history?status=${status}&limit=${limit}`
+    `${BASE_URL}/orders/history?account=${account}&status=${status}&limit=${limit}`
   );
+  return res.json();
+}
+
+export async function fetchCombinedPortfolio() {
+  const res = await fetch(`${BASE_URL}/portfolio/combined`);
   return res.json();
 }

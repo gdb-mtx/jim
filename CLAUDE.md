@@ -19,17 +19,24 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
 ### Three-Account Architecture
-Uncorrelated factor diversification across 3 Alpaca paper accounts:
-- **Account 1 (Momentum)**: SM + SPY Filter — profits when trends persist
-- **Account 2 (Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol — crisis alpha + defensive
-- **Account 3 (Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge
+Uncorrelated factor diversification across 3 Alpaca paper accounts ($100k each):
+- **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
+- **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
+- **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
 
 Cross-account correlations: 0.56-0.66 (vs 0.93-0.96 for old ETF strategies)
-Combined 3-account: **1.58 Sharpe, 15.4% return, -9.5% MaxDD**
+Combined 3-account: **1.59 Sharpe, 16.8% return, -10.2% MaxDD**
+
+Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3). `AlpacaBroker(account=1|2|3)` selects credentials.
+
+Rebalance schedule:
+- Every Monday: Account 3 (reversal)
+- First Monday of month: All 3 accounts
 
 ### Strategies (8 momentum + 3 new factor strategies + portfolio combos)
 | Strategy | Sharpe | Return | MaxDD | Notes |
 |---|---|---|---|---|
+| **Combined 3-Account Portfolio** | **1.59** | **16.8%** | **-10.2%** | **All 3 accounts blended** |
 | **Reversal + Momentum Blend** | **1.54** | **15.2%** | **-9.4%** | **Acct 3 blend** |
 | **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Acct 1** |
 | **Trend + Low-Vol (vol-scaled)** | **1.36** | **17.7%** | **-14.0%** | **Acct 2 blend** |
@@ -65,14 +72,17 @@ strategies/stock_momentum.py — Individual stock momentum + VIX filter
 strategies/multi_asset_trend.py — Multi-asset trend following (SPY/TLT/GLD/DBC/EFA)
 strategies/low_volatility.py — Low-vol anomaly + momentum quality filter
 strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
-strategies/portfolio.py   — Portfolio combiner + SPY filter + vol-scaling overlay
+strategies/portfolio.py   — Portfolio combiner + SPY filter + vol-scaling + combined 3-account
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
-execution/alpaca_broker.py — Alpaca REST client (account, positions, orders)
+execution/alpaca_broker.py — Multi-account Alpaca client (3 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
 api/main.py              — FastAPI backend
-api/routes/orders.py     — Rebalance preview/execute, order history
+api/routes/portfolio.py  — Account summary, positions, combined view (?account=1|2|3)
+api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3)
+api/routes/backtests.py  — Backtest runner (individual + combined 3-account)
+api/routes/strategies.py — Strategy list with live metrics
 dashboard/               — React + Vite + TradingView Charts
 ```
 
@@ -89,9 +99,12 @@ dashboard/               — React + Vite + TradingView Charts
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 
 ### Current Phase & Next Steps
-- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor strategy research + implementation)
-- **3-account architecture**: Momentum / Trend+Low-Vol / Reversal+Momentum — combined 1.58 Sharpe, -9.5% MaxDD
-- **Alpaca paper trading**: Account 1 active ($100k, 15 stocks via SM + SPY Filter, first trade 2026-03-10)
-- Dashboard shows all strategies with SPY overlay. Tab switcher: "Live Portfolio" and "Backtests"
-- Rebalance flow: `POST /api/orders/rebalance/preview` → review → `POST /api/orders/rebalance/execute`
-- Next: Set up Alpaca accounts 2 & 3, monthly rebalance scheduler, walk-forward validation on new strategies, track paper trading 3+ months
+- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor research + 3-account infra)
+- **All 3 accounts live on paper**: $300k total deployed across 3 uncorrelated factor strategies
+  - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
+  - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
+  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10
+- **Combined 3-account: 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
+- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3) + Backtests with combined equity curve vs SPY
+- Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
+- Next: Weekly rebalance Account 3 (Mondays), monthly rebalance all accounts, walk-forward validation on new strategies, track paper trading 3+ months before live money

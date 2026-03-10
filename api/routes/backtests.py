@@ -9,7 +9,7 @@ from strategies.stock_momentum import StockMomentum
 from strategies.multi_asset_trend import MultiAssetTrend
 from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
-from strategies.portfolio import PORTFOLIOS, run_portfolio
+from strategies.portfolio import PORTFOLIOS, run_portfolio, run_combined_portfolio
 from backtesting.metrics import full_report
 import pandas as pd
 
@@ -32,7 +32,7 @@ STOCK_STRATEGIES = {
 }
 
 STRATEGIES = {**ETF_STRATEGIES, **STOCK_STRATEGIES}
-ALL_STRATEGY_IDS = {**STRATEGIES, **{pid: None for pid in PORTFOLIOS}}
+ALL_STRATEGY_IDS = {**STRATEGIES, **{pid: None for pid in PORTFOLIOS}, "combined_3account": None}
 
 # Expanded ETF universe + SHY (cash proxy for dual momentum)
 DEFAULT_SYMBOLS = EXPANDED_UNIVERSE + ["SHY"]
@@ -67,8 +67,10 @@ async def run_backtest(
     if strategy_id not in ALL_STRATEGY_IDS:
         return {"error": f"Unknown strategy: {strategy_id}"}
 
-    # Portfolio strategies vs individual strategies
-    if strategy_id in PORTFOLIOS:
+    # Combined 3-account, portfolio, or individual strategy
+    if strategy_id == "combined_3account":
+        strategy_name, returns = run_combined_portfolio(start, end)
+    elif strategy_id in PORTFOLIOS:
         strategy_name, returns = run_portfolio(strategy_id, start, end)
     else:
         strategy, returns = _run_strategy(strategy_id, start, end)

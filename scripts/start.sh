@@ -20,8 +20,10 @@ echo "Starting backend on :8000..."
 $UV run uvicorn api.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
-# Start frontend
+# Start frontend (load nvm so npm is available)
 echo "Starting frontend on :5173..."
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 cd "$PROJECT_DIR/dashboard"
 npm run dev &
 FRONTEND_PID=$!

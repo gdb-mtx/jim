@@ -259,3 +259,31 @@ def run_portfolio(
         combined = apply_vol_scaling(combined)
 
     return config["name"], combined
+
+
+# The 3 account strategies that make up the combined portfolio
+COMBINED_ACCOUNT_STRATEGIES = ["sm_filtered", "trend_lowvol", "reversal_blend"]
+
+
+def run_combined_portfolio(
+    start: str = "2010-01-01",
+    end: str | None = None,
+) -> tuple[str, pd.Series]:
+    """Run the combined 3-account portfolio (equal-weighted).
+
+    Runs each account's strategy independently (preserving per-account SPY
+    filters and vol-scaling), then averages returns at 1/3 each.
+
+    Returns:
+        Tuple of (name, combined_returns_series)
+    """
+    account_returns = {}
+    for pid in COMBINED_ACCOUNT_STRATEGIES:
+        _, returns = run_portfolio(pid, start=start, end=end)
+        account_returns[pid] = returns
+
+    # Align to common dates and equal-weight average
+    aligned = pd.DataFrame(account_returns).dropna()
+    combined = aligned.mean(axis=1)
+
+    return "Combined 3-Account Portfolio", combined
