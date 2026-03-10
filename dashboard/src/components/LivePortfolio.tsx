@@ -9,13 +9,14 @@ import type { PortfolioSummary, Position, Order } from "../types";
 import EquityHistoryChart from "./EquityHistoryChart";
 import CorrelationPanel from "./CorrelationPanel";
 
-type AccountView = 0 | 1 | 2 | 3; // 0 = combined
+type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined
 
 const ACCOUNTS: { id: AccountView; name: string; label: string }[] = [
   { id: 0, name: "Combined", label: "All Accounts" },
   { id: 1, name: "FIRE 0.1", label: "Momentum" },
   { id: 2, name: "FIRE 0.2", label: "Trend + Low-Vol" },
   { id: 3, name: "FIRE 0.3", label: "Reversal Blend" },
+  { id: 4, name: "FIRE 0.4", label: "Crypto" },
 ];
 
 interface CombinedData {
@@ -46,6 +47,7 @@ const ACCOUNT_LABELS: Record<number, string> = {
   1: "0.1",
   2: "0.2",
   3: "0.3",
+  4: "0.4",
 };
 
 export default function LivePortfolio() {
@@ -85,15 +87,16 @@ export default function LivePortfolio() {
     // Fetch combined summary + orders from all accounts
     Promise.all([
       fetchCombinedPortfolio(),
-      fetchOrders(1),
-      fetchOrders(2),
-      fetchOrders(3),
+      fetchOrders(1).catch(() => []),
+      fetchOrders(2).catch(() => []),
+      fetchOrders(3).catch(() => []),
+      fetchOrders(4).catch(() => []),
     ])
-      .then(([c, o1, o2, o3]) => {
+      .then(([c, o1, o2, o3, o4]) => {
         setCombined(c);
         setCombinedPositions(c.positions || []);
         // Merge and sort orders by time
-        const allOrders = [...o1, ...o2, ...o3].sort(
+        const allOrders = [...o1, ...o2, ...o3, ...o4].sort(
           (a: Order, b: Order) =>
             new Date(b.submitted_at).getTime() -
             new Date(a.submitted_at).getTime()

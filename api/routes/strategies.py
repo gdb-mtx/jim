@@ -12,7 +12,9 @@ from strategies.stock_momentum import StockMomentum
 from strategies.multi_asset_trend import MultiAssetTrend
 from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
+from strategies.crypto_momentum import CryptoMomentum
 from strategies.portfolio import PORTFOLIOS, run_portfolio, run_combined_portfolio
+from data.crypto import download_crypto_prices, download_btc_prices
 from backtesting.metrics import full_report
 
 router = APIRouter()
@@ -29,6 +31,10 @@ STOCK_STRATEGY_CLASSES = [
     ("stock_momentum", StockMomentum),
     ("low_volatility_solo", LowVolatility),
     ("short_term_reversal_solo", ShortTermReversal),
+]
+
+CRYPTO_STRATEGY_CLASSES = [
+    ("crypto_momentum", CryptoMomentum),
 ]
 
 _cached_metrics: list[dict] | None = None
@@ -90,6 +96,31 @@ async def list_strategies():
             })
     except Exception as e:
         print(f"Warning: Could not load stock strategies: {e}")
+
+    # Crypto strategies
+    try:
+        crypto_prices = download_crypto_prices(start="2020-01-01")
+        btc_prices = download_btc_prices()
+        for strategy_id, cls in CRYPTO_STRATEGY_CLASSES:
+            strategy = cls()
+            strategy.set_btc(btc_prices)
+            returns = strategy.generate_returns(crypto_prices)
+            non_zero = returns[returns != 0]
+            if len(non_zero) > 0:
+                returns = returns.loc[non_zero.index[0]:]
+            report = full_report(returns, name=strategy.name, periods_per_year=365)
+            results.append({
+                "name": strategy.name,
+                "id": strategy_id,
+                "status": "backtesting",
+                "annualized_return": report["annualized_return"],
+                "sharpe_ratio": report["sharpe_ratio"],
+                "max_drawdown": report["max_drawdown"],
+                "win_rate": report["win_rate"],
+                "validation_passed": report["sharpe_ratio"] >= 1.0,
+            })
+    except Exception as e:
+        print(f"Warning: Could not load crypto strategies: {e}")
 
     # Portfolio strategies (combinations + filters)
     try:

@@ -9,7 +9,9 @@ from strategies.stock_momentum import StockMomentum
 from strategies.multi_asset_trend import MultiAssetTrend
 from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
+from strategies.crypto_momentum import CryptoMomentum
 from strategies.portfolio import PORTFOLIOS, run_portfolio, run_combined_portfolio
+from data.crypto import download_crypto_prices, download_btc_prices
 from backtesting.metrics import full_report
 import pandas as pd
 
@@ -31,7 +33,12 @@ STOCK_STRATEGIES = {
     "short_term_reversal_solo": ShortTermReversal,
 }
 
-STRATEGIES = {**ETF_STRATEGIES, **STOCK_STRATEGIES}
+# Crypto strategies
+CRYPTO_STRATEGIES = {
+    "crypto_momentum": CryptoMomentum,
+}
+
+STRATEGIES = {**ETF_STRATEGIES, **STOCK_STRATEGIES, **CRYPTO_STRATEGIES}
 ALL_STRATEGY_IDS = {**STRATEGIES, **{pid: None for pid in PORTFOLIOS}, "combined_3account": None}
 
 # Expanded ETF universe + SHY (cash proxy for dual momentum)
@@ -40,7 +47,14 @@ DEFAULT_SYMBOLS = EXPANDED_UNIVERSE + ["SHY"]
 
 def _run_strategy(strategy_id: str, start: str, end: str | None = None):
     """Run a strategy and return (strategy_name, returns Series)."""
-    if strategy_id in STOCK_STRATEGIES:
+    if strategy_id in CRYPTO_STRATEGIES:
+        # Crypto strategies use crypto universe
+        prices = download_crypto_prices(start=start)
+        btc = download_btc_prices()
+        strategy = CRYPTO_STRATEGIES[strategy_id]()
+        strategy.set_btc(btc)
+        returns = strategy.generate_returns(prices)
+    elif strategy_id in STOCK_STRATEGIES:
         # Stock strategies use S&P 500 universe
         prices = download_sp500_prices(start=start)
         strategy = STOCK_STRATEGIES[strategy_id]()
@@ -88,7 +102,10 @@ async def run_backtest(
         for d, v in zip(equity.index, equity.values)
     ]
 
-    report = full_report(returns, name=strategy_name)
+    # Use 365 periods/year for crypto (24/7 markets), 252 for stocks
+    is_crypto = strategy_id in CRYPTO_STRATEGIES or strategy_id == "crypto_momentum_filtered"
+    periods = 365 if is_crypto else 252
+    report = full_report(returns, name=strategy_name, periods_per_year=periods)
 
     # SPY buy-and-hold benchmark for the same active period
     spy_prices = download_prices(["SPY"], start=start, end=end)

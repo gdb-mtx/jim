@@ -26,7 +26,7 @@ def _get_broker(account: int) -> AlpacaBroker:
 
 @router.get("/history")
 async def order_history(
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
     status: str = Query(default="all", description="open, closed, or all"),
     limit: int = Query(default=50, le=200),
 ):
@@ -38,7 +38,7 @@ async def order_history(
 @router.post("/rebalance/preview")
 async def preview_rebalance(
     strategy_id: str = Query(description="Strategy or portfolio ID"),
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Preview a rebalance — compute target positions and orders without executing.
 
@@ -84,7 +84,7 @@ async def preview_rebalance(
 @router.post("/rebalance/execute")
 async def execute_rebalance_endpoint(
     strategy_id: str = Query(description="Strategy or portfolio ID"),
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Execute a rebalance — compute and submit orders to Alpaca.
 
@@ -134,7 +134,7 @@ async def execute_rebalance_endpoint(
 
 @router.post("/cancel-all")
 async def cancel_all_orders(
-    account: int = Query(default=1, ge=1, le=3, description="Account number (1-3)"),
+    account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
 ):
     """Cancel all open orders."""
     broker = _get_broker(account)

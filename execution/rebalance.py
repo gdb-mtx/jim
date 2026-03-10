@@ -19,11 +19,14 @@ from execution.risk_manager import RiskManager, RiskLimits
 from strategies.portfolio import (
     PORTFOLIOS,
     compute_spy_trend_filter,
+    compute_btc_trend_filter,
     ETF_STRATEGIES,
     STOCK_STRATEGIES,
+    CRYPTO_STRATEGIES,
 )
 from data.pipeline import download_prices, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
+from data.crypto import download_crypto_prices, download_btc_prices, to_alpaca_symbol
 
 
 @dataclass
@@ -32,8 +35,8 @@ class RebalanceResult:
     strategy_id: str
     portfolio_value: float
     target_weights: dict[str, float]
-    target_positions: dict[str, int]    # symbol -> target shares
-    current_positions: dict[str, int]   # symbol -> current shares
+    target_positions: dict[str, float]   # symbol -> target qty (float for crypto)
+    current_positions: dict[str, float]  # symbol -> current qty (float for crypto)
     orders: list[OrderRequest]
     risk_check: dict
     spy_filter_active: bool = False
@@ -55,6 +58,9 @@ def get_current_signals(
     """
     if strategy_id in PORTFOLIOS:
         return _get_portfolio_signals(strategy_id, lookback_start)
+
+    if strategy_id in CRYPTO_STRATEGIES:
+        return _get_crypto_strategy_signals(strategy_id, lookback_start)
 
     if strategy_id in STOCK_STRATEGIES:
         return _get_stock_strategy_signals(strategy_id, lookback_start)
@@ -96,6 +102,25 @@ def _get_etf_strategy_signals(
     return {sym: w for sym, w in latest.items() if abs(w) > 1e-6}
 
 
+def _get_crypto_strategy_signals(
+    strategy_id: str, lookback_start: str
+) -> dict[str, float]:
+    """Get latest signals from a crypto strategy.
+
+    Returns weights keyed by Alpaca symbols (BTC/USD, not BTC-USD).
+    """
+    crypto_prices = download_crypto_prices(start=lookback_start)
+    btc_prices = download_btc_prices()
+
+    strategy = CRYPTO_STRATEGIES[strategy_id]()
+    strategy.set_btc(btc_prices)
+    signals = strategy.generate_signals(crypto_prices)
+
+    latest = signals.iloc[-1]
+    # Convert yfinance symbols to Alpaca symbols
+    return {to_alpaca_symbol(sym): w for sym, w in latest.items() if abs(w) > 1e-6}
+
+
 def _get_portfolio_signals(
     portfolio_id: str, lookback_start: str
 ) -> dict[str, float]:
@@ -108,6 +133,8 @@ def _get_portfolio_signals(
     weights = config["weights"]
     use_spy_filter = config["spy_filter"]
 
+    use_btc_filter = config.get("btc_filter", False)
+
     # Load data
     symbols = EXPANDED_UNIVERSE + ["SHY"]
     etf_prices = download_prices(symbols, start=lookback_start)
@@ -118,27 +145,53 @@ def _get_portfolio_signals(
         stock_prices = download_sp500_prices(start=lookback_start)
         vix = download_vix()
 
+    crypto_prices = None
+    btc_prices = None
+    if any(sid in CRYPTO_STRATEGIES for sid in weights):
+        crypto_prices = download_crypto_prices(start=lookback_start)
+        btc_prices = download_btc_prices()
+
     # Get latest signals from each component
     combined_weights: dict[str, float] = {}
     for strategy_id, blend_weight in weights.items():
-        if strategy_id in STOCK_STRATEGIES:
+        if strategy_id in CRYPTO_STRATEGIES:
+            strategy = CRYPTO_STRATEGIES[strategy_id]()
+            if btc_prices is not None:
+                strategy.set_btc(btc_prices)
+            signals = strategy.generate_signals(crypto_prices)
+            latest = signals.iloc[-1]
+            # Convert crypto symbols to Alpaca format
+            for sym, w in latest.items():
+                if abs(w) > 1e-6:
+                    alpaca_sym = to_alpaca_symbol(sym)
+                    combined_weights[alpaca_sym] = combined_weights.get(alpaca_sym, 0) + w * blend_weight
+        elif strategy_id in STOCK_STRATEGIES:
             strategy = STOCK_STRATEGIES[strategy_id]()
             if vix is not None:
                 strategy.set_vix(vix)
             signals = strategy.generate_signals(stock_prices)
+            latest = signals.iloc[-1]
+            for sym, w in latest.items():
+                if abs(w) > 1e-6:
+                    combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
         else:
             strategy = ETF_STRATEGIES[strategy_id]()
             signals = strategy.generate_signals(etf_prices)
-
-        latest = signals.iloc[-1]
-        for sym, w in latest.items():
-            if abs(w) > 1e-6:
-                combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
+            latest = signals.iloc[-1]
+            for sym, w in latest.items():
+                if abs(w) > 1e-6:
+                    combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
 
     # Apply SPY trend filter
     if use_spy_filter:
         spy_filter = compute_spy_trend_filter(start=lookback_start)
         scalar = spy_filter.iloc[-1]  # Latest filter value (1.0 or 0.5)
+        combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
+
+    # Apply BTC trend filter (binary: 1.0 or 0.0)
+    if use_btc_filter:
+        btc_filter = compute_btc_trend_filter(start=lookback_start)
+        scalar = btc_filter.iloc[-1]
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
 
     return combined_weights
@@ -188,17 +241,28 @@ def compute_rebalance(
     all_symbols = set(list(target_weights.keys()) + list(current_positions.keys()))
     prices = broker.get_latest_prices(list(all_symbols))
 
-    # 5. Convert weights to target share counts
-    target_positions: dict[str, int] = {}
+    # 5. Convert weights to target quantities
+    # Detect if this is a crypto strategy (needs fractional quantities)
+    is_crypto = (
+        strategy_id in CRYPTO_STRATEGIES
+        or (strategy_id in PORTFOLIOS and any(
+            sid in CRYPTO_STRATEGIES for sid in PORTFOLIOS[strategy_id]["weights"]
+        ))
+    )
+
+    target_positions: dict[str, float] = {}
     for symbol, weight in target_weights.items():
         if symbol not in prices or prices[symbol] <= 0:
             continue
         # Cap individual position at max_position_pct
         capped_weight = min(abs(weight), risk_manager.limits.max_position_pct)
         dollar_amount = portfolio_value * capped_weight
-        shares = int(dollar_amount / prices[symbol])
-        if shares > 0:
-            target_positions[symbol] = shares
+        if is_crypto:
+            qty = round(dollar_amount / prices[symbol], 8)
+        else:
+            qty = int(dollar_amount / prices[symbol])
+        if qty > 0:
+            target_positions[symbol] = qty
 
     # 6. Compute order diffs
     orders: list[OrderRequest] = []

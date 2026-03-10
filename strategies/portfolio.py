@@ -27,6 +27,8 @@ from strategies.stock_momentum import StockMomentum
 from strategies.multi_asset_trend import MultiAssetTrend
 from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
+from strategies.crypto_momentum import CryptoMomentum
+from data.crypto import download_crypto_prices, download_btc_prices
 
 
 # ── Preset portfolio configurations ──────────────────────────────────
@@ -98,6 +100,20 @@ PORTFOLIOS = {
         "weights": {"short_term_reversal": 1.0},
         "spy_filter": True,
     },
+    # --- Account 4: Crypto Momentum ---
+    "crypto_momentum_filtered": {
+        "name": "Crypto Momentum + BTC Filter",
+        "weights": {"crypto_momentum": 1.0},
+        "spy_filter": False,
+        "btc_filter": True,
+        "vol_scaling": True,
+        "vol_scaling_params": {
+            "vol_target": 0.15,
+            "vol_halflife": 30,
+            "scalar_floor": 0.1,
+            "scalar_cap": 1.5,
+        },
+    },
 }
 
 # Strategy classes keyed by ID
@@ -114,15 +130,26 @@ STOCK_STRATEGIES = {
     "short_term_reversal": ShortTermReversal,
 }
 
+CRYPTO_STRATEGIES = {
+    "crypto_momentum": CryptoMomentum,
+}
+
 
 def _generate_strategy_returns(
     strategy_id: str,
     etf_prices: pd.DataFrame,
     stock_prices: pd.DataFrame | None = None,
     vix: pd.Series | None = None,
+    crypto_prices: pd.DataFrame | None = None,
+    btc_prices: pd.Series | None = None,
 ) -> pd.Series:
     """Generate returns for a single strategy."""
-    if strategy_id in STOCK_STRATEGIES:
+    if strategy_id in CRYPTO_STRATEGIES:
+        strategy = CRYPTO_STRATEGIES[strategy_id]()
+        if btc_prices is not None:
+            strategy.set_btc(btc_prices)
+        returns = strategy.generate_returns(crypto_prices)
+    elif strategy_id in STOCK_STRATEGIES:
         strategy = STOCK_STRATEGIES[strategy_id]()
         if vix is not None:
             strategy.set_vix(vix)
@@ -162,6 +189,29 @@ def compute_spy_trend_filter(
     above_ma = spy_close > spy_ma
     scalar = pd.Series(np.where(above_ma, 1.0, reduction), index=spy_close.index)
 
+    return scalar
+
+
+def compute_btc_trend_filter(
+    start: str = "2018-01-01",
+    ma_period: int = 200,
+) -> pd.Series:
+    """Compute BTC trend filter: 1.0 when above MA, 0.0 when below.
+
+    Unlike the SPY filter (which reduces to 0.5), crypto bear markets are
+    severe enough to warrant full exit — binary 1.0 or 0.0.
+
+    Args:
+        start: Start date for BTC data (needs history for MA warmup)
+        ma_period: Moving average period (default 200 days)
+
+    Returns:
+        Series of scalars (1.0 or 0.0) indexed by date
+    """
+    btc_prices = download_btc_prices(start=start)
+    btc_ma = btc_prices.rolling(ma_period, min_periods=1).mean()
+    above_ma = btc_prices > btc_ma
+    scalar = pd.Series(np.where(above_ma, 1.0, 0.0), index=btc_prices.index)
     return scalar
 
 
@@ -225,7 +275,9 @@ def run_portfolio(
     config = PORTFOLIOS[portfolio_id]
     weights = config["weights"]
     use_spy_filter = config["spy_filter"]
+    use_btc_filter = config.get("btc_filter", False)
     use_vol_scaling = config.get("vol_scaling", False)
+    vol_scaling_params = config.get("vol_scaling_params", {})
 
     # Load data
     symbols = EXPANDED_UNIVERSE + ["SHY"]
@@ -237,11 +289,17 @@ def run_portfolio(
         stock_prices = download_sp500_prices(start=start)
         vix = download_vix()
 
+    crypto_prices = None
+    btc_prices = None
+    if any(sid in CRYPTO_STRATEGIES for sid in weights):
+        crypto_prices = download_crypto_prices(start=start)
+        btc_prices = download_btc_prices()
+
     # Generate returns for each component strategy
     strategy_returns = {}
     for strategy_id in weights:
         strategy_returns[strategy_id] = _generate_strategy_returns(
-            strategy_id, etf_prices, stock_prices, vix
+            strategy_id, etf_prices, stock_prices, vix, crypto_prices, btc_prices
         )
 
     # Align to common dates and compute weighted blend
@@ -254,9 +312,15 @@ def run_portfolio(
         spy_aligned = spy_filter.reindex(combined.index, method="ffill").fillna(1.0)
         combined = combined * spy_aligned
 
+    # Apply BTC trend filter (binary: 1.0 or 0.0)
+    if use_btc_filter:
+        btc_filter = compute_btc_trend_filter(start=start)
+        btc_aligned = btc_filter.reindex(combined.index, method="ffill").fillna(1.0)
+        combined = combined * btc_aligned
+
     # Apply vol-scaling overlay (Moreira & Muir 2017)
     if use_vol_scaling:
-        combined = apply_vol_scaling(combined)
+        combined = apply_vol_scaling(combined, **vol_scaling_params)
 
     return config["name"], combined
 

@@ -18,25 +18,29 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Statistical validation**: Walk-forward analysis, Monte Carlo, regime testing required before any live money
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
-### Three-Account Architecture
-Uncorrelated factor diversification across 3 Alpaca paper accounts ($100k each):
+### Four-Account Architecture
+Uncorrelated factor diversification across 4 Alpaca paper accounts ($100k each):
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 3 of 9 coins by 21-day momentum, BTC 200d MA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler.
 
-Cross-account correlations: 0.56-0.66 (vs 0.93-0.96 for old ETF strategies)
-Combined 3-account: **1.59 Sharpe, 16.8% return, -10.2% MaxDD**
+Cross-account correlations: 0.56-0.66 equity pairs, 0.12-0.18 crypto-equity pairs
+Combined 3-account (equity): **1.59 Sharpe, 16.8% return, -10.2% MaxDD**
+Crypto standalone: **1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** (0.18 SPY correlation)
 
-Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3). `AlpacaBroker(account=1|2|3)` selects credentials.
+Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials.
 
 Rebalance schedule:
+- **Daily at 00:05 UTC**: Account 4 (crypto) — automated via APScheduler
 - Every Monday: Account 3 (reversal)
-- First Monday of month: All 3 accounts
+- First Monday of month: All 3 equity accounts
 
-### Strategies (8 momentum + 3 new factor strategies + portfolio combos)
+### Strategies (8 momentum + 3 factor + 1 crypto + portfolio combos)
 | Strategy | Sharpe | Return | MaxDD | Notes |
 |---|---|---|---|---|
-| **Combined 3-Account Portfolio** | **1.59** | **16.8%** | **-10.2%** | **All 3 accounts blended** |
+| **Combined 3-Account Portfolio** | **1.59** | **16.8%** | **-10.2%** | **All 3 equity accounts blended** |
+| **Crypto Momentum (filtered)** | **1.62** | **33.2%** | **-23.5%** | **Acct 4 — daily, 0.18 SPY corr** |
 | **Reversal + Momentum Blend** | **1.54** | **15.2%** | **-9.4%** | **Acct 3 blend** |
 | **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Acct 1** |
 | **Trend + Low-Vol (vol-scaled)** | **1.36** | **17.7%** | **-14.0%** | **Acct 2 blend** |
@@ -54,17 +58,20 @@ Rebalance schedule:
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
 - **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
 - **Stock Universe**: 451 S&P 500 stocks (cached parquet, survivorship bias noted)
+- **Crypto Universe**: 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP)
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007)
-- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 blend, +0.1-0.3 Sharpe improvement
+- **BTC 200-day MA trend filter**: Binary 100% cash when BTC < 200d MA (sat out all of 2022)
+- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 + Account 4, +0.1-0.3 Sharpe improvement
 - **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period
-- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/portfolio.py`
+- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/crypto_momentum.py`, `strategies/portfolio.py`
 
 ### Architecture
 ```
 data/pipeline.py          — yfinance ETF data download & caching
 data/sp500.py             — S&P 500 stock universe + VIX data
+data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping)
 data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
 data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
 strategies/base.py        — Abstract strategy interface
@@ -74,16 +81,17 @@ strategies/stock_momentum.py — Individual stock momentum + VIX filter
 strategies/multi_asset_trend.py — Multi-asset trend following (SPY/TLT/GLD/DBC/EFA)
 strategies/low_volatility.py — Low-vol anomaly + momentum quality filter
 strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
-strategies/portfolio.py   — Portfolio combiner + SPY filter + vol-scaling + combined 3-account
+strategies/crypto_momentum.py — Crypto momentum rotation (21-day, top 3, BTC filter)
+strategies/portfolio.py   — Portfolio combiner + SPY/BTC filter + vol-scaling + combined portfolios
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
-execution/alpaca_broker.py — Multi-account Alpaca client (3 paper accounts)
+execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
-api/main.py              — FastAPI backend (lifespan: auto-backfill + snapshot on startup)
+api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
 api/routes/portfolio.py  — Account summary, positions, equity history, correlation
-api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3)
-api/routes/backtests.py  — Backtest runner (individual + combined 3-account)
+api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3|4)
+api/routes/backtests.py  — Backtest runner (individual + combined + crypto)
 api/routes/strategies.py — Strategy list with live metrics
 dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
 dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
@@ -106,14 +114,17 @@ dashboard/               — React + Vite + TradingView Charts
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 
 ### Current Phase & Next Steps
-- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor research + 3-account infra)
-- **All 3 accounts live on paper**: $300k total deployed across 3 uncorrelated factor strategies
+- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor research + 3-account infra), Phase 6 (crypto momentum)
+- **All 4 accounts live on paper**: $400k total deployed across 4 uncorrelated strategies
   - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
   - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10
-- **Combined 3-account: 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
-- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3), live equity charts, correlation monitor (Combined view), Backtests with grouped strategy panel
+  - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC
+- **Combined 3-account (equity): 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
+- **Account 4 (crypto): 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** — 0.18 SPY correlation, excellent diversifier
+- Dashboard: 5-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3 / 0.4), live equity charts, correlation monitor (Combined view), Backtests with grouped strategy panel
 - **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup, live equity curves in dashboard
-- **Correlation monitoring**: Rolling 21-day pairwise correlation, matrix + rolling chart, alert at 0.80 threshold, confidence badges
+- **Correlation monitoring**: Rolling 21-day pairwise correlation (6 pairs), matrix + rolling chart, alert at 0.80 threshold, confidence badges
+- **Automated trading**: APScheduler runs daily crypto rebalance at 00:05 UTC inside FastAPI lifespan
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- Next: Circuit breaker alerts, rebalance UI, automated scheduler, walk-forward validation, track paper trading 3+ months before live money
+- Next: Set up Account 4 Alpaca paper credentials, circuit breaker alerts, rebalance UI, walk-forward validation, track paper trading 3+ months before live money

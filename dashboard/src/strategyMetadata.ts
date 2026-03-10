@@ -37,6 +37,13 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     accountLabel: "FIRE 0.3",
     sortOrder: 3,
   },
+  crypto_momentum_filtered: {
+    category: "live",
+    description: "Top 3 cryptos by 21-day momentum, BTC trend filter + vol-scaling, daily rebalance",
+    account: 4,
+    accountLabel: "FIRE 0.4",
+    sortOrder: 4,
+  },
 
   // ── Portfolio Blends ───────────────────────────────────────────────
   blend_filtered: {
@@ -90,6 +97,11 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     category: "building_block",
     description: "Blends 1/3/6/12 month lookback windows",
     sortOrder: 7,
+  },
+  crypto_momentum: {
+    category: "building_block",
+    description: "21-day crypto momentum rotation, top 3 of 9 coins, equal weight",
+    sortOrder: 8,
   },
 
   // ── Solo Wrappers (portfolio-wrapped, some with SPY filter) ────────

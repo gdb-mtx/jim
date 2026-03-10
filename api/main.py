@@ -1,22 +1,64 @@
 """
 FastAPI Backend — Serves strategy data to the React dashboard.
+
+Includes APScheduler for daily crypto rebalance at 00:05 UTC.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, strategies, backtests, orders
 
+log = logging.getLogger("fire.scheduler")
+
+
+async def _daily_crypto_rebalance():
+    """Run daily crypto rebalance for Account 4 at 00:05 UTC."""
+    try:
+        from execution.alpaca_broker import AlpacaBroker
+        from execution.rebalance import compute_rebalance, execute_rebalance
+        from execution.risk_manager import RiskManager
+        from data.snapshots import take_snapshot
+
+        log.info("Daily crypto rebalance starting...")
+
+        broker = AlpacaBroker(account=4)
+        result = compute_rebalance(
+            broker=broker,
+            strategy_id="crypto_momentum_filtered",
+            risk_manager=RiskManager(),
+        )
+
+        if result.risk_check.get("portfolio_halted"):
+            log.warning("Crypto rebalance skipped — circuit breaker active")
+            return
+
+        if result.orders:
+            order_results = execute_rebalance(broker, result)
+            log.info(f"Crypto rebalance: {len(order_results)} orders submitted")
+        else:
+            log.info("Crypto rebalance: no trades needed")
+
+        # Take snapshot after rebalance
+        take_snapshot(4)
+        log.info("Daily crypto rebalance complete")
+
+    except Exception as e:
+        log.error(f"Daily crypto rebalance failed: {e}", exc_info=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: take today's equity snapshots (idempotent)."""
+    """Startup: backfill + snapshot all accounts, start crypto scheduler."""
+    # Backfill and snapshot
     try:
         from data.snapshots import take_all_snapshots, backfill_from_alpaca
 
-        # Always backfill — fills any gaps since last run (idempotent)
-        for acct in (1, 2, 3):
+        for acct in (1, 2, 3, 4):
             try:
                 backfill_from_alpaca(acct)
             except Exception:
@@ -24,7 +66,24 @@ async def lifespan(app: FastAPI):
         take_all_snapshots()
     except Exception as e:
         print(f"Snapshot on startup skipped: {e}")
+
+    # Start APScheduler for daily crypto rebalance
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        _daily_crypto_rebalance,
+        trigger=CronTrigger(hour=0, minute=5, timezone="UTC"),
+        id="daily_crypto_rebalance",
+        name="Daily crypto momentum rebalance (00:05 UTC)",
+        replace_existing=True,
+    )
+    scheduler.start()
+    log.info("APScheduler started — crypto rebalance at 00:05 UTC daily")
+
     yield
+
+    # Shutdown
+    scheduler.shutdown(wait=False)
+    log.info("APScheduler stopped")
 
 
 app = FastAPI(title="FIRE Trading API", version="0.1.0", lifespan=lifespan)

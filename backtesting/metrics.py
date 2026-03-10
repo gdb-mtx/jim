@@ -145,12 +145,13 @@ def kelly_criterion(returns: pd.Series) -> float:
     return float(max(kelly, 0))  # Never negative (means don't trade)
 
 
-def full_report(returns: pd.Series, name: str = "Strategy") -> dict:
+def full_report(returns: pd.Series, name: str = "Strategy", periods_per_year: int = 252) -> dict:
     """Generate a complete performance report.
 
     Args:
         returns: Series of periodic returns
         name: Strategy name for display
+        periods_per_year: Trading periods per year (252 for stocks, 365 for crypto)
 
     Returns:
         Dictionary of all metrics
@@ -158,10 +159,10 @@ def full_report(returns: pd.Series, name: str = "Strategy") -> dict:
     report = {
         "name": name,
         "total_periods": len(returns),
-        "annualized_return": annualized_return(returns),
-        "sharpe_ratio": sharpe_ratio(returns),
+        "annualized_return": annualized_return(returns, periods_per_year),
+        "sharpe_ratio": sharpe_ratio(returns, periods_per_year=periods_per_year),
         "max_drawdown": max_drawdown(returns),
-        "calmar_ratio": calmar_ratio(returns),
+        "calmar_ratio": calmar_ratio(returns, periods_per_year),
         "win_rate": win_rate(returns),
         "profit_factor": profit_factor(returns),
         "kelly_criterion": kelly_criterion(returns),

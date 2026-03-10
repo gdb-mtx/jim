@@ -7,10 +7,11 @@ Wraps the alpaca-trade-api SDK with methods tailored to our strategies:
 - Order submission (market and limit)
 - Order history and cancellation
 
-Supports 3 paper trading accounts for multi-factor strategy diversification:
+Supports 4 paper trading accounts for multi-factor strategy diversification:
 - Account 1: FIRE 0.1 — Momentum (SM + SPY Filter)
 - Account 2: FIRE 0.2 — Trend + Low-Vol
 - Account 3: FIRE 0.3 — Reversal + Momentum Blend
+- Account 4: FIRE 0.4 — Crypto Momentum (daily rebalance)
 
 All methods include error handling and return structured dicts
 suitable for our API endpoints.
@@ -29,6 +30,7 @@ ACCOUNT_INFO = {
     1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum"},
     2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol"},
     3: {"name": "FIRE 0.3", "strategy": "reversal_blend", "label": "Reversal Blend"},
+    4: {"name": "FIRE 0.4", "strategy": "crypto_momentum_filtered", "label": "Crypto"},
 }
 
 
@@ -36,7 +38,7 @@ ACCOUNT_INFO = {
 class OrderRequest:
     """A trade to be executed."""
     symbol: str
-    qty: int
+    qty: float         # float for crypto fractional quantities
     side: str          # "buy" or "sell"
     order_type: str    # "market" or "limit"
     limit_price: float | None = None
@@ -51,8 +53,8 @@ class AlpacaBroker:
     """
 
     def __init__(self, account: int = 1):
-        if account not in (1, 2, 3):
-            raise ValueError(f"Invalid account: {account}. Must be 1, 2, or 3.")
+        if account not in (1, 2, 3, 4):
+            raise ValueError(f"Invalid account: {account}. Must be 1, 2, 3, or 4.")
 
         self.account = account
         self.account_info = ACCOUNT_INFO[account]
@@ -105,7 +107,7 @@ class AlpacaBroker:
         return [
             {
                 "symbol": p.symbol,
-                "qty": int(p.qty),
+                "qty": float(p.qty),
                 "side": p.side,
                 "market_value": float(p.market_value),
                 "cost_basis": float(p.cost_basis),
@@ -118,10 +120,10 @@ class AlpacaBroker:
             for p in positions
         ]
 
-    def get_position_map(self) -> dict[str, int]:
+    def get_position_map(self) -> dict[str, float]:
         """Get simple {symbol: qty} map of current holdings."""
         positions = self.api.list_positions()
-        return {p.symbol: int(p.qty) for p in positions}
+        return {p.symbol: float(p.qty) for p in positions}
 
     def get_portfolio_value(self) -> float:
         """Get current total portfolio value."""

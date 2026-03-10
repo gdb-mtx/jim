@@ -9,13 +9,14 @@ import {
 import type { EquityPoint } from "../types";
 import { fetchEquityHistory } from "../api";
 
-type AccountView = 0 | 1 | 2 | 3;
+type AccountView = 0 | 1 | 2 | 3 | 4;
 
 const SERIES_CONFIG = [
   { key: "combined", label: "Combined", color: "#7c4dff" },
   { key: "acct_1", label: "FIRE 0.1", color: "#00d4aa" },
   { key: "acct_2", label: "FIRE 0.2", color: "#4d8eff" },
   { key: "acct_3", label: "FIRE 0.3", color: "#ffc04d" },
+  { key: "acct_4", label: "FIRE 0.4", color: "#ff6b9d" },
 ] as const;
 
 interface Props {

@@ -62,24 +62,24 @@ function StrategyCard({
           : "border-[#2a2a3e] bg-[#12121a] hover:border-[#3a3a4e]"
       }${isSoloWrapper ? " opacity-70" : ""}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 pt-0.5">
           {isLive && (
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#00d4aa]" />
           )}
           {meta ? (
             <Tooltip text={meta.description}>
-              <span className="truncate text-sm font-medium text-[#e8e8f0]">
+              <span className="text-sm font-medium leading-tight text-[#e8e8f0]">
                 {s.name}
               </span>
             </Tooltip>
           ) : (
-            <span className="truncate text-sm font-medium text-[#e8e8f0]">
+            <span className="text-sm font-medium leading-tight text-[#e8e8f0]">
               {s.name}
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {isCombined && (
             <span className="rounded bg-[#7c4dff20] px-1.5 py-0.5 text-xs font-medium text-[#7c4dff]">
               All
