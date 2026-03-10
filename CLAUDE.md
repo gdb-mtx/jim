@@ -83,6 +83,9 @@ api/routes/portfolio.py  — Account summary, positions, combined view (?account
 api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3)
 api/routes/backtests.py  — Backtest runner (individual + combined 3-account)
 api/routes/strategies.py — Strategy list with live metrics
+dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
+dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
+dashboard/src/components/StrategyPanel.tsx — Grouped strategy list (Live/Portfolio/Building Blocks)
 dashboard/               — React + Vite + TradingView Charts
 ```
 
@@ -105,6 +108,6 @@ dashboard/               — React + Vite + TradingView Charts
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
   - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10
 - **Combined 3-account: 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
-- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3) + Backtests with combined equity curve vs SPY
+- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3) + Backtests with grouped strategy panel (Live Accounts → Portfolio Blends → Building Blocks → Solo + Filter) with hover tooltips and account badges
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
 - Next: Weekly rebalance Account 3 (Mondays), monthly rebalance all accounts, walk-forward validation on new strategies, track paper trading 3+ months before live money

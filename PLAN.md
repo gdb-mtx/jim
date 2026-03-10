@@ -296,10 +296,12 @@ FIRE/
 │       ├── App.tsx              # ✅ Main app with strategy selection, metrics, charts
 │       ├── api.ts               # ✅ API client (multi-account portfolio, backtests)
 │       ├── types.ts             # ✅ TypeScript interfaces (accounts, positions, orders)
+│       ├── strategyMetadata.ts  # ✅ Strategy categories, descriptions, sort order
 │       └── components/
 │           ├── PortfolioChart.tsx    # ✅ Equity curve + SPY overlay (TradingView)
 │           ├── LivePortfolio.tsx     # ✅ Multi-account live portfolio (switcher, P&L, orders)
-│           ├── StrategyPanel.tsx     # ✅ Strategy list with metrics
+│           ├── StrategyPanel.tsx     # ✅ Grouped strategy list (sections, tooltips, badges)
+│           ├── Tooltip.tsx          # ✅ Reusable hover tooltip (dark theme)
 │           └── MetricCard.tsx       # ✅ Metric display cards
 │
 └── tests/                       # Unit tests (TODO)
@@ -480,6 +482,7 @@ Cross-account correlations: 0.56-0.66 (good diversification). Combined backtest:
 - [x] Positions table shows account badges when in combined view
 - [x] All 3 accounts traded successfully (2026-03-10): 15 + 34 + 52 = 101 total positions
 - [x] `strategies/portfolio.py` — `run_combined_portfolio()` for backtest of 3-account blend
+- [x] Strategy panel reorganized: 4 collapsible sections (Live Accounts, Portfolio Blends, Building Blocks, Solo + Filter) with hover tooltips, account badges, and live indicators
 
 ### Rebalance Schedule
 
