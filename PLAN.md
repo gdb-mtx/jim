@@ -578,7 +578,7 @@ First equity trades executed **2026-03-10**. Rebalance dates (approximate, adjus
 - [x] Dashboard: Strategy panel layout fix (no overlap between names and validation badges)
 - [x] `pyproject.toml` — Added `apscheduler>=3.10.0`
 
-**Pending:** Set up Account 4 Alpaca paper trading credentials (`ALPACA_API_KEY_4`, `ALPACA_SECRET_KEY_4` in `.env`)
+**Account 4 credentials configured** — `ALPACA_API_KEY_4` + `ALPACA_SECRET_KEY_4` in `.env`, connection verified ($100k paper account).
 
 ### Phase 7: AI-Assisted Research (Future)
 - [ ] Claude API for strategy ideation, code generation, analysis acceleration
@@ -640,8 +640,8 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 Phases 1-6 are complete. All 4 accounts are configured on Alpaca paper trading: 3 equity accounts (101 positions since 2026-03-10) + 1 crypto account (daily automated rebalance). Performance tracking, correlation monitoring, and automated crypto rebalance are live.
 
-### Priority 0: Immediate
-1. **Set up Account 4 Alpaca paper credentials** — Create Alpaca paper account, add `ALPACA_API_KEY_4` + `ALPACA_SECRET_KEY_4` to `.env`. Everything else is built and ready.
+### Priority 0: Immediate ✅ COMPLETE
+1. ✅ **Account 4 Alpaca paper credentials** — Created, added to `.env`, connection verified ($100k paper account). BTC trend filter active (BTC below 200d MA) — Account 4 correctly holding cash.
 
 ### Priority 1: Monitoring & Validation ✅ MOSTLY COMPLETE
 2. ✅ **Performance tracking** — Daily equity snapshots stored in parquet, charted in dashboard with TradingView charts. Alpaca portfolio history API backfills any gaps on server startup. Shows per-account + combined equity curves.

@@ -41,6 +41,14 @@ classes: {
       border-radius: 8
     }
   }
+  pink: {
+    style: {
+      fill: "#2e0a1a"
+      stroke: "#ff6b9d"
+      font-color: "#e0e0e0"
+      border-radius: 8
+    }
+  }
 }
 
 # ── Data Sources ──
@@ -52,8 +60,8 @@ sources: External {
     font-color: "#8888a0"
     border-radius: 10
   }
-  yfinance: "yfinance\nETFs · S&P 500 · VIX" { class: blue }
-  alpaca: "Alpaca API\n3 Paper Accounts" { class: blue }
+  yfinance: "yfinance\nETFs · S&P 500 · VIX · Crypto" { class: blue }
+  alpaca: "Alpaca API\n4 Paper Accounts" { class: blue }
 }
 
 # ── Data Layer ──
@@ -66,6 +74,7 @@ data: Data Layer {
     border-radius: 10
   }
   pipeline: "pipeline.py\nsp500.py\nParquet cache" { class: green }
+  crypto: "crypto.py\n9-coin universe\nSymbol mapping" { class: pink }
   snapshots: "snapshots.py\nEquity snapshots\nAlpaca backfill" { class: green }
   correlation: "correlation.py\n21-day rolling\ncorrelation" { class: green }
 }
@@ -82,7 +91,8 @@ engine: Strategy Engine {
   sm: "Stock Momentum\n+ SPY Filter" { class: purple }
   tlv: "Multi-Asset Trend\n+ Low-Vol\n+ Vol-Scaling" { class: purple }
   rev: "Short-Term Reversal\n+ Momentum Blend" { class: purple }
-  combiner: "portfolio.py\n3-Account Combiner" {
+  crypto: "Crypto Momentum\n+ BTC Filter\n+ Vol-Scaling" { class: pink }
+  combiner: "portfolio.py\n4-Account Combiner" {
     class: purple
     style.stroke: "#b388ff"
     style.stroke-width: 2
@@ -124,6 +134,10 @@ accounts: Live Paper Trading {
     class: yellow
     style.stroke: "#ffc04d"
   }
+  a4: "FIRE 0.4\nCrypto\nDaily auto" {
+    class: pink
+    style.stroke: "#ff6b9d"
+  }
 }
 
 # ── API ──
@@ -137,8 +151,9 @@ api: "FastAPI :8000" {
   }
   portfolio: "/portfolio\nHistory · Correlation" { class: blue }
   orders: "/orders\nRebalance" { class: blue }
-  backtests: "/backtests" { class: blue }
+  backtests: "/backtests\nEquity + Crypto" { class: blue }
   strategies: "/strategies" { class: blue }
+  scheduler: "APScheduler\nDaily 00:05 UTC\nCrypto rebalance" { class: pink }
 }
 
 # ── Dashboard ──
@@ -150,7 +165,7 @@ dashboard: "Dashboard :5173" {
     font-color: "#8888a0"
     border-radius: 10
   }
-  live: "Live Portfolio\nAccount Switcher" { class: green }
+  live: "Live Portfolio\n5-Tab Switcher" { class: green }
   equity: "Equity Charts\nTradingView" { class: green }
   corr: "Correlation\nMonitor" { class: green }
   bt: "Backtests\nStrategy Panel" { class: green }
@@ -160,6 +175,9 @@ dashboard: "Dashboard :5173" {
 
 sources.yfinance -> data.pipeline: prices {
   style.stroke: "#4d8eff"
+}
+sources.yfinance -> data.crypto: crypto prices {
+  style.stroke: "#ff6b9d"
 }
 sources.alpaca -> data.snapshots: history {
   style.stroke: "#4d8eff"
@@ -171,6 +189,9 @@ data.snapshots -> data.correlation {
 data.pipeline -> engine {
   style.stroke: "#00d4aa"
 }
+data.crypto -> engine.crypto {
+  style.stroke: "#ff6b9d"
+}
 
 engine.sm -> engine.combiner {
   style.stroke: "#7c4dff"
@@ -180,6 +201,9 @@ engine.tlv -> engine.combiner {
 }
 engine.rev -> engine.combiner {
   style.stroke: "#7c4dff"
+}
+engine.crypto -> engine.combiner {
+  style.stroke: "#ff6b9d"
 }
 
 engine.combiner -> exec.rebalance: weights {
@@ -200,6 +224,9 @@ exec.broker -> accounts.a2 {
 }
 exec.broker -> accounts.a3 {
   style.stroke: "#ffc04d"
+}
+exec.broker -> accounts.a4 {
+  style.stroke: "#ff6b9d"
 }
 
 sources.alpaca -> exec.broker: positions {
@@ -230,6 +257,12 @@ engine -> api.backtests {
 }
 engine -> api.strategies {
   style.stroke: "#7c4dff"
+  style.stroke-dash: 3
+}
+
+# Scheduler
+api.scheduler -> exec.rebalance: daily trigger {
+  style.stroke: "#ff6b9d"
   style.stroke-dash: 3
 }
 
