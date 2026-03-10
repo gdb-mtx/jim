@@ -53,7 +53,10 @@ strategies/portfolio.py   — Portfolio combiner + SPY 200-day MA trend filter
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
+execution/alpaca_broker.py — Alpaca REST client (account, positions, orders)
+execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
 api/main.py              — FastAPI backend
+api/routes/orders.py     — Rebalance preview/execute, order history
 dashboard/               — React + Vite + TradingView Charts
 ```
 
@@ -69,8 +72,10 @@ dashboard/               — React + Vite + TradingView Charts
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 
 ### Current Phase & Next Steps
-- Completed: Phase 1 (core engine), Phase 2 (strategies), Phase 2.5 (dashboard), Phase 3 (strategy expansion), Phase 3.5 (performance optimization)
+- Completed: Phase 1 (core engine), Phase 2 (strategies), Phase 2.5 (dashboard), Phase 3 (strategy expansion), Phase 3.5 (performance optimization), Phase 4 (Alpaca execution layer)
 - **SM + SPY Filter: 17.6% return, 1.38 Sharpe, -12.2% MaxDD — beats SPY on every metric with 1/3 the drawdown**
 - Dashboard shows 8 strategies with SPY buy-and-hold overlay (red) on all equity curves
+- **Alpaca paper trading connected** — $100k paper account, rebalance preview/execute endpoints live
+- Rebalance flow: `POST /api/orders/rebalance/preview` → review orders → `POST /api/orders/rebalance/execute`
 - Known risk: momentum crash vulnerability during sharp regime changes (COVID). VIX + SPY trend filter together provide strong but imperfect protection.
-- Next: Alpaca paper trading integration
+- Next: Execute first paper trade, add live portfolio dashboard view, set up monthly rebalance scheduler

@@ -422,25 +422,26 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [ ] **Quality screen** — Filter by profitability (ROE > 10%). Future improvement.
 - [ ] **Short-term mean reversion** — Negatively correlated with momentum; future blend candidate.
 
-### Phase 4: Alpaca Paper Trading 🔜
-*Prerequisite: George creates Alpaca account and provides API keys.*
+### Phase 4: Alpaca Paper Trading ✅ COMPLETE (execution layer)
+*$100k paper trading account connected and verified.*
 
-**George's steps:**
-1. Create account at alpaca.markets
-2. Get paper trading API keys (Dashboard > Paper Trading > API Keys)
-3. Save to `.env` as `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`
-4. Choose starting strategy (recommend Stock Momentum)
-5. Decide on rebalance schedule (monthly aligns with 21-day holding period)
+**Completed:**
+- [x] Alpaca account created, API keys configured in `.env`
+- [x] `execution/alpaca_broker.py` — Alpaca client wrapper (account, positions, orders, prices, market status)
+- [x] `execution/rebalance.py` — Full signal-to-order pipeline: runs strategy on recent prices → gets target weights → diffs vs current positions → generates buy/sell orders with risk checks
+- [x] Pre-trade risk checks — circuit breakers, position limits (max 20% per position), portfolio halt at -15% drawdown
+- [x] `api/routes/portfolio.py` — live account summary, positions, portfolio value from Alpaca
+- [x] `api/routes/orders.py` — order history, rebalance preview (dry run), rebalance execute, cancel-all
+- [x] Sells execute before buys to free up cash
+- [x] Connection verified: paper account ACTIVE, $100k equity, $200k buying power
+- [x] First rebalance preview successful: SM + SPY Filter → 15 stock positions (GOOG, AMD, NEM, WBD, etc.)
 
-**Build steps:**
-- [ ] Install `alpaca-py` SDK, set up auth from `.env`
-- [ ] Build `execution/alpaca_broker.py` — connect to Alpaca, submit orders, query positions/account
-- [ ] Build `execution/rebalance.py` — take strategy signals, convert to buy/sell orders with proper sizing
-- [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
-- [ ] Pre-trade risk checks — verify orders pass Kelly sizing, 2% rule, circuit breakers before submitting
-- [ ] Add `api/routes/portfolio.py` — live P&L, positions, order history endpoints
+**Remaining:**
+- [ ] Execute first paper trade rebalance
 - [ ] Update dashboard with live portfolio view (positions, P&L, order log)
 - [ ] Set up cron/scheduler for monthly rebalance execution
+- [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
+- [ ] Track paper trading performance over 3+ months before any live money
 
 ### Phase 5: AI-Assisted Research (Future)
 - [ ] Claude API for strategy ideation, code generation, analysis acceleration
@@ -497,10 +498,12 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 ## 10. Next Steps — What We Build Next
 
-Phases 1-3.5 are complete. We have 8 strategies (5 individual + 3 portfolio combinations), a working dashboard, and a validation framework. The immediate priorities are:
+Phases 1-4 core are complete. We have 8 strategies, a working dashboard, a validation framework, and a live Alpaca paper trading connection with rebalance capability. The immediate priorities are:
 
-1. **Alpaca paper trading** — George sets up account, we build the execution layer and start paper trading the Stock Momentum + SPY Filter strategy with real market data.
-2. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-3. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+1. **Execute first paper trade** — Submit the SM + SPY Filter rebalance to Alpaca (15 stocks, ~40% exposure).
+2. **Dashboard live portfolio view** — Show real Alpaca positions, P&L, and order history in the dashboard.
+3. **Monthly rebalance scheduler** — Automate the 21-day rebalance cycle.
+4. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+5. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
 
-Our best strategy (Stock Momentum + SPY Filter) delivers **17.6% return, 1.38 Sharpe, -12.2% max drawdown** — beating SPY on every metric while taking a third of the drawdown risk. The next step is proving it works in real-time with paper trading.
+Our best strategy (Stock Momentum + SPY Filter) delivers **17.6% return, 1.38 Sharpe, -12.2% max drawdown** — beating SPY on every metric while taking a third of the drawdown risk. Paper trading is the next validation gate before any live money.
