@@ -505,9 +505,15 @@ First trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for
 
 *Note: Currently tracked manually. Automated scheduler is next priority.*
 
-**Remaining (Phase 5):**
+**Remaining:**
+- [ ] **Performance tracking** — Store daily equity snapshots (parquet/SQLite), chart live P&L curves over time per account + combined. Critical for the 3-month review.
+- [ ] **Live correlation monitoring** — Track rolling correlation between account returns in real-time. The 0.56-0.66 backtest correlation is the foundation of our diversification thesis — if accounts start moving together in live trading, the entire 3-account architecture needs reassessment. Dashboard warning if correlation exceeds 0.80.
+- [ ] **Circuit breaker alerts** — Active monitoring of -15% portfolio / -10% strategy drawdown thresholds. Warning banner in dashboard when approaching limits (e.g., -8% strategy, -12% portfolio).
+- [ ] **Rebalance UI in dashboard** — "Rebalance" button in Live Portfolio tab showing diff (stocks to buy/sell, dollar amounts) before confirming. Replaces current API-only workflow.
 - [ ] Set up cron/scheduler for automated rebalance execution
 - [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
+- [ ] **Transaction cost analysis** — Compare actual Alpaca fill prices vs backtest closing prices to measure real slippage
+- [ ] **Strategy drift detection** — Show how far current holdings have drifted from target weights between rebalances
 - [ ] Track paper trading performance over 3+ months before any live money
 
 ### Phase 6: AI-Assisted Research (Future)
@@ -569,11 +575,25 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 Phases 1-5 are complete. All 3 accounts are live on Alpaca paper trading with 101 total positions across 3 factor-diversified strategies. The immediate priorities are:
 
-1. **Automated rebalance scheduler** — Cron job for Account 3 weekly + Accounts 1 & 2 monthly. Currently manual.
-2. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
-3. **Track paper trading performance** — 3+ months of live paper results before any real money (review target: ~2026-06-10).
-4. **Walk-forward validation** — Run formal walk-forward on the 3 new strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal).
-5. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-6. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+### Priority 1: Monitoring & Validation (build now)
+1. **Performance tracking** — Daily equity snapshots to parquet, charted in dashboard. Without this, the June review has no data trail.
+2. **Live correlation monitoring** — Rolling 21-day correlation between account daily returns. **This is the most critical validation metric.** Backtest says 0.56-0.66 correlation; if live trading shows 0.80+, the diversification thesis collapses and we need to reassess the 3-account architecture. Dashboard widget with alert threshold.
+3. **Circuit breaker alerts** — Warning banner when any account approaches -10% strategy or -15% portfolio drawdown thresholds. Early warning > post-mortem.
 
-Our Combined 3-Account Portfolio delivers **16.8% return, 1.59 Sharpe, -10.2% max drawdown** — beating SPY on every metric with less than a third of the drawdown risk. The 3-account factor diversification (momentum + trend/low-vol + reversal) provides the best risk-adjusted returns of any configuration we've tested.
+### Priority 2: Operational (build before first rebalance)
+4. **Rebalance UI in dashboard** — Preview diff + confirm button, replacing API-only curl workflow. Needed before Account 3's first weekly rebalance.
+5. **Automated rebalance scheduler** — Cron job for Account 3 weekly + Accounts 1 & 2 monthly.
+6. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
+
+### Priority 3: Analysis (build during paper trading period)
+7. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage.
+8. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
+9. **Walk-forward validation** — Formal walk-forward on the 3 new strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal).
+
+### Priority 4: Future improvements
+10. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+11. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+12. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
+13. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
+
+Our Combined 3-Account Portfolio delivers **16.8% return, 1.59 Sharpe, -10.2% max drawdown** — beating SPY on every metric with less than a third of the drawdown risk. The 3-account factor diversification (momentum + trend/low-vol + reversal) provides the best risk-adjusted returns of any configuration we've tested — but **this must be validated in live trading via correlation monitoring before we trust it with real money.**
