@@ -264,7 +264,10 @@ FIRE/
 │   ├── trend_following.py       # ✅ Time-Series & Multi-Timeframe Momentum
 │   ├── momentum.py              # ✅ Cross-Sectional & Dual Momentum (ETF-based)
 │   ├── stock_momentum.py        # ✅ Individual stock momentum + VIX regime filter
-│   └── portfolio.py             # ✅ Portfolio combiner + SPY 200-day MA trend filter
+│   ├── multi_asset_trend.py     # ✅ Multi-Asset Trend following (crisis alpha)
+│   ├── low_volatility.py        # ✅ Low Volatility factor (defensive)
+│   ├── mean_reversion.py        # ✅ Short-Term Reversal (anti-momentum)
+│   └── portfolio.py             # ✅ Portfolio combiner + SPY filter + vol-scaling + 3-account blend
 │
 ├── backtesting/
 │   ├── __init__.py
@@ -273,8 +276,8 @@ FIRE/
 │
 ├── execution/
 │   ├── __init__.py
-│   ├── alpaca_broker.py         # 🔜 Alpaca API wrapper (auth, orders, positions)
-│   ├── rebalance.py             # 🔜 Monthly rebalance script (signal → orders)
+│   ├── alpaca_broker.py         # ✅ Multi-account Alpaca client (account 1/2/3)
+│   ├── rebalance.py             # ✅ Signal-to-order pipeline (target weights → trades)
 │   └── risk_manager.py          # ✅ Fractional Kelly + 2% rule + circuit breakers
 │
 ├── api/                         # ✅ FastAPI backend
@@ -283,17 +286,19 @@ FIRE/
 │   └── routes/
 │       ├── strategies.py        # ✅ List strategies with live backtest metrics
 │       ├── backtests.py         # ✅ Run backtests, equity curves + SPY benchmark
-│       └── portfolio.py         # 🔜 Live portfolio endpoints (Alpaca positions/P&L)
+│       ├── portfolio.py         # ✅ Multi-account portfolio (summary, positions, combined)
+│       └── orders.py            # ✅ Rebalance preview/execute, order history
 │
 ├── dashboard/                   # ✅ React + Vite + TypeScript frontend
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
 │       ├── App.tsx              # ✅ Main app with strategy selection, metrics, charts
-│       ├── api.ts               # ✅ API client (fetchStrategies, fetchBacktest)
-│       ├── types.ts             # ✅ TypeScript interfaces
+│       ├── api.ts               # ✅ API client (multi-account portfolio, backtests)
+│       ├── types.ts             # ✅ TypeScript interfaces (accounts, positions, orders)
 │       └── components/
 │           ├── PortfolioChart.tsx    # ✅ Equity curve + SPY overlay (TradingView)
+│           ├── LivePortfolio.tsx     # ✅ Multi-account live portfolio (switcher, P&L, orders)
 │           ├── StrategyPanel.tsx     # ✅ Strategy list with metrics
 │           └── MetricCard.tsx       # ✅ Metric display cards
 │
@@ -327,7 +332,6 @@ FIRE/
 
 | Package | Purpose |
 |---------|---------|
-| `alpaca-py` | Alpaca broker API (paper + live trading) |
 | `vectorbt` | Portfolio-level backtesting & optimization |
 
 ---
@@ -385,16 +389,32 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] VIX regime filter: reduce at VIX > 35, exit at VIX > 45 (avoids momentum crashes per Daniel & Moskowitz 2016)
 - [x] Parameter sweep across lookback, holding period, top_n, vol_target, VIX thresholds
 - [x] Portfolio combination + SPY trend filter (see Phase 3.5)
-- [ ] Mean reversion strategy (planned)
+- [x] Multi-Asset Trend following — crisis alpha, built-in trend filter (`strategies/multi_asset_trend.py`)
+- [x] Low Volatility factor — defensive stocks, low-beta selection (`strategies/low_volatility.py`)
+- [x] Short-Term Reversal — anti-momentum, buys short-term losers (`strategies/mean_reversion.py`)
+- [x] Volatility-scaling overlay (Moreira & Muir 2017) — scales exposure by inverse realized vol (`strategies/portfolio.py`)
 
 ### Current Strategy Results (warmup-trimmed, 2012-2026)
 
+#### Portfolio Strategies (what we actually trade)
+
+| Strategy | Sharpe | Return | MaxDD | Account | Status |
+|---|---|---|---|---|---|
+| **Combined 3-Account** | **1.59** | **16.8%** | **-10.2%** | All | **Best risk-adjusted** |
+| Stock Momentum + SPY Filter | 1.38 | 17.6% | -12.2% | 1 | LIVE — 15 stocks |
+| Trend + Low-Vol (vol-scaled) | 1.36 | 12.1% | -8.5% | 2 | LIVE — 34 stocks |
+| Reversal + Momentum Blend | 1.54 | 15.2% | -11.8% | 3 | LIVE — 52 stocks |
+| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | — | Lowest drawdown |
+| Blended Portfolio | 1.13 | 12.6% | -15.8% | — | 60% SM + 20% CS + 20% DM |
+
+#### Individual Strategies (building blocks)
+
 | Strategy | Sharpe | Return | MaxDD | Status |
 |---|---|---|---|---|
-| **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Best performer** |
-| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | Lowest drawdown |
-| Blended Portfolio | 1.13 | 12.6% | -15.8% | Diversified |
 | Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | Best single strategy |
+| Multi-Asset Trend | 0.95 | 8.4% | -12.1% | Crisis alpha |
+| Low Volatility | 1.12 | 10.8% | -9.2% | Defensive |
+| Short-Term Reversal | 1.41 | 14.8% | -13.5% | Anti-momentum |
 | Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | Validated |
 | Time-Series Momentum | 0.85 | 6.2% | -15.2% | Validated |
 | Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | Validated |
@@ -402,9 +422,10 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 | *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
 
 **Key findings:**
+- **3-account diversification** is the best overall approach: 1.59 Sharpe with cross-account correlations of only 0.56-0.66, vs 0.93-0.96 for ETF-only blends.
 - **SPY 200-day MA trend filter** is the single most impactful improvement: adds ~0.25 Sharpe and cuts drawdown nearly in half. Based on Faber (2007).
-- **Portfolio combination** (60% Stock Momentum + 20% Cross-Sectional + 20% Dual Momentum) reduces drawdown from -18.6% to -9.3% when combined with SPY filter.
-- **ETF strategies are highly correlated** (0.93-0.96 with each other) — blending them adds little diversification. Stock Momentum is the key diversifier at 0.71 correlation.
+- **Volatility-scaling overlay** (Moreira & Muir 2017) on Account 2 adds ~0.05 Sharpe by scaling exposure inversely to realized vol.
+- **Short-Term Reversal** is negatively correlated with momentum (the key insight for Account 3). Blending opposites smooths the equity curve.
 - **Individual stocks provide far more dispersion than ETFs** — momentum alpha requires dispersion.
 
 **Known risk:** Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter + SPY trend filter together provide strong protection but don't eliminate it.
@@ -420,12 +441,11 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [ ] **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches. Future improvement.
 - [ ] **Sector momentum pre-filter** — Check sector ETF trend before picking stocks. Future improvement.
 - [ ] **Quality screen** — Filter by profitability (ROE > 10%). Future improvement.
-- [ ] **Short-term mean reversion** — Negatively correlated with momentum; future blend candidate.
+- [x] **Short-term mean reversion** — Implemented as Short-Term Reversal. Blended with momentum in Account 3.
 
 ### Phase 4: Alpaca Paper Trading ✅ COMPLETE (execution layer)
 *$100k paper trading account connected and verified.*
 
-**Completed:**
 - [x] Alpaca account created, API keys configured in `.env`
 - [x] `execution/alpaca_broker.py` — Alpaca client wrapper (account, positions, orders, prices, market status)
 - [x] `execution/rebalance.py` — Full signal-to-order pipeline: runs strategy on recent prices → gets target weights → diffs vs current positions → generates buy/sell orders with risk checks
@@ -433,26 +453,67 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] `api/routes/portfolio.py` — live account summary, positions, portfolio value from Alpaca
 - [x] `api/routes/orders.py` — order history, rebalance preview (dry run), rebalance execute, cancel-all
 - [x] Sells execute before buys to free up cash
-- [x] Connection verified: paper account ACTIVE, $100k equity, $200k buying power
-- [x] First rebalance preview successful: SM + SPY Filter → 15 stock positions (GOOG, AMD, NEM, WBD, etc.)
-
-**Also completed:**
-- [x] First paper trade executed (2026-03-10): 15 stocks, all filled instantly, ~$37k invested / $63k cash
-- [x] Dashboard live portfolio view: tab switcher (Live Portfolio / Backtests), account summary cards, positions table with P&L, recent orders table, auto-refresh every 30s, market status indicator
+- [x] First paper trade executed (2026-03-10): Account 1 — 15 stocks, all filled instantly
+- [x] Dashboard live portfolio view: tab switcher, account summary cards, positions table, orders table, auto-refresh 30s
 - [x] `scripts/start.sh` — one-command startup for both backend + frontend servers
 
-**Remaining:**
-- [ ] Set up cron/scheduler for monthly rebalance execution
+### Phase 5: Multi-Account Infrastructure ✅ COMPLETE
+*3 paper trading accounts live with factor-diversified strategies since 2026-03-10.*
+
+**Three-Account Architecture:**
+
+| Account | Strategy | Stocks | Rebalance | Rationale |
+|---|---|---|---|---|
+| **FIRE 0.1** | SM + SPY Filter | 15 | Monthly (21 days) | Momentum profits when trends persist |
+| **FIRE 0.2** | Trend + Low-Vol (vol-scaled) | 34 | Monthly (21 days) | Crisis alpha + defensive; vol-scaling overlay |
+| **FIRE 0.3** | Reversal + Momentum Blend | 52 | Weekly (5 days) | Anti-momentum; short-term reversal signal decays fast |
+
+Cross-account correlations: 0.56-0.66 (good diversification). Combined backtest: **1.59 Sharpe, 16.8% return, -10.2% MaxDD**.
+
+**Completed:**
+- [x] Multi-account `AlpacaBroker(account=1|2|3)` with suffixed env vars (`_2`, `_3`)
+- [x] All API endpoints accept `?account=1|2|3` query param
+- [x] `GET /portfolio/combined` — aggregated view across all 3 accounts
+- [x] `GET /portfolio/accounts` — list all configured accounts
+- [x] Combined 3-Account backtest strategy in dashboard
+- [x] Dashboard account switcher: Combined (all 3) + individual account tabs
+- [x] Positions table shows account badges when in combined view
+- [x] All 3 accounts traded successfully (2026-03-10): 15 + 34 + 52 = 101 total positions
+- [x] `strategies/portfolio.py` — `run_combined_portfolio()` for backtest of 3-account blend
+
+### Rebalance Schedule
+
+First trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for trading calendar):
+
+**Account 3 — Weekly (every 5 trading days):**
+| # | Approximate Date | Notes |
+|---|---|---|
+| 1 | ~2026-03-17 (Tue) | First weekly rebalance |
+| 2 | ~2026-03-24 (Tue) | |
+| 3 | ~2026-03-31 (Mon) | |
+| 4 | ~2026-04-07 (Mon) | Aligns with Account 1 & 2 monthly |
+
+**Accounts 1 & 2 — Monthly (every 21 trading days):**
+| # | Approximate Date | Notes |
+|---|---|---|
+| 1 | ~2026-04-08 (Wed) | First monthly rebalance |
+| 2 | ~2026-05-08 (Fri) | |
+| 3 | ~2026-06-08 (Mon) | 3-month paper trading review point |
+
+*Note: Currently tracked manually. Automated scheduler is next priority.*
+
+**Remaining (Phase 5):**
+- [ ] Set up cron/scheduler for automated rebalance execution
 - [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
 - [ ] Track paper trading performance over 3+ months before any live money
 
-### Phase 5: AI-Assisted Research (Future)
+### Phase 6: AI-Assisted Research (Future)
 - [ ] Claude API for strategy ideation, code generation, analysis acceleration
 - [ ] Analyze less-trafficked data: small-cap SEC filings (EDGAR), niche RSS feeds
 - [ ] ML-based feature engineering (what features predict returns beyond momentum?)
 - [ ] *Note: Institutional NLP pipelines (Bloomberg, RavenPack) are faster on breaking news — our AI edge is in research depth and speed, not latency*
 
-### Phase 6: Go Live (After 3+ months of paper trading)
+### Phase 7: Go Live (After 3+ months of paper trading)
 - [ ] Only after statistical validation AND consistent paper trading profitability
 - [ ] Start with $2,000 of the $10k (preserve capital)
 - [ ] Scale up allocation as confidence grows
@@ -491,6 +552,8 @@ These references were identified during an independent critical review of this p
 - **Asness, Moskowitz, Pedersen (2013)** — "Value and Momentum Everywhere" — informed our multi-asset momentum approach
 - **Daniel & Moskowitz (2016)** — momentum crashes and VIX regime filtering — ✅ implemented as VIX filter in `strategies/stock_momentum.py`
 - **Faber (2007)** — "A Quantitative Approach to Tactical Asset Allocation" — ✅ implemented as SPY 200-day MA trend filter in `strategies/portfolio.py`
+- **Moreira & Muir (2017)** — "Volatility-Managed Portfolios" — scaling exposure by inverse realized vol adds +0.1-0.3 Sharpe — ✅ implemented as vol-scaling overlay in `strategies/portfolio.py`
+- **Barroso & Santa-Clara (2015)** — vol-scaling on momentum eliminates crash risk — informed our Account 2 vol-scaling design
 - **McLean & Pontiff (2016)** — published trading strategy returns decline ~58% post-publication. This is a sobering reminder: any strategy you read about online has likely already been arbitraged.
 
 ### A Note on Survivorship Bias
@@ -501,12 +564,13 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 ## 10. Next Steps — What We Build Next
 
-Phases 1-4 core are complete. We have 8 strategies, a working dashboard, a validation framework, and a live Alpaca paper trading connection with rebalance capability. The immediate priorities are:
+Phases 1-5 are complete. All 3 accounts are live on Alpaca paper trading with 101 total positions across 3 factor-diversified strategies. The immediate priorities are:
 
-1. **Execute first paper trade** — Submit the SM + SPY Filter rebalance to Alpaca (15 stocks, ~40% exposure).
-2. **Dashboard live portfolio view** — Show real Alpaca positions, P&L, and order history in the dashboard.
-3. **Monthly rebalance scheduler** — Automate the 21-day rebalance cycle.
-4. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-5. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+1. **Automated rebalance scheduler** — Cron job for Account 3 weekly + Accounts 1 & 2 monthly. Currently manual.
+2. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
+3. **Track paper trading performance** — 3+ months of live paper results before any real money (review target: ~2026-06-10).
+4. **Walk-forward validation** — Run formal walk-forward on the 3 new strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal).
+5. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+6. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
 
-Our best strategy (Stock Momentum + SPY Filter) delivers **17.6% return, 1.38 Sharpe, -12.2% max drawdown** — beating SPY on every metric while taking a third of the drawdown risk. Paper trading is the next validation gate before any live money.
+Our Combined 3-Account Portfolio delivers **16.8% return, 1.59 Sharpe, -10.2% max drawdown** — beating SPY on every metric with less than a third of the drawdown risk. The 3-account factor diversification (momentum + trend/low-vol + reversal) provides the best risk-adjusted returns of any configuration we've tested.
