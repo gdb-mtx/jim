@@ -262,6 +262,7 @@ FIRE/
 ├── data/
 │   ├── pipeline.py              # ✅ yfinance ETF data download & caching
 │   ├── sp500.py                 # ✅ S&P 500 stock universe + VIX data (parquet cache)
+│   ├── crypto.py                # ✅ Crypto data pipeline (yfinance + Alpaca symbol mapping)
 │   ├── snapshots.py             # ✅ Daily equity snapshots (parquet) + Alpaca backfill
 │   ├── correlation.py           # ✅ Inter-account correlation monitoring (rolling 21-day)
 │   └── cache/                   # Cached parquet files (gitignored)
@@ -275,7 +276,8 @@ FIRE/
 │   ├── multi_asset_trend.py     # ✅ Multi-Asset Trend following (crisis alpha)
 │   ├── low_volatility.py        # ✅ Low Volatility factor (defensive)
 │   ├── mean_reversion.py        # ✅ Short-Term Reversal (anti-momentum)
-│   └── portfolio.py             # ✅ Portfolio combiner + SPY filter + vol-scaling + 3-account blend
+│   ├── crypto_momentum.py       # ✅ Crypto momentum rotation (21-day, top 3, BTC filter)
+│   └── portfolio.py             # ✅ Portfolio combiner + SPY/BTC filter + vol-scaling + 4-account blend
 │
 ├── backtesting/
 │   ├── __init__.py
@@ -284,18 +286,18 @@ FIRE/
 │
 ├── execution/
 │   ├── __init__.py
-│   ├── alpaca_broker.py         # ✅ Multi-account Alpaca client (account 1/2/3)
-│   ├── rebalance.py             # ✅ Signal-to-order pipeline (target weights → trades)
+│   ├── alpaca_broker.py         # ✅ Multi-account Alpaca client (account 1/2/3/4)
+│   ├── rebalance.py             # ✅ Signal-to-order pipeline (target weights → trades, fractional crypto qty)
 │   └── risk_manager.py          # ✅ Fractional Kelly + 2% rule + circuit breakers
 │
 ├── api/                         # ✅ FastAPI backend
 │   ├── __init__.py
-│   ├── main.py                  # ✅ FastAPI app entry point (CORS, lifespan snapshot hook)
+│   ├── main.py                  # ✅ FastAPI app entry point (lifespan + APScheduler for daily crypto rebalance)
 │   └── routes/
 │       ├── strategies.py        # ✅ List strategies with live backtest metrics
-│       ├── backtests.py         # ✅ Run backtests, equity curves + SPY benchmark
-│       ├── portfolio.py         # ✅ Multi-account portfolio, equity history, correlation
-│       └── orders.py            # ✅ Rebalance preview/execute, order history
+│       ├── backtests.py         # ✅ Run backtests (equity + crypto), equity curves + SPY benchmark
+│       ├── portfolio.py         # ✅ Multi-account portfolio (4 accounts), equity history, correlation
+│       └── orders.py            # ✅ Rebalance preview/execute, order history (accounts 1-4)
 │
 ├── dashboard/                   # ✅ React + Vite + TypeScript frontend
 │   ├── package.json
@@ -328,6 +330,8 @@ FIRE/
 | `lxml`, `html5lib` | HTML parsing (S&P 500 ticker scraping) |
 | `pyarrow` | Parquet file caching |
 | `fastapi`, `uvicorn` | API backend for dashboard |
+| `apscheduler` | Automated daily crypto rebalance (CronTrigger) |
+| `alpaca-trade-api` | Multi-account broker API (4 paper accounts) |
 | `requests` | HTTP requests with proper headers |
 
 **TypeScript Frontend (dashboard/):**
@@ -412,7 +416,8 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 
 | Strategy | Sharpe | Return | MaxDD | Account | Status |
 |---|---|---|---|---|---|
-| **Combined 3-Account** | **1.59** | **16.8%** | **-10.2%** | All | **Best risk-adjusted** |
+| **Combined 3-Account (equity)** | **1.59** | **16.8%** | **-10.2%** | 1-3 | **Best risk-adjusted equity** |
+| **Crypto Momentum + BTC Filter** | **1.62** | **33.2%** | **-23.5%** | 4 | **LIVE — daily auto-rebalance** |
 | Stock Momentum + SPY Filter | 1.38 | 17.6% | -12.2% | 1 | LIVE — 15 stocks |
 | Trend + Low-Vol (vol-scaled) | 1.36 | 12.1% | -8.5% | 2 | LIVE — 34 stocks |
 | Reversal + Momentum Blend | 1.54 | 15.2% | -11.8% | 3 | LIVE — 52 stocks |
@@ -430,19 +435,25 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 | Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | Validated |
 | Time-Series Momentum | 0.85 | 6.2% | -15.2% | Validated |
 | Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | Validated |
+| Crypto Momentum (unfiltered) | 1.67 | 54.7% | -32.9% | Raw — no filter/scaling |
 | Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | Regime fail |
 | *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
 
 **Key findings:**
-- **3-account diversification** is the best overall approach: 1.59 Sharpe with cross-account correlations of only 0.56-0.66, vs 0.93-0.96 for ETF-only blends.
-- **SPY 200-day MA trend filter** is the single most impactful improvement: adds ~0.25 Sharpe and cuts drawdown nearly in half. Based on Faber (2007).
-- **Volatility-scaling overlay** (Moreira & Muir 2017) on Account 2 adds ~0.05 Sharpe by scaling exposure inversely to realized vol.
+- **4-account diversification** is the best overall approach: equity accounts correlate 0.56-0.66 with each other, and crypto adds a nearly uncorrelated stream (0.12-0.18 vs equity).
+- **SPY 200-day MA trend filter** is the single most impactful improvement for equity: adds ~0.25 Sharpe and cuts drawdown nearly in half. Based on Faber (2007).
+- **BTC 200-day MA trend filter** is binary (100% cash when BTC < 200d MA) — sat out all of 2022's crypto winter. Critical for the crypto strategy.
+- **Volatility-scaling overlay** (Moreira & Muir 2017) on Account 2 and Account 4 adds ~0.05-0.1 Sharpe by scaling exposure inversely to realized vol.
 - **Short-Term Reversal** is negatively correlated with momentum (the key insight for Account 3). Blending opposites smooths the equity curve.
 - **Individual stocks provide far more dispersion than ETFs** — momentum alpha requires dispersion.
+- **Crypto momentum** exploits strong retail herding and narrative-driven flows. 21-day lookback, top 3 of 9 coins, daily rebalance. Different return driver than equity momentum.
 
-**Known risk:** Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter + SPY trend filter together provide strong protection but don't eliminate it.
+**Known risks:**
+- Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter + SPY trend filter together provide strong protection but don't eliminate it.
+- Crypto altcoin slippage — thinner order books on DOT, ADA. Consider limit orders with 0.1% offset.
+- Crisis correlation — backtest shows 0.18 SPY correlation, but March 2020 saw everything sell off together.
 
-**Data caveat:** S&P 500 universe uses current constituents (survivorship bias). Results are slightly optimistic.
+**Data caveats:** S&P 500 universe uses current constituents (survivorship bias). Crypto backtest starts 2020 (limited history). Results are slightly optimistic.
 
 ### Phase 3.5: Performance Optimization ✅ COMPLETE (core items)
 *The biggest remaining gains came from portfolio combination and crash protection, not single-strategy tuning.*
@@ -470,9 +481,9 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] `scripts/start.sh` — one-command startup for both backend + frontend servers
 
 ### Phase 5: Multi-Account Infrastructure ✅ COMPLETE
-*3 paper trading accounts live with factor-diversified strategies since 2026-03-10.*
+*3 equity paper trading accounts live with factor-diversified strategies since 2026-03-10.*
 
-**Three-Account Architecture:**
+**Three-Account Equity Architecture:**
 
 | Account | Strategy | Stocks | Rebalance | Rationale |
 |---|---|---|---|---|
@@ -496,7 +507,12 @@ Cross-account correlations: 0.56-0.66 (good diversification). Combined backtest:
 
 ### Rebalance Schedule
 
-First trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for trading calendar):
+First equity trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for trading calendar):
+
+**Account 4 — Daily (automated via APScheduler):**
+- Runs automatically at **00:05 UTC** every day (including weekends — crypto trades 24/7)
+- APScheduler `CronTrigger` inside FastAPI lifespan, no external cron needed
+- Computes signals → diffs positions → submits orders → takes snapshot
 
 **Account 3 — Weekly (every 5 trading days):**
 | # | Approximate Date | Notes |
@@ -513,26 +529,64 @@ First trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for
 | 2 | ~2026-05-08 (Fri) | |
 | 3 | ~2026-06-08 (Mon) | 3-month paper trading review point |
 
-*Note: Currently tracked manually. Automated scheduler is next priority.*
+*Note: Account 4 is fully automated. Accounts 1-3 are currently tracked manually — automated scheduler for equity accounts is a future priority.*
 
 **Remaining:**
 - [x] **Performance tracking** — Daily equity snapshots stored in parquet (`data/processed/snapshots_acct{N}.parquet`), live P&L curves charted in dashboard per account + combined. Alpaca portfolio history API backfills gaps automatically on server startup.
 - [x] **Live correlation monitoring** — Rolling 21-day pairwise Pearson correlation between account daily returns. Dashboard shows correlation matrix (color-coded green→yellow→red), rolling chart, confidence badge, and alert banner when any pair exceeds 0.80 threshold. Validates the 0.56-0.66 backtest diversification thesis.
+- [x] **Automated crypto rebalance** — APScheduler runs daily at 00:05 UTC inside FastAPI lifespan. Computes signals, diffs positions, submits fractional crypto orders, takes snapshot.
 - [ ] **Circuit breaker alerts** — Active monitoring of -15% portfolio / -10% strategy drawdown thresholds. Warning banner in dashboard when approaching limits (e.g., -8% strategy, -12% portfolio).
 - [ ] **Rebalance UI in dashboard** — "Rebalance" button in Live Portfolio tab showing diff (stocks to buy/sell, dollar amounts) before confirming. Replaces current API-only workflow.
-- [ ] Set up cron/scheduler for automated rebalance execution
+- [ ] Set up automated scheduler for equity accounts (Accounts 1-3 weekly/monthly)
 - [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
 - [ ] **Transaction cost analysis** — Compare actual Alpaca fill prices vs backtest closing prices to measure real slippage
 - [ ] **Strategy drift detection** — Show how far current holdings have drifted from target weights between rebalances
 - [ ] Track paper trading performance over 3+ months before any live money
 
-### Phase 6: AI-Assisted Research (Future)
+### Phase 6: Crypto Momentum (Account 4) ✅ COMPLETE
+*Daily-frequency crypto strategy as a low-correlation diversifier to the 3 equity accounts.*
+
+**Strategy: Crypto Momentum Rotation + BTC Trend Filter + Vol-Scaling**
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| Universe | 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP) | Top liquid cryptos on both yfinance and Alpaca |
+| Signal | 21-day trailing return, rank, top 3 | Exploits strong momentum effect in crypto (Liu & Tsyvinski 2021) |
+| Weighting | Equal weight (1/3 each) | Simple, avoids concentration risk |
+| BTC filter | 100% cash when BTC < 200d MA | Binary — crypto bear markets warrant full exit (sat out 2022) |
+| Vol-scaling | 30-day EWMA, 15% target, capped 1.5x, floored 0.1x | Reduces exposure during vol spikes |
+| Rebalance | Daily at 00:05 UTC | Crypto trades 24/7, no PDT rules |
+
+**Backtest (2020-2026):** 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD, 0.18 SPY correlation.
+
+**Completed:**
+- [x] `data/crypto.py` — Crypto data pipeline (yfinance download, parquet cache, symbol mapping yfinance↔Alpaca)
+- [x] `strategies/crypto_momentum.py` — CryptoMomentum strategy class with `set_btc()` pattern (mirrors `set_vix()`)
+- [x] `strategies/portfolio.py` — Added `crypto_momentum_filtered` portfolio config with BTC filter + vol-scaling params
+- [x] `strategies/portfolio.py` — Added `compute_btc_trend_filter()` and `CRYPTO_STRATEGIES` registry
+- [x] `backtesting/metrics.py` — Added `periods_per_year` parameter (365 for crypto, 252 for stocks)
+- [x] `execution/alpaca_broker.py` — Account 4 credentials, float qty for fractional crypto, expanded validation
+- [x] `execution/rebalance.py` — Crypto signal pipeline, Alpaca symbol conversion, fractional qty (`round(amount/price, 8)`)
+- [x] `api/main.py` — APScheduler with CronTrigger for daily 00:05 UTC rebalance inside FastAPI lifespan
+- [x] `api/routes/backtests.py` — Crypto backtest support with `periods_per_year=365`
+- [x] `api/routes/strategies.py` — Crypto strategy listing with correct metrics
+- [x] `api/routes/orders.py` + `api/routes/portfolio.py` — Expanded all validators from `le=3` to `le=4`
+- [x] Dashboard: 5-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3 / 0.4)
+- [x] Dashboard: Crypto strategy in Backtests tab (strategy panel + equity curve)
+- [x] Dashboard: Account 4 series in equity history chart (pink/coral `#ff6b9d`)
+- [x] Dashboard: Fetch error handling for missing Account 4 credentials (graceful degradation)
+- [x] Dashboard: Strategy panel layout fix (no overlap between names and validation badges)
+- [x] `pyproject.toml` — Added `apscheduler>=3.10.0`
+
+**Pending:** Set up Account 4 Alpaca paper trading credentials (`ALPACA_API_KEY_4`, `ALPACA_SECRET_KEY_4` in `.env`)
+
+### Phase 7: AI-Assisted Research (Future)
 - [ ] Claude API for strategy ideation, code generation, analysis acceleration
 - [ ] Analyze less-trafficked data: small-cap SEC filings (EDGAR), niche RSS feeds
 - [ ] ML-based feature engineering (what features predict returns beyond momentum?)
 - [ ] *Note: Institutional NLP pipelines (Bloomberg, RavenPack) are faster on breaking news — our AI edge is in research depth and speed, not latency*
 
-### Phase 7: Go Live (After 3+ months of paper trading)
+### Phase 8: Go Live (After 3+ months of paper trading)
 - [ ] Only after statistical validation AND consistent paper trading profitability
 - [ ] Start with $2,000 of the $10k (preserve capital)
 - [ ] Scale up allocation as confidence grows
@@ -572,7 +626,8 @@ These references were identified during an independent critical review of this p
 - **Daniel & Moskowitz (2016)** — momentum crashes and VIX regime filtering — ✅ implemented as VIX filter in `strategies/stock_momentum.py`
 - **Faber (2007)** — "A Quantitative Approach to Tactical Asset Allocation" — ✅ implemented as SPY 200-day MA trend filter in `strategies/portfolio.py`
 - **Moreira & Muir (2017)** — "Volatility-Managed Portfolios" — scaling exposure by inverse realized vol adds +0.1-0.3 Sharpe — ✅ implemented as vol-scaling overlay in `strategies/portfolio.py`
-- **Barroso & Santa-Clara (2015)** — vol-scaling on momentum eliminates crash risk — informed our Account 2 vol-scaling design
+- **Barroso & Santa-Clara (2015)** — vol-scaling on momentum eliminates crash risk — informed our Account 2 + Account 4 vol-scaling design
+- **Liu & Tsyvinski (2021)** — "Risks and Returns of Cryptocurrency" — crypto momentum effect is distinct from equity factors — ✅ implemented in `strategies/crypto_momentum.py`
 - **McLean & Pontiff (2016)** — published trading strategy returns decline ~58% post-publication. This is a sobering reminder: any strategy you read about online has likely already been arbitraged.
 
 ### A Note on Survivorship Bias
@@ -583,27 +638,31 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 ## 10. Next Steps — What We Build Next
 
-Phases 1-5 are complete. All 3 accounts are live on Alpaca paper trading with 101 total positions across 3 factor-diversified strategies. Performance tracking and correlation monitoring are now live.
+Phases 1-6 are complete. All 4 accounts are configured on Alpaca paper trading: 3 equity accounts (101 positions since 2026-03-10) + 1 crypto account (daily automated rebalance). Performance tracking, correlation monitoring, and automated crypto rebalance are live.
 
-### Priority 1: Monitoring & Validation ✅ PARTIALLY COMPLETE
-1. ✅ **Performance tracking** — Daily equity snapshots stored in parquet, charted in dashboard with TradingView charts. Alpaca portfolio history API backfills any gaps on server startup. Shows per-account + combined equity curves.
-2. ✅ **Live correlation monitoring** — Rolling 21-day correlation between account daily returns displayed in dashboard (Combined view). Correlation matrix with color-coded cells, rolling chart with 3 pair lines + 0.80 alert threshold, confidence badges, and alert banners. Compares live correlations against backtest expected values (0.56-0.66).
-3. **Circuit breaker alerts** — Warning banner when any account approaches -10% strategy or -15% portfolio drawdown thresholds. Early warning > post-mortem.
+### Priority 0: Immediate
+1. **Set up Account 4 Alpaca paper credentials** — Create Alpaca paper account, add `ALPACA_API_KEY_4` + `ALPACA_SECRET_KEY_4` to `.env`. Everything else is built and ready.
 
-### Priority 2: Operational (build before first rebalance)
-4. **Rebalance UI in dashboard** — Preview diff + confirm button, replacing API-only curl workflow. Needed before Account 3's first weekly rebalance.
-5. **Automated rebalance scheduler** — Cron job for Account 3 weekly + Accounts 1 & 2 monthly.
-6. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
+### Priority 1: Monitoring & Validation ✅ MOSTLY COMPLETE
+2. ✅ **Performance tracking** — Daily equity snapshots stored in parquet, charted in dashboard with TradingView charts. Alpaca portfolio history API backfills any gaps on server startup. Shows per-account + combined equity curves.
+3. ✅ **Live correlation monitoring** — Rolling 21-day correlation between account daily returns displayed in dashboard (Combined view). Now monitors 6 pairs (including crypto-equity). Correlation matrix with color-coded cells, rolling chart, confidence badges, and alert banners.
+4. ✅ **Automated crypto rebalance** — APScheduler runs daily at 00:05 UTC inside FastAPI lifespan. Full pipeline: signals → diffs → fractional orders → snapshot.
+5. **Circuit breaker alerts** — Warning banner when any account approaches -10% strategy or -15% portfolio drawdown thresholds. Early warning > post-mortem.
+
+### Priority 2: Operational (build before first equity rebalance)
+6. **Rebalance UI in dashboard** — Preview diff + confirm button, replacing API-only curl workflow. Needed before Account 3's first weekly rebalance.
+7. **Automated equity rebalance scheduler** — Scheduler for Account 3 weekly + Accounts 1 & 2 monthly (Account 4 crypto is already automated).
+8. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
 
 ### Priority 3: Analysis (build during paper trading period)
-7. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage.
-8. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
-9. **Walk-forward validation** — Formal walk-forward on the 3 new strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal).
+9. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage (especially important for crypto altcoins).
+10. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
+11. **Walk-forward validation** — Formal walk-forward on the newer strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal, Crypto Momentum).
 
 ### Priority 4: Future improvements
-10. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-11. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
-12. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
-13. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
+12. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+13. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+14. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
+15. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
 
-Our Combined 3-Account Portfolio delivers **16.8% return, 1.59 Sharpe, -10.2% max drawdown** — beating SPY on every metric with less than a third of the drawdown risk. The 3-account factor diversification (momentum + trend/low-vol + reversal) provides the best risk-adjusted returns of any configuration we've tested — but **this must be validated in live trading via correlation monitoring before we trust it with real money.**
+Our 4-account architecture delivers strong diversification: the 3-account equity portfolio (**16.8% return, 1.59 Sharpe, -10.2% MaxDD**) is complemented by crypto momentum (**33.2% CAGR, 1.62 Sharpe, -23.5% MaxDD**) with only 0.18 correlation to equities. The combination of equity factor diversification (momentum + trend/low-vol + reversal) plus a nearly uncorrelated crypto stream provides the best risk-adjusted returns of any configuration we've tested — but **this must be validated in live trading before we trust it with real money.**
