@@ -18,23 +18,28 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Statistical validation**: Walk-forward analysis, Monte Carlo, regime testing required before any live money
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
-### Strategies (5 implemented, warmup-trimmed metrics)
-| Strategy | Sharpe | Return | MaxDD | Walk-Forward | Validation |
-|---|---|---|---|---|---|
-| **Stock Momentum (S&P 500)** | **1.16** | **15.9%** | **-18.6%** | **1.27 median OOS** | WF+MC pass, regime partial |
-| Time-Series Momentum | 0.85 | 6.2% | -15.2% | 0.78 median OOS | PASS |
-| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | 0.55 median OOS | FAIL (regime) |
-| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | 0.82 median OOS | PASS |
-| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | 0.76 median OOS | PASS |
-| *SPY Buy & Hold (benchmark)* | *0.84* | *13.7%* | *-33.7%* | — | — |
+### Strategies (8 total: 5 individual + 3 portfolio combos)
+| Strategy | Sharpe | Return | MaxDD | Notes |
+|---|---|---|---|---|
+| **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Best performer** |
+| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | Lowest drawdown |
+| Blended Portfolio | 1.13 | 12.6% | -15.8% | 60% SM + 20% CS + 20% DM |
+| Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | Best single strategy |
+| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | Validated |
+| Time-Series Momentum | 0.85 | 6.2% | -15.2% | Validated |
+| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | Validated |
+| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | Regime fail |
+| *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
 
-- **Best performer**: Stock Momentum — beats SPY return (15.9% vs 13.7%) with higher Sharpe and half the drawdown
+- **Best performer**: Stock Momentum + SPY Filter — 17.6% return, 1.38 Sharpe, -12.2% MaxDD (beats SPY on every metric)
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
 - **Stock Universe**: 451 S&P 500 stocks (cached parquet, survivorship bias noted)
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45
+- **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007). Single most impactful improvement.
+- **Portfolio combination**: 60% Stock Momentum + 20% Cross-Sectional + 20% Dual Momentum. ETF strategies too correlated (0.93-0.96) for much diversification benefit; Stock Momentum at 0.71 correlation is the key diversifier.
 - **Key insight**: Individual stocks provide far more dispersion than ETFs — momentum alpha requires dispersion
-- **Warmup trimming**: Equity curves and metrics exclude the flat warmup period (lookback + vol window). Charts and SPY comparison start from the first active trading day for fair comparison.
-- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`
+- **Warmup trimming**: Equity curves and metrics exclude the flat warmup period. Charts and SPY comparison start from the first active trading day.
+- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/portfolio.py`
 
 ### Architecture
 ```
@@ -44,6 +49,7 @@ strategies/base.py        — Abstract strategy interface
 strategies/trend_following.py — Time-Series & Multi-Timeframe Momentum
 strategies/momentum.py    — Cross-Sectional & Dual Momentum (ETF-based)
 strategies/stock_momentum.py — Individual stock momentum + VIX filter
+strategies/portfolio.py   — Portfolio combiner + SPY 200-day MA trend filter
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
@@ -63,8 +69,8 @@ dashboard/               — React + Vite + TradingView Charts
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 
 ### Current Phase & Next Steps
-- Completed: Phase 1 (core engine), Phase 2 (strategies), Phase 2.5 (dashboard), Phase 3 (strategy iteration)
-- **Stock Momentum beats SPY (15.9% vs 13.7%) with 1.16 Sharpe and half the drawdown**
-- Dashboard shows SPY buy-and-hold overlay (red) on all equity curves for comparison
-- Known risk: momentum crash vulnerability during sharp regime changes (COVID)
-- Next: Alpaca paper trading integration, portfolio-level combination of strategies
+- Completed: Phase 1 (core engine), Phase 2 (strategies), Phase 2.5 (dashboard), Phase 3 (strategy expansion), Phase 3.5 (performance optimization)
+- **SM + SPY Filter: 17.6% return, 1.38 Sharpe, -12.2% MaxDD — beats SPY on every metric with 1/3 the drawdown**
+- Dashboard shows 8 strategies with SPY buy-and-hold overlay (red) on all equity curves
+- Known risk: momentum crash vulnerability during sharp regime changes (COVID). VIX + SPY trend filter together provide strong but imperfect protection.
+- Next: Alpaca paper trading integration

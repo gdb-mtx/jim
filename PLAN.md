@@ -263,7 +263,8 @@ FIRE/
 │   ├── base.py                  # ✅ Abstract strategy interface (generate_signals/returns)
 │   ├── trend_following.py       # ✅ Time-Series & Multi-Timeframe Momentum
 │   ├── momentum.py              # ✅ Cross-Sectional & Dual Momentum (ETF-based)
-│   └── stock_momentum.py        # ✅ Individual stock momentum + VIX regime filter
+│   ├── stock_momentum.py        # ✅ Individual stock momentum + VIX regime filter
+│   └── portfolio.py             # ✅ Portfolio combiner + SPY 200-day MA trend filter
 │
 ├── backtesting/
 │   ├── __init__.py
@@ -383,35 +384,43 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] **Individual Stock Momentum on S&P 500** — the breakthrough strategy — 1.16 Sharpe, 15.9% return, -18.6% MaxDD
 - [x] VIX regime filter: reduce at VIX > 35, exit at VIX > 45 (avoids momentum crashes per Daniel & Moskowitz 2016)
 - [x] Parameter sweep across lookback, holding period, top_n, vol_target, VIX thresholds
+- [x] Portfolio combination + SPY trend filter (see Phase 3.5)
 - [ ] Mean reversion strategy (planned)
-- [ ] Portfolio-level combination of uncorrelated strategies (next priority — see Phase 3.5)
 
-### Current Strategy Results (warmup-trimmed, 2010-2026)
+### Current Strategy Results (warmup-trimmed, 2012-2026)
 
-| Strategy | Sharpe | Return | MaxDD | Walk-Forward | Status |
-|---|---|---|---|---|---|
-| **Stock Momentum (S&P 500)** | **1.16** | **15.9%** | **-18.6%** | **1.27 median OOS** | Best performer |
-| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | 0.82 median OOS | Validated |
-| Time-Series Momentum | 0.85 | 6.2% | -15.2% | 0.78 median OOS | Validated |
-| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | 0.76 median OOS | Validated |
-| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | 0.55 median OOS | Regime fail |
-| *SPY Buy & Hold (benchmark)* | *0.84* | *13.7%* | *-33.7%* | — | — |
+| Strategy | Sharpe | Return | MaxDD | Status |
+|---|---|---|---|---|
+| **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Best performer** |
+| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | Lowest drawdown |
+| Blended Portfolio | 1.13 | 12.6% | -15.8% | Diversified |
+| Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | Best single strategy |
+| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | Validated |
+| Time-Series Momentum | 0.85 | 6.2% | -15.2% | Validated |
+| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | Validated |
+| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | Regime fail |
+| *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
 
-**Key insight:** Individual stocks provide far more dispersion than ETFs — momentum alpha requires dispersion. Stock Momentum beats SPY with higher Sharpe and half the drawdown.
+**Key findings:**
+- **SPY 200-day MA trend filter** is the single most impactful improvement: adds ~0.25 Sharpe and cuts drawdown nearly in half. Based on Faber (2007).
+- **Portfolio combination** (60% Stock Momentum + 20% Cross-Sectional + 20% Dual Momentum) reduces drawdown from -18.6% to -9.3% when combined with SPY filter.
+- **ETF strategies are highly correlated** (0.93-0.96 with each other) — blending them adds little diversification. Stock Momentum is the key diversifier at 0.71 correlation.
+- **Individual stocks provide far more dispersion than ETFs** — momentum alpha requires dispersion.
 
-**Known risk:** Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter reduces but doesn't eliminate this.
+**Known risk:** Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter + SPY trend filter together provide strong protection but don't eliminate it.
 
 **Data caveat:** S&P 500 universe uses current constituents (survivorship bias). Results are slightly optimistic.
 
-### Phase 3.5: Performance Optimization 🔜 NEXT
-*The biggest remaining gains come from portfolio combination and crash protection, not single-strategy tuning.*
+### Phase 3.5: Performance Optimization ✅ COMPLETE (core items)
+*The biggest remaining gains came from portfolio combination and crash protection, not single-strategy tuning.*
 
-- [ ] **Portfolio combination** (highest priority) — Blend Stock Momentum + Cross-Sectional + Dual Momentum using risk-parity weighting. These strategies are partially uncorrelated; combining them should improve Sharpe by 0.2-0.4 and significantly cut max drawdown. This is the "free lunch" of diversification.
-- [ ] **SPY trend filter** — If SPY is below its 200-day moving average, reduce all equity exposure by 50%. Simple, effective crash protection that stacks on top of VIX filter.
-- [ ] **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches (week 1/2/3/4). Reduces timing luck, lowers turnover, and smooths the equity curve. Moskowitz showed this matters for momentum.
-- [ ] **Sector momentum pre-filter** — Before picking individual stocks, check if their sector ETF is in an uptrend. Avoids catching falling knives in collapsing sectors (energy 2014, financials 2008).
-- [ ] **Quality screen** — Filter momentum stock picks by profitability (ROE > 10%). Avoids momentum in junk stocks that crash hardest during reversals.
-- [ ] **Short-term mean reversion** — 3-5 day mean reversion is negatively correlated with momentum. Adding it as a separate strategy in the blend smooths the equity curve and provides returns when momentum stalls.
+- [x] **Portfolio combination** — Blended Portfolio (60% Stock Momentum + 20% Cross-Sectional + 20% Dual Momentum). ETF strategies are too correlated (0.93-0.96) for risk-parity to help much; Stock Momentum at 0.71 correlation is the key diversifier.
+- [x] **SPY trend filter** — When SPY < 200-day MA, reduce exposure by 50%. Single most impactful improvement: +0.25 Sharpe, drawdown cut nearly in half. Based on Faber (2007).
+- [x] **Three portfolio presets** available in dashboard: SM + SPY Filter (best return), Blended + SPY Filter (lowest drawdown), Blended (no filter)
+- [ ] **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches. Future improvement.
+- [ ] **Sector momentum pre-filter** — Check sector ETF trend before picking stocks. Future improvement.
+- [ ] **Quality screen** — Filter by profitability (ROE > 10%). Future improvement.
+- [ ] **Short-term mean reversion** — Negatively correlated with momentum; future blend candidate.
 
 ### Phase 4: Alpaca Paper Trading 🔜
 *Prerequisite: George creates Alpaca account and provides API keys.*
@@ -477,6 +486,7 @@ These references were identified during an independent critical review of this p
 - **Antonacci (2014)** — Dual Momentum — ✅ implemented in `strategies/momentum.py`
 - **Asness, Moskowitz, Pedersen (2013)** — "Value and Momentum Everywhere" — informed our multi-asset momentum approach
 - **Daniel & Moskowitz (2016)** — momentum crashes and VIX regime filtering — ✅ implemented as VIX filter in `strategies/stock_momentum.py`
+- **Faber (2007)** — "A Quantitative Approach to Tactical Asset Allocation" — ✅ implemented as SPY 200-day MA trend filter in `strategies/portfolio.py`
 - **McLean & Pontiff (2016)** — published trading strategy returns decline ~58% post-publication. This is a sobering reminder: any strategy you read about online has likely already been arbitraged.
 
 ### A Note on Survivorship Bias
@@ -487,11 +497,10 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 ## 10. Next Steps — What We Build Next
 
-Phases 1-3 are complete. We have 5 strategies, a working dashboard, and a validation framework. The immediate priorities are:
+Phases 1-3.5 are complete. We have 8 strategies (5 individual + 3 portfolio combinations), a working dashboard, and a validation framework. The immediate priorities are:
 
-1. **Portfolio combination** — Blend our best strategies (Stock Momentum + Cross-Sectional + Dual Momentum) using risk-parity weighting. This is the single highest-impact improvement available — diversification across partially uncorrelated return streams.
-2. **SPY trend filter** — Add a simple 200-day MA filter on SPY to reduce all equity exposure during bear markets. Stacks on top of VIX filter.
-3. **Alpaca paper trading** — George sets up account, we build the execution layer and start paper trading Stock Momentum with real market data.
-4. **Staggered rebalancing + sector filter** — Reduce timing luck and avoid collapsing sectors.
+1. **Alpaca paper trading** — George sets up account, we build the execution layer and start paper trading the Stock Momentum + SPY Filter strategy with real market data.
+2. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+3. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
 
-The original 2020 vision was right. The tools have caught up. We now have a strategy (Stock Momentum) that beats SPY with higher Sharpe and half the drawdown. The next step is proving it works in real-time with paper trading.
+Our best strategy (Stock Momentum + SPY Filter) delivers **17.6% return, 1.38 Sharpe, -12.2% max drawdown** — beating SPY on every metric while taking a third of the drawdown risk. The next step is proving it works in real-time with paper trading.

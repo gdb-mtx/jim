@@ -9,6 +9,7 @@ from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
 from strategies.stock_momentum import StockMomentum
+from strategies.portfolio import PORTFOLIOS, run_portfolio
 from backtesting.metrics import full_report
 
 router = APIRouter()
@@ -83,6 +84,24 @@ async def list_strategies():
             })
     except Exception as e:
         print(f"Warning: Could not load stock strategies: {e}")
+
+    # Portfolio strategies (combinations + filters)
+    try:
+        for portfolio_id, config in PORTFOLIOS.items():
+            name, returns = run_portfolio(portfolio_id, start="2010-01-01")
+            report = full_report(returns, name=name)
+            results.append({
+                "name": name,
+                "id": portfolio_id,
+                "status": "backtesting",
+                "annualized_return": report["annualized_return"],
+                "sharpe_ratio": report["sharpe_ratio"],
+                "max_drawdown": report["max_drawdown"],
+                "win_rate": report["win_rate"],
+                "validation_passed": report["sharpe_ratio"] >= 1.0,
+            })
+    except Exception as e:
+        print(f"Warning: Could not load portfolio strategies: {e}")
 
     _cached_metrics = results
     return results

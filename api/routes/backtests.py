@@ -6,6 +6,7 @@ from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
 from strategies.stock_momentum import StockMomentum
+from strategies.portfolio import PORTFOLIOS, run_portfolio
 from backtesting.metrics import full_report
 import pandas as pd
 
@@ -25,6 +26,7 @@ STOCK_STRATEGIES = {
 }
 
 STRATEGIES = {**ETF_STRATEGIES, **STOCK_STRATEGIES}
+ALL_STRATEGY_IDS = {**STRATEGIES, **{pid: None for pid in PORTFOLIOS}}
 
 # Expanded ETF universe + SHY (cash proxy for dual momentum)
 DEFAULT_SYMBOLS = EXPANDED_UNIVERSE + ["SHY"]
@@ -56,16 +58,20 @@ async def run_backtest(
     end: str = Query(default=None),
 ):
     """Run a backtest and return equity curve + metrics."""
-    if strategy_id not in STRATEGIES:
+    if strategy_id not in ALL_STRATEGY_IDS:
         return {"error": f"Unknown strategy: {strategy_id}"}
 
-    strategy, returns = _run_strategy(strategy_id, start, end)
+    # Portfolio strategies vs individual strategies
+    if strategy_id in PORTFOLIOS:
+        strategy_name, returns = run_portfolio(strategy_id, start, end)
+    else:
+        strategy, returns = _run_strategy(strategy_id, start, end)
+        strategy_name = strategy.name
 
-    # Trim warmup period: find first date with non-zero returns
-    non_zero = returns[returns != 0]
-    if len(non_zero) > 0:
-        active_start = non_zero.index[0]
-        returns = returns.loc[active_start:]
+        # Trim warmup period: find first date with non-zero returns
+        non_zero = returns[returns != 0]
+        if len(non_zero) > 0:
+            returns = returns.loc[non_zero.index[0]:]
 
     # Build equity curve (rebased to $10k from active start)
     equity = (1 + returns).cumprod() * 10000
@@ -74,7 +80,7 @@ async def run_backtest(
         for d, v in zip(equity.index, equity.values)
     ]
 
-    report = full_report(returns, name=strategy.name)
+    report = full_report(returns, name=strategy_name)
 
     # SPY buy-and-hold benchmark for the same active period
     spy_prices = download_prices(["SPY"], start=start, end=end)
@@ -89,7 +95,7 @@ async def run_backtest(
     ]
 
     return {
-        "strategy": strategy.name,
+        "strategy": strategy_name,
         "equity_curve": equity_data,
         "spy_curve": spy_data,
         "metrics": report,
