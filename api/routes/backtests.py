@@ -6,6 +6,9 @@ from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
 from strategies.stock_momentum import StockMomentum
+from strategies.multi_asset_trend import MultiAssetTrend
+from strategies.low_volatility import LowVolatility
+from strategies.mean_reversion import ShortTermReversal
 from strategies.portfolio import PORTFOLIOS, run_portfolio
 from backtesting.metrics import full_report
 import pandas as pd
@@ -18,11 +21,14 @@ ETF_STRATEGIES = {
     "multi_tf_momentum": MultiTimeframeMomentum,
     "cross_sectional": CrossSectionalMomentum,
     "dual_momentum": DualMomentum,
+    "multi_asset_trend_solo": MultiAssetTrend,
 }
 
 # Stock-based strategies (use S&P 500 universe)
 STOCK_STRATEGIES = {
     "stock_momentum": StockMomentum,
+    "low_volatility_solo": LowVolatility,
+    "short_term_reversal_solo": ShortTermReversal,
 }
 
 STRATEGIES = {**ETF_STRATEGIES, **STOCK_STRATEGIES}

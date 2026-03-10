@@ -1,20 +1,20 @@
 """
-Combined Portfolio Strategy with SPY Trend Filter.
+Combined Portfolio Strategy with SPY Trend Filter + Vol-Scaling Overlay.
 
-Blends multiple strategy return streams and applies a market regime
-overlay using SPY's 200-day moving average.
+Blends multiple strategy return streams and applies market regime overlays:
+1. SPY 200-day MA trend filter (Faber 2007)
+2. Volatility-scaling overlay (Moreira & Muir 2017)
 
-The SPY trend filter is the single most effective risk overlay we've found:
-- When SPY > 200-day MA: full exposure (bull market)
-- When SPY < 200-day MA: reduce exposure by 50% (bear market)
-
-This simple rule cuts max drawdown nearly in half while actually improving
-returns (avoiding the worst of crashes more than compensates for the drag
-during whipsaws).
+Three-account architecture for uncorrelated factor diversification:
+- Account 1: Momentum (existing SM + SPY Filter)
+- Account 2: Trend + Low-Vol (crisis alpha + defensive)
+- Account 3: Reversal (anti-momentum hedge)
 
 Academic basis:
 - Faber (2007): "A Quantitative Approach to Tactical Asset Allocation"
-- 200-day MA is the most studied trend filter in finance
+- Moreira & Muir (2017): "Volatility-Managed Portfolios" — scaling equity
+  exposure by inverse realized vol adds +0.1-0.3 Sharpe
+- Barroso & Santa-Clara (2015): Vol-scaling on momentum eliminates crash risk
 """
 
 import numpy as np
@@ -24,10 +24,19 @@ from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
 from strategies.stock_momentum import StockMomentum
+from strategies.multi_asset_trend import MultiAssetTrend
+from strategies.low_volatility import LowVolatility
+from strategies.mean_reversion import ShortTermReversal
 
 
-# Preset portfolio configurations
+# ── Preset portfolio configurations ──────────────────────────────────
+#
+# Account 1 (Momentum): profits when trends persist
+# Account 2 (Trend + Low-Vol): crisis alpha + defensive stocks
+# Account 3 (Reversal): anti-momentum, buys short-term losers
+#
 PORTFOLIOS = {
+    # --- Account 1: Momentum (existing) ---
     "sm_filtered": {
         "name": "Stock Momentum + SPY Filter",
         "weights": {"stock_momentum": 1.0},
@@ -51,6 +60,44 @@ PORTFOLIOS = {
         },
         "spy_filter": False,
     },
+    # --- Account 2: Trend + Low-Vol ---
+    # Optimized: 30/70 MAT/LV (Sharpe 1.36 vs 1.33 at 50/50)
+    # Low-Vol does the heavy lifting; MAT provides crisis alpha hedge
+    "trend_lowvol": {
+        "name": "Trend + Low-Vol",
+        "weights": {
+            "multi_asset_trend": 0.30,
+            "low_volatility": 0.70,
+        },
+        "spy_filter": True,
+        "vol_scaling": True,
+    },
+    "multi_asset_trend": {
+        "name": "Multi-Asset Trend",
+        "weights": {"multi_asset_trend": 1.0},
+        "spy_filter": False,  # strategy has its own trend filter built in
+    },
+    "low_volatility": {
+        "name": "Low Volatility",
+        "weights": {"low_volatility": 1.0},
+        "spy_filter": True,
+    },
+    # --- Account 3: Reversal + Momentum Hedge ---
+    # Optimized: 60/40 STR/SM (Sharpe 1.54 vs 1.41 pure reversal)
+    # Blending reversal with its opposite smooths the equity curve
+    "reversal_blend": {
+        "name": "Reversal + Momentum Blend",
+        "weights": {
+            "short_term_reversal": 0.60,
+            "stock_momentum": 0.40,
+        },
+        "spy_filter": True,
+    },
+    "short_term_reversal": {
+        "name": "Short-Term Reversal",
+        "weights": {"short_term_reversal": 1.0},
+        "spy_filter": True,
+    },
 }
 
 # Strategy classes keyed by ID
@@ -58,10 +105,13 @@ ETF_STRATEGIES = {
     "ts_momentum": TimeSeriesMomentum,
     "cross_sectional": CrossSectionalMomentum,
     "dual_momentum": DualMomentum,
+    "multi_asset_trend": MultiAssetTrend,
 }
 
 STOCK_STRATEGIES = {
     "stock_momentum": StockMomentum,
+    "low_volatility": LowVolatility,
+    "short_term_reversal": ShortTermReversal,
 }
 
 
@@ -115,6 +165,48 @@ def compute_spy_trend_filter(
     return scalar
 
 
+def apply_vol_scaling(
+    returns: pd.Series,
+    vol_target: float = 0.15,
+    vol_halflife: int = 21,
+    scalar_floor: float = 0.5,
+    scalar_cap: float = 1.5,
+) -> pd.Series:
+    """Apply volatility-scaling overlay to portfolio returns.
+
+    Scales exposure inversely to recent realized volatility. When the market
+    is calm, take more risk. When turbulent, take less.
+
+    Academic basis:
+    - Moreira & Muir (2017): "Volatility-Managed Portfolios"
+      Scaling by inverse vol adds +0.1-0.3 Sharpe because high-vol periods
+      do not compensate with proportionally higher returns.
+    - Barroso & Santa-Clara (2015): Vol-scaling on momentum eliminates crashes.
+
+    Args:
+        returns: Daily strategy returns
+        vol_target: Target annualized vol (0.15 = 15%)
+        vol_halflife: EWMA half-life in days for vol estimation
+        scalar_floor: Minimum exposure (0.5 = never below 50%)
+        scalar_cap: Maximum exposure (1.5 = max 150%)
+
+    Returns:
+        Vol-scaled daily returns
+    """
+    # EWMA realized vol (responds faster to regime changes than rolling window)
+    ewma_var = returns.ewm(halflife=vol_halflife).var()
+    realized_vol = np.sqrt(ewma_var) * np.sqrt(252)
+
+    # Scalar: target / realized, capped
+    scalar = vol_target / realized_vol.replace(0, np.nan)
+    scalar = scalar.clip(lower=scalar_floor, upper=scalar_cap)
+
+    # Lag by 1 day (use yesterday's vol estimate for today's sizing)
+    scalar = scalar.shift(1).fillna(1.0)
+
+    return returns * scalar
+
+
 def run_portfolio(
     portfolio_id: str,
     start: str = "2010-01-01",
@@ -133,6 +225,7 @@ def run_portfolio(
     config = PORTFOLIOS[portfolio_id]
     weights = config["weights"]
     use_spy_filter = config["spy_filter"]
+    use_vol_scaling = config.get("vol_scaling", False)
 
     # Load data
     symbols = EXPANDED_UNIVERSE + ["SHY"]
@@ -160,5 +253,9 @@ def run_portfolio(
         spy_filter = compute_spy_trend_filter(start=start)
         spy_aligned = spy_filter.reindex(combined.index, method="ffill").fillna(1.0)
         combined = combined * spy_aligned
+
+    # Apply vol-scaling overlay (Moreira & Muir 2017)
+    if use_vol_scaling:
+        combined = apply_vol_scaling(combined)
 
     return config["name"], combined

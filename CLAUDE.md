@@ -18,28 +18,41 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Statistical validation**: Walk-forward analysis, Monte Carlo, regime testing required before any live money
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
-### Strategies (8 total: 5 individual + 3 portfolio combos)
+### Three-Account Architecture
+Uncorrelated factor diversification across 3 Alpaca paper accounts:
+- **Account 1 (Momentum)**: SM + SPY Filter — profits when trends persist
+- **Account 2 (Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol — crisis alpha + defensive
+- **Account 3 (Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge
+
+Cross-account correlations: 0.56-0.66 (vs 0.93-0.96 for old ETF strategies)
+Combined 3-account: **1.58 Sharpe, 15.4% return, -9.5% MaxDD**
+
+### Strategies (8 momentum + 3 new factor strategies + portfolio combos)
 | Strategy | Sharpe | Return | MaxDD | Notes |
 |---|---|---|---|---|
-| **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Best performer** |
-| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | Lowest drawdown |
-| Blended Portfolio | 1.13 | 12.6% | -15.8% | 60% SM + 20% CS + 20% DM |
-| Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | Best single strategy |
-| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | Validated |
-| Time-Series Momentum | 0.85 | 6.2% | -15.2% | Validated |
-| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | Validated |
+| **Reversal + Momentum Blend** | **1.54** | **15.2%** | **-9.4%** | **Acct 3 blend** |
+| **Stock Momentum + SPY Filter** | **1.38** | **17.6%** | **-12.2%** | **Acct 1** |
+| **Trend + Low-Vol (vol-scaled)** | **1.36** | **17.7%** | **-14.0%** | **Acct 2 blend** |
+| Short-Term Reversal + SPY | 1.41 | 12.7% | -10.0% | Anti-momentum |
+| Low Volatility + SPY | 1.32 | 14.7% | -11.9% | Defensive |
+| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | 60/20/20 momentum |
+| Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | No filter |
+| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | ETF-based |
+| Time-Series Momentum | 0.85 | 6.2% | -15.2% | ETF-based |
+| Multi-Asset Trend | 0.76 | 5.8% | -13.0% | Crisis alpha |
+| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | ETF-based |
 | Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | Regime fail |
 | *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
 
-- **Best performer**: Stock Momentum + SPY Filter — 17.6% return, 1.38 Sharpe, -12.2% MaxDD (beats SPY on every metric)
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
+- **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
 - **Stock Universe**: 451 S&P 500 stocks (cached parquet, survivorship bias noted)
-- **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45
-- **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007). Single most impactful improvement.
-- **Portfolio combination**: 60% Stock Momentum + 20% Cross-Sectional + 20% Dual Momentum. ETF strategies too correlated (0.93-0.96) for much diversification benefit; Stock Momentum at 0.71 correlation is the key diversifier.
-- **Key insight**: Individual stocks provide far more dispersion than ETFs — momentum alpha requires dispersion
-- **Warmup trimming**: Equity curves and metrics exclude the flat warmup period. Charts and SPY comparison start from the first active trading day.
-- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/portfolio.py`
+- **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
+- **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007)
+- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 blend, +0.1-0.3 Sharpe improvement
+- **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone
+- **Warmup trimming**: Equity curves and metrics exclude the flat warmup period
+- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/portfolio.py`
 
 ### Architecture
 ```
@@ -49,7 +62,10 @@ strategies/base.py        — Abstract strategy interface
 strategies/trend_following.py — Time-Series & Multi-Timeframe Momentum
 strategies/momentum.py    — Cross-Sectional & Dual Momentum (ETF-based)
 strategies/stock_momentum.py — Individual stock momentum + VIX filter
-strategies/portfolio.py   — Portfolio combiner + SPY 200-day MA trend filter
+strategies/multi_asset_trend.py — Multi-asset trend following (SPY/TLT/GLD/DBC/EFA)
+strategies/low_volatility.py — Low-vol anomaly + momentum quality filter
+strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
+strategies/portfolio.py   — Portfolio combiner + SPY filter + vol-scaling overlay
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
@@ -73,12 +89,9 @@ dashboard/               — React + Vite + TradingView Charts
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 
 ### Current Phase & Next Steps
-- Completed: Phase 1 (core engine), Phase 2 (strategies), Phase 2.5 (dashboard), Phase 3 (strategy expansion), Phase 3.5 (performance optimization), Phase 4 (Alpaca execution layer)
-- **SM + SPY Filter: 17.6% return, 1.38 Sharpe, -12.2% MaxDD — beats SPY on every metric with 1/3 the drawdown**
-- Dashboard shows 8 strategies with SPY buy-and-hold overlay (red) on all equity curves
-- **Alpaca paper trading connected** — $100k paper account, rebalance preview/execute endpoints live
-- Rebalance flow: `POST /api/orders/rebalance/preview` → review orders → `POST /api/orders/rebalance/execute`
-- Known risk: momentum crash vulnerability during sharp regime changes (COVID). VIX + SPY trend filter together provide strong but imperfect protection.
-- **First paper trade executed** 2026-03-10: 15 stocks via SM + SPY Filter, all filled
-- Dashboard has tab switcher: "Live Portfolio" (Alpaca positions/P&L/orders) and "Backtests" (historical equity curves)
-- Next: Monthly rebalance scheduler, reconciliation, track paper trading performance
+- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor strategy research + implementation)
+- **3-account architecture**: Momentum / Trend+Low-Vol / Reversal+Momentum — combined 1.58 Sharpe, -9.5% MaxDD
+- **Alpaca paper trading**: Account 1 active ($100k, 15 stocks via SM + SPY Filter, first trade 2026-03-10)
+- Dashboard shows all strategies with SPY overlay. Tab switcher: "Live Portfolio" and "Backtests"
+- Rebalance flow: `POST /api/orders/rebalance/preview` → review → `POST /api/orders/rebalance/execute`
+- Next: Set up Alpaca accounts 2 & 3, monthly rebalance scheduler, walk-forward validation on new strategies, track paper trading 3+ months
