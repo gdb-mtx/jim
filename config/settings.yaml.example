@@ -1,0 +1,11 @@
+# Copy this to settings.yaml and fill in your API keys
+# settings.yaml is gitignored — never commit real keys
+
+alpaca:
+  api_key: "your-api-key-here"
+  secret_key: "your-secret-key-here"
+  base_url: "https://paper-api.alpaca.markets"  # Paper trading
+  # base_url: "https://api.alpaca.markets"       # Live trading (DO NOT USE until Phase 5)
+
+anthropic:
+  api_key: "your-anthropic-api-key-here"

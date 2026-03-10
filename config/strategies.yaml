@@ -1,0 +1,21 @@
+# Strategy Configuration
+# Parameters for each trading strategy
+
+time_series_momentum:
+  lookback_days: 252  # 1 year
+  holding_period_days: 21  # ~1 month
+  assets:
+    - SPY   # S&P 500
+    - QQQ   # NASDAQ 100
+    - IWM   # Russell 2000
+    - EFA   # International Developed
+    - EEM   # Emerging Markets
+    - TLT   # Long-term Treasuries
+    - GLD   # Gold
+    - DBC   # Commodities
+
+risk_management:
+  max_loss_per_trade_pct: 2.0
+  kelly_fraction: 0.25  # Quarter-Kelly to start (conservative)
+  portfolio_drawdown_halt_pct: 15.0
+  strategy_drawdown_halt_pct: 10.0

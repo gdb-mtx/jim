@@ -12,3 +12,38 @@
 
 # Logs
 *.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Data files (too large for git)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.h5
+
+# Config with secrets
+config/settings.yaml
+
+# uv
+.python-version
+
+# Node / Dashboard
+dashboard/node_modules/
+dashboard/dist/
+
+# OS
+Thumbs.db
+
+# References (large PDFs)
+References/*.pdf

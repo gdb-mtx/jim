@@ -1,0 +1,497 @@
+# FIRE — Quantitative Trading Project (2026 Edition)
+
+*A modern revisit of George's January 2020 Proprietary Quantitative Trading Partnership Proposal, updated for today's tools, markets, and AI capabilities.*
+
+---
+
+## 1. What's Changed Since 2020
+
+### Platforms — Dead and Alive
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Quantopian | **Dead** (Nov 2020) | Shut down entirely |
+| QuantConnect | **Alive & thriving** | Best platform for backtesting + live trading. More brokers, more asset classes |
+| Quantrocket | **Alive** | More mature. Good for Interactive Brokers integration |
+| WealthSignals | **Dead/irrelevant** | No longer a viable option |
+| **Alpaca** | **New** | Commission-free, API-first broker. Paper trading built-in. Best starting point |
+| **FreqTrade** | **New** | Open-source crypto bot framework |
+| **Vectorbt** | **New** | Blazing-fast Python backtesting library |
+| **Lumibot** | **New** | Simple Python algo trading library |
+
+### The AI Revolution (The Biggest Change)
+
+In 2020, ML for trading meant scikit-learn random forests and basic LSTMs. In 2026:
+
+- **LLMs** (Claude, GPT) can write strategies, debug code, analyze financial reports, parse SEC filings, and reason about market dynamics
+- **Time-series foundation models** (TimesFM, Chronos) can forecast price movements
+- **Transformer architectures** have replaced LSTMs for sequence modeling
+- **Reinforcement learning** frameworks are accessible for portfolio optimization
+
+**Bottom line:** George now has an AI partner that can write Python, backtest strategies, analyze data, and iterate rapidly. This compresses months of solo work into days. This is a genuine edge that didn't exist in 2020.
+
+### Data Availability
+
+**Free:**
+- yfinance — Historical stock/ETF/crypto data
+- FRED — Economic indicators
+- Alpha Vantage — Market data (rate-limited free tier)
+- Polygon.io — Free tier with delayed data
+- Tiingo — Good free tier for daily data
+- EDGAR — SEC filings (free, unlimited)
+
+**Affordable ($10-30/mo):**
+- Polygon.io ($29/mo) — Full real-time market data
+- Databento — Institutional-grade data at retail prices
+- FirstRate Data — Clean historical data
+
+**Alternative Data (free with AI):**
+- RSS feeds + LLM sentiment analysis
+- Social media sentiment
+- SEC filing analysis via Claude API
+
+### Our Platform Strategy: QuantConnect + Alpaca
+
+**QuantConnect** is alive and thriving — it's the most mature platform in the space with 20+ years of built-in data, a cloud IDE, and integration with multiple brokers. So why not just use it?
+
+- QuantConnect is a **platform** — your code runs on their servers, in their framework, using their abstractions. You're locked into their ecosystem.
+- Alpaca is a **broker API** — we write plain Python that we own, run anywhere, and can swap brokers later. Full control.
+
+**Recommendation: Use both.**
+- **QuantConnect** → Rapid prototyping, backtesting ideas quickly, leveraging their historical data
+- **Our own Python + Alpaca stack** → Production trading, custom AI integration, the web dashboard, and full ownership of the code
+
+### Broker APIs
+
+- **Alpaca** — Commission-free stocks/crypto, excellent REST/WebSocket API, paper trading built-in. **Best starting point for $10k.**
+- **Interactive Brokers** — More instruments (futures, options, forex), lower margin, but more complex API. Graduate to this later.
+- **Tradier** — Good options API if we explore options strategies.
+
+### Compute
+
+- A basic strategy can run on a **$5/mo VPS** or even a Raspberry Pi
+- Backtesting: local machine or Google Colab (free GPU) is sufficient
+- No infrastructure costs needed to start
+
+---
+
+## 2. Honest Assessment — Chances of Success
+
+### The Hard Truth
+
+- **~80-90% of retail algorithmic traders lose money** or underperform buy-and-hold over 3+ years
+- Renaissance Technologies' Medallion Fund returns ~66%/year — but they have 300+ PhDs, proprietary data, and billions in infrastructure. We are not competing with them.
+- Most "alpha" decays. A strategy that works in backtesting often stops working within months of going live (overfitting, regime change, crowding).
+
+### Why This Isn't Hopeless — Our Realistic Edges
+
+1. **Small size is an advantage.** With $10k, we have zero market impact on liquid instruments. Big funds can't trade small without moving the price — we can.
+2. **No investors to please.** No drawdown pressure from LPs. We can be patient and sit in cash when there's no edge.
+3. **AI-assisted development.** Iterate on strategies 10-100x faster than manual coding. This is a genuine new advantage since 2020.
+4. **Low overhead.** Commission-free trading, free data, free compute. The break-even bar is near zero.
+5. **Sound principles.** The original proposal's focus on risk management (2% max loss per trade, diversification, trend following) is exactly right. Most retail traders blow up because they ignore this.
+
+### Realistic Expectations with $10k
+
+| Scenario | Probability | Outcome |
+|----------|------------|---------|
+| **Learning period** | High (first 6-12 months) | Lose 10-20% while building the system. Gain invaluable experience. |
+| **Break even** | Moderate | 5-15% annually after tuning. Beats a savings account. |
+| **Good outcome** | Achievable with discipline | 1-2 strategies generating 20-40% annually. |
+| **Stretch goal** | Possible over 2-3 years | Compound to $50k+ account if strategies hold up. |
+
+### The Honest Recommendation
+
+**Treat the first $10k as "tuition money."** The real value is building the system and skills. If it works, you scale. If it doesn't, you've lost less than a semester of college and gained a deep education in markets, statistics, and Python.
+
+---
+
+## 3. Risk Management: The Kelly Criterion
+
+Ed Thorp — the first person referenced in the original proposal — literally brought the Kelly Criterion from information theory to finance. He used it to size bets at the blackjack table, then on Wall Street. It's the mathematical foundation for position sizing.
+
+### The Formula
+
+```
+f* = (bp - q) / b
+
+where:
+  f* = fraction of capital to risk
+  b  = net odds (win/loss ratio)
+  p  = probability of winning
+  q  = probability of losing (1 - p)
+```
+
+### Why Fractional Kelly
+
+Full Kelly is mathematically optimal for long-term growth but assumes **perfect knowledge** of your edge. In reality:
+- Our edge estimates are noisy
+- Full Kelly leads to **brutal drawdowns** (30-50% is common)
+- A single bad estimate can be catastrophic
+
+**Recommendation: Use half-Kelly or quarter-Kelly.**
+- Half-Kelly gives ~75% of the growth rate with significantly less volatility
+- Quarter-Kelly is even more conservative — suitable for early live trading
+
+### How Kelly and the 2% Rule Work Together
+
+They're complementary, not redundant:
+- **Kelly tells you how much to bet** — the optimal fraction of capital per trade based on your edge
+- **The 2% rule caps the maximum loss** — no single trade can lose more than 2% of total capital
+
+In practice: Kelly calculates the ideal position size, then the 2% rule acts as a hard ceiling. If Kelly says bet 5% but the stop loss would risk 3% of capital, the 2% rule overrides and reduces the position.
+
+### Drawdown Circuit Breakers
+
+Beyond per-trade risk limits, we need portfolio-level kill switches:
+
+- **Portfolio level:** Halt all trading if portfolio drops **-15% from equity peak**. Review all strategies before resuming.
+- **Strategy level:** Disable any individual strategy that hits **-10% drawdown** independently. Investigate before re-enabling.
+
+These are non-negotiable. Larry Hite was emphatic about this — and it's the #1 thing that separates survivors from blowups.
+
+---
+
+## 4. Avoiding Overfitting: Statistical Rigor Framework
+
+This is the most critical section of the entire plan. **Overfitting is the #1 killer of retail algo traders.** A strategy that looks brilliant in backtesting but fails live is worse than no strategy at all — it gives false confidence.
+
+### The Problem
+
+If you backtest 100 parameter combinations and pick the best one, you haven't found an edge — you've found noise. This is called **multiple comparisons bias** and it's pervasive.
+
+### Our Defenses
+
+**1. Walk-Forward Analysis (mandatory for every strategy)**
+- Split historical data into rolling train/test windows
+- Optimize on the training window, validate on the test window, then roll forward
+- A strategy must be profitable across *multiple* out-of-sample windows, not just one
+
+**2. Out-of-Sample Holdout**
+- Reserve the most recent 20% of data as a final holdout set
+- Never touch it during development — it's the last line of defense
+- Only test against it once, when you believe the strategy is ready
+
+**3. Monte Carlo Simulation**
+- Randomize the order of trades and re-simulate 1,000+ times
+- If the strategy is robust, the distribution of outcomes should be consistently profitable
+- If it only works with trades in a specific order, it's fragile
+
+**4. Multiple Comparison Correction**
+- When testing multiple strategies or parameter sets, adjust significance thresholds
+- Use de Prado's combinatorial purged cross-validation (CPCV) framework
+- Reference: *Advances in Financial Machine Learning* (2018) — Chapter 12
+
+**5. Regime Testing**
+- Every strategy must be tested across distinct market regimes: 2008 crash, 2020 COVID, 2022 bear, 2024-2025 bull
+- A strategy that only works in bull markets is not a strategy — it's a bet on direction
+
+### Rule: No Live Money Without Statistical Validation
+
+Before any strategy goes to paper trading, it must pass:
+- [ ] Walk-forward analysis across 3+ rolling windows
+- [ ] Monte Carlo simulation with >70% of runs profitable
+- [ ] Positive returns in at least 3 of 4 major market regimes
+- [ ] Sharpe ratio > 1.0 out-of-sample
+
+---
+
+## 5. Constraints & Real-World Risks
+
+### Pattern Day Trader (PDT) Rule
+
+**With a $10k margin account, FINRA limits you to 3 day trades per 5 rolling business days.** This is a hard legal constraint the plan must design around.
+
+Options:
+- **Design for daily+ timeframes** — our strategies hold positions overnight or longer (aligns with the original proposal's daily/weekly/monthly horizon)
+- **Use a cash account** — no PDT restriction, but T+2 settlement means capital is locked for 2 days after selling
+- **Trade in a Roth IRA** — Alpaca supports IRAs. No PDT restriction, and gains are tax-free. Best of all worlds for a small account.
+
+### Data Quality
+
+**yfinance data has known issues:** gaps, incorrect stock splits, and survivorship bias (delisted companies disappear from the data). Any backtest using only yfinance is suspect.
+
+Mitigations:
+- Use yfinance as a starting point for exploration
+- Cross-validate against a second source (Tiingo, Polygon.io) before trusting any backtest result
+- Document data limitations in every backtest report
+- For serious backtesting, consider FirstRate Data or Polygon.io paid tier
+
+### Slippage & Spread Costs
+
+Commission-free doesn't mean cost-free. The **bid-ask spread** is the real trading cost:
+- Large-cap ETFs (SPY, QQQ): ~$0.01 spread — negligible
+- Mid-cap stocks: $0.05-0.20 — manageable
+- Micro-caps & illiquid instruments: $0.50-5.00+ spread (1-5% per round trip) — can destroy any edge
+
+**Rule:** Stick to liquid instruments (average daily volume > 500k shares) unless the expected edge is large enough to overcome the spread.
+
+### Tax Implications
+
+Short-term capital gains (positions held < 1 year) are taxed as **ordinary income** — potentially 35-40% combined federal + state.
+
+A strategy generating 20% gross returns = ~12-13% after tax. This barely beats index funds with far more effort and risk.
+
+**Mitigation:** Consider trading inside a **Roth IRA** via Alpaca. All gains are tax-free, removing this drag entirely. This is likely the optimal account type for a $10k starting capital.
+
+### Execution Risk
+
+Backtests assume perfect fills at the closing price. Reality is different:
+- **Market orders** get filled instantly but at potentially worse prices (slippage)
+- **Limit orders** get better prices but may not fill at all
+- For daily-timeframe strategies, using **MOC (Market on Close) orders** or **limit orders near the close** is the practical approach
+
+---
+
+## 6. Modern Architecture & Tech Stack
+
+```
+FIRE/
+├── CLAUDE.md                    # Project instructions for Claude Code
+├── PLAN.md                      # This document
+├── .gitignore                   # Python + trading project ignores
+├── pyproject.toml               # Python deps managed by uv
+├── References/                  # Books and papers (existing)
+│
+├── data/
+│   ├── pipeline.py              # ✅ yfinance ETF data download & caching
+│   ├── sp500.py                 # ✅ S&P 500 stock universe + VIX data (parquet cache)
+│   └── cache/                   # Cached parquet files (gitignored)
+│
+├── strategies/
+│   ├── __init__.py
+│   ├── base.py                  # ✅ Abstract strategy interface (generate_signals/returns)
+│   ├── trend_following.py       # ✅ Time-Series & Multi-Timeframe Momentum
+│   ├── momentum.py              # ✅ Cross-Sectional & Dual Momentum (ETF-based)
+│   └── stock_momentum.py        # ✅ Individual stock momentum + VIX regime filter
+│
+├── backtesting/
+│   ├── __init__.py
+│   ├── metrics.py               # ✅ Sharpe, drawdown, Kelly, Calmar, profit factor
+│   └── validation.py            # ✅ Walk-forward, Monte Carlo, regime tests
+│
+├── execution/
+│   ├── __init__.py
+│   ├── alpaca_broker.py         # 🔜 Alpaca API wrapper (auth, orders, positions)
+│   ├── rebalance.py             # 🔜 Monthly rebalance script (signal → orders)
+│   └── risk_manager.py          # ✅ Fractional Kelly + 2% rule + circuit breakers
+│
+├── api/                         # ✅ FastAPI backend
+│   ├── __init__.py
+│   ├── main.py                  # ✅ FastAPI app entry point (CORS, router mounts)
+│   └── routes/
+│       ├── strategies.py        # ✅ List strategies with live backtest metrics
+│       ├── backtests.py         # ✅ Run backtests, equity curves + SPY benchmark
+│       └── portfolio.py         # 🔜 Live portfolio endpoints (Alpaca positions/P&L)
+│
+├── dashboard/                   # ✅ React + Vite + TypeScript frontend
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── App.tsx              # ✅ Main app with strategy selection, metrics, charts
+│       ├── api.ts               # ✅ API client (fetchStrategies, fetchBacktest)
+│       ├── types.ts             # ✅ TypeScript interfaces
+│       └── components/
+│           ├── PortfolioChart.tsx    # ✅ Equity curve + SPY overlay (TradingView)
+│           ├── StrategyPanel.tsx     # ✅ Strategy list with metrics
+│           └── MetricCard.tsx       # ✅ Metric display cards
+│
+└── tests/                       # Unit tests (TODO)
+```
+
+### Core Dependencies (Installed)
+
+**Python Backend (managed by `uv`):**
+
+| Package | Purpose |
+|---------|---------|
+| `pandas`, `numpy`, `scipy` | Data manipulation |
+| `yfinance` | Free market data (ETFs + stocks) |
+| `lxml`, `html5lib` | HTML parsing (S&P 500 ticker scraping) |
+| `pyarrow` | Parquet file caching |
+| `fastapi`, `uvicorn` | API backend for dashboard |
+| `requests` | HTTP requests with proper headers |
+
+**TypeScript Frontend (dashboard/):**
+
+| Package | Purpose |
+|---------|---------|
+| `react`, `react-dom` | UI framework |
+| `typescript` | Type safety |
+| `lightweight-charts` v5 | TradingView's financial charting library |
+| `tailwindcss` | Styling |
+| `vite` | Fast build tool |
+
+**Not yet installed (planned):**
+
+| Package | Purpose |
+|---------|---------|
+| `alpaca-py` | Alpaca broker API (paper + live trading) |
+| `vectorbt` | Portfolio-level backtesting & optimization |
+
+---
+
+### Why Not Streamlit? (And Why Dashboard Early Is Intentional)
+
+Streamlit is convenient for quick prototypes but:
+- Limited layout control and customization
+- No real-time WebSocket support (polling only)
+- Looks like every other Streamlit app
+- Sluggish with large datasets
+
+A proper React frontend with TradingView's Lightweight Charts gives us:
+- **Professional-grade financial charts** (candlesticks, volume, indicators, overlays)
+- **Real-time updates** via WebSocket during live/paper trading
+- **Full design control** — we can make it look and feel exactly how we want
+- **Responsive** — works on desktop and mobile
+
+*An independent review suggested deferring the dashboard until profitability is proven. We're building it early as a deliberate choice — having a tangible, visual interface keeps the project engaging for a multi-year endeavor. This is about sustainability of effort, not just optimization of alpha.*
+
+---
+
+## 7. Phased Roadmap
+
+### Phase 1: Foundation ✅ COMPLETE
+- [x] Set up Python environment (uv + Python 3.12) and project structure
+- [x] Build data pipeline: yfinance ETF download + caching (`data/pipeline.py`)
+- [x] Build S&P 500 stock universe pipeline: Wikipedia scrape, batch download, parquet cache (`data/sp500.py`) — 451 stocks, 4069 trading days
+- [x] Build VIX data pipeline for regime filtering
+- [x] Implement performance metrics: Sharpe, max drawdown, win rate, Kelly (full/half/quarter), Calmar, profit factor (`backtesting/metrics.py`)
+- [x] Build validation framework: walk-forward analysis, Monte Carlo simulation, regime testing (`backtesting/validation.py`)
+- [x] Implement risk manager: fractional Kelly + 2% max loss rule + drawdown circuit breakers (`execution/risk_manager.py`)
+
+### Phase 2: First Strategies ✅ COMPLETE
+- [x] Time-Series Momentum (Moskowitz, Ooi, Pedersen 2012) — 0.85 Sharpe, 6.2% return
+- [x] Multi-Timeframe Momentum — 0.67 Sharpe, 4.1% return
+- [x] Walk-forward validation with warmup data (fixed test windows to include lookback warmup)
+- [x] Monte Carlo simulation (1,000 iterations)
+- [x] Regime testing across COVID crash, 2022 bear market, 2024-25 bull
+
+### Phase 2.5: Dashboard MVP ✅ COMPLETE
+- [x] FastAPI backend with strategy list + backtest endpoints
+- [x] React + TypeScript + Vite frontend
+- [x] TradingView Lightweight Charts v5 equity curve visualization
+- [x] SPY buy-and-hold benchmark overlay (red) on all equity curves
+- [x] Warmup period trimming — charts start from first active trading day
+- [x] Strategy panel with live backtest metrics (Sharpe, return, MaxDD)
+- [x] Detailed metric cards (Kelly sizing, Calmar, profit factor, win rate)
+
+### Phase 3: Strategy Expansion ✅ COMPLETE
+- [x] Cross-Sectional Momentum (Jegadeesh & Titman 1993) — 0.85 Sharpe, 7.0% return
+- [x] Dual Momentum (Antonacci 2014) — absolute + relative momentum with safe haven (TLT) — 0.83 Sharpe, 7.6% return
+- [x] Expanded ETF universe: 8 broad ETFs + 9 sector ETFs + SHY cash proxy (18 instruments)
+- [x] **Individual Stock Momentum on S&P 500** — the breakthrough strategy — 1.16 Sharpe, 15.9% return, -18.6% MaxDD
+- [x] VIX regime filter: reduce at VIX > 35, exit at VIX > 45 (avoids momentum crashes per Daniel & Moskowitz 2016)
+- [x] Parameter sweep across lookback, holding period, top_n, vol_target, VIX thresholds
+- [ ] Mean reversion strategy (planned)
+- [ ] Portfolio-level combination of uncorrelated strategies (next priority — see Phase 3.5)
+
+### Current Strategy Results (warmup-trimmed, 2010-2026)
+
+| Strategy | Sharpe | Return | MaxDD | Walk-Forward | Status |
+|---|---|---|---|---|---|
+| **Stock Momentum (S&P 500)** | **1.16** | **15.9%** | **-18.6%** | **1.27 median OOS** | Best performer |
+| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | 0.82 median OOS | Validated |
+| Time-Series Momentum | 0.85 | 6.2% | -15.2% | 0.78 median OOS | Validated |
+| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | 0.76 median OOS | Validated |
+| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | 0.55 median OOS | Regime fail |
+| *SPY Buy & Hold (benchmark)* | *0.84* | *13.7%* | *-33.7%* | — | — |
+
+**Key insight:** Individual stocks provide far more dispersion than ETFs — momentum alpha requires dispersion. Stock Momentum beats SPY with higher Sharpe and half the drawdown.
+
+**Known risk:** Momentum crash vulnerability during sharp regime changes (COVID 2020). VIX filter reduces but doesn't eliminate this.
+
+**Data caveat:** S&P 500 universe uses current constituents (survivorship bias). Results are slightly optimistic.
+
+### Phase 3.5: Performance Optimization 🔜 NEXT
+*The biggest remaining gains come from portfolio combination and crash protection, not single-strategy tuning.*
+
+- [ ] **Portfolio combination** (highest priority) — Blend Stock Momentum + Cross-Sectional + Dual Momentum using risk-parity weighting. These strategies are partially uncorrelated; combining them should improve Sharpe by 0.2-0.4 and significantly cut max drawdown. This is the "free lunch" of diversification.
+- [ ] **SPY trend filter** — If SPY is below its 200-day moving average, reduce all equity exposure by 50%. Simple, effective crash protection that stacks on top of VIX filter.
+- [ ] **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches (week 1/2/3/4). Reduces timing luck, lowers turnover, and smooths the equity curve. Moskowitz showed this matters for momentum.
+- [ ] **Sector momentum pre-filter** — Before picking individual stocks, check if their sector ETF is in an uptrend. Avoids catching falling knives in collapsing sectors (energy 2014, financials 2008).
+- [ ] **Quality screen** — Filter momentum stock picks by profitability (ROE > 10%). Avoids momentum in junk stocks that crash hardest during reversals.
+- [ ] **Short-term mean reversion** — 3-5 day mean reversion is negatively correlated with momentum. Adding it as a separate strategy in the blend smooths the equity curve and provides returns when momentum stalls.
+
+### Phase 4: Alpaca Paper Trading 🔜
+*Prerequisite: George creates Alpaca account and provides API keys.*
+
+**George's steps:**
+1. Create account at alpaca.markets
+2. Get paper trading API keys (Dashboard > Paper Trading > API Keys)
+3. Save to `.env` as `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`
+4. Choose starting strategy (recommend Stock Momentum)
+5. Decide on rebalance schedule (monthly aligns with 21-day holding period)
+
+**Build steps:**
+- [ ] Install `alpaca-py` SDK, set up auth from `.env`
+- [ ] Build `execution/alpaca_broker.py` — connect to Alpaca, submit orders, query positions/account
+- [ ] Build `execution/rebalance.py` — take strategy signals, convert to buy/sell orders with proper sizing
+- [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
+- [ ] Pre-trade risk checks — verify orders pass Kelly sizing, 2% rule, circuit breakers before submitting
+- [ ] Add `api/routes/portfolio.py` — live P&L, positions, order history endpoints
+- [ ] Update dashboard with live portfolio view (positions, P&L, order log)
+- [ ] Set up cron/scheduler for monthly rebalance execution
+
+### Phase 5: AI-Assisted Research (Future)
+- [ ] Claude API for strategy ideation, code generation, analysis acceleration
+- [ ] Analyze less-trafficked data: small-cap SEC filings (EDGAR), niche RSS feeds
+- [ ] ML-based feature engineering (what features predict returns beyond momentum?)
+- [ ] *Note: Institutional NLP pipelines (Bloomberg, RavenPack) are faster on breaking news — our AI edge is in research depth and speed, not latency*
+
+### Phase 6: Go Live (After 3+ months of paper trading)
+- [ ] Only after statistical validation AND consistent paper trading profitability
+- [ ] Start with $2,000 of the $10k (preserve capital)
+- [ ] Scale up allocation as confidence grows
+- [ ] Automated daily monitoring, alerts, and drawdown circuit breakers
+
+---
+
+## 8. Key Principles (Updated from Original Proposal)
+
+1. **Risk first.** Never risk more than 2% of capital on a single trade. Timeless.
+2. **Diversify strategies, not just assets.** Run multiple uncorrelated strategies simultaneously.
+3. **Paper trade ruthlessly.** No live money until 3+ months of consistent paper trading results.
+4. **Respect overfitting.** If it works perfectly in backtesting, it's probably overfit. Use walk-forward optimization and out-of-sample testing.
+5. **Automate everything.** The point is "money working for us." No manual trading decisions.
+6. **Journal everything.** Track every strategy, parameter change, and result. Git is our journal.
+7. **AI as research assistant, not oracle.** Use Claude for code, analysis, and idea generation — but never blindly trust a model's prediction.
+
+---
+
+## 9. Essential Reading (Added Post-Review)
+
+These references were identified during an independent critical review of this plan and are considered essential:
+
+| Book | Author | Why It Matters |
+|------|--------|---------------|
+| *Advances in Financial Machine Learning* (2018) | Marcos Lopez de Prado | **The bible of avoiding overfitting in quant finance.** Covers CPCV, triple-barrier method, and meta-labeling. Read before building any ML strategy. |
+| *Systematic Trading* (2015) | Robert Carver | Written specifically for small-account systematic traders. Directly relevant to our situation. |
+| *Leveraged Trading* (2019) | Robert Carver | Practical guide to trading with small capital. Covers position sizing and account management. |
+| *Machine Learning for Algorithmic Trading* (2020) | Stefan Jansen | Practical Python implementations of exactly what this plan proposes. |
+
+### Key Academic Papers
+
+- **Moskowitz, Ooi, Pedersen (2012)** — "Time Series Momentum" — ✅ implemented in `strategies/trend_following.py`
+- **Jegadeesh & Titman (1993)** — cross-sectional momentum — ✅ implemented in `strategies/momentum.py` and `strategies/stock_momentum.py`
+- **Antonacci (2014)** — Dual Momentum — ✅ implemented in `strategies/momentum.py`
+- **Asness, Moskowitz, Pedersen (2013)** — "Value and Momentum Everywhere" — informed our multi-asset momentum approach
+- **Daniel & Moskowitz (2016)** — momentum crashes and VIX regime filtering — ✅ implemented as VIX filter in `strategies/stock_momentum.py`
+- **McLean & Pontiff (2016)** — published trading strategy returns decline ~58% post-publication. This is a sobering reminder: any strategy you read about online has likely already been arbitraged.
+
+### A Note on Survivorship Bias
+
+The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the three most successful quantitative traders in history. For every Simons, there are thousands of quant funds that lost money and shut down. We keep their principles, but calibrate our expectations to reality — which is why Section 2's honest assessment exists.
+
+---
+
+## 10. Next Steps — What We Build Next
+
+Phases 1-3 are complete. We have 5 strategies, a working dashboard, and a validation framework. The immediate priorities are:
+
+1. **Portfolio combination** — Blend our best strategies (Stock Momentum + Cross-Sectional + Dual Momentum) using risk-parity weighting. This is the single highest-impact improvement available — diversification across partially uncorrelated return streams.
+2. **SPY trend filter** — Add a simple 200-day MA filter on SPY to reduce all equity exposure during bear markets. Stacks on top of VIX filter.
+3. **Alpaca paper trading** — George sets up account, we build the execution layer and start paper trading Stock Momentum with real market data.
+4. **Staggered rebalancing + sector filter** — Reduce timing luck and avoid collapsing sectors.
+
+The original 2020 vision was right. The tools have caught up. We now have a strategy (Stock Momentum) that beats SPY with higher Sharpe and half the drawdown. The next step is proving it works in real-time with paper trading.
