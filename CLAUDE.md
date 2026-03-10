@@ -65,6 +65,8 @@ Rebalance schedule:
 ```
 data/pipeline.py          — yfinance ETF data download & caching
 data/sp500.py             — S&P 500 stock universe + VIX data
+data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
+data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
 strategies/base.py        — Abstract strategy interface
 strategies/trend_following.py — Time-Series & Multi-Timeframe Momentum
 strategies/momentum.py    — Cross-Sectional & Dual Momentum (ETF-based)
@@ -78,13 +80,15 @@ backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
 execution/alpaca_broker.py — Multi-account Alpaca client (3 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
-api/main.py              — FastAPI backend
-api/routes/portfolio.py  — Account summary, positions, combined view (?account=1|2|3)
+api/main.py              — FastAPI backend (lifespan: auto-backfill + snapshot on startup)
+api/routes/portfolio.py  — Account summary, positions, equity history, correlation
 api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3)
 api/routes/backtests.py  — Backtest runner (individual + combined 3-account)
 api/routes/strategies.py — Strategy list with live metrics
 dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
 dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
+dashboard/src/components/EquityHistoryChart.tsx — Live equity curves (TradingView, per-account + combined)
+dashboard/src/components/CorrelationPanel.tsx — Correlation matrix + rolling chart + alerts (Combined view)
 dashboard/src/components/StrategyPanel.tsx — Grouped strategy list (Live/Portfolio/Building Blocks)
 dashboard/               — React + Vite + TradingView Charts
 ```
@@ -108,6 +112,8 @@ dashboard/               — React + Vite + TradingView Charts
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
   - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10
 - **Combined 3-account: 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
-- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3) + Backtests with grouped strategy panel (Live Accounts → Portfolio Blends → Building Blocks → Solo + Filter) with hover tooltips and account badges
+- Dashboard: 4-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3), live equity charts, correlation monitor (Combined view), Backtests with grouped strategy panel
+- **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup, live equity curves in dashboard
+- **Correlation monitoring**: Rolling 21-day pairwise correlation, matrix + rolling chart, alert at 0.80 threshold, confidence badges
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- Next: Weekly rebalance Account 3 (Mondays), monthly rebalance all accounts, walk-forward validation on new strategies, track paper trading 3+ months before live money
+- Next: Circuit breaker alerts, rebalance UI, automated scheduler, walk-forward validation, track paper trading 3+ months before live money

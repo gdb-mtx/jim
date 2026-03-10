@@ -256,6 +256,8 @@ FIRE/
 ├── data/
 │   ├── pipeline.py              # ✅ yfinance ETF data download & caching
 │   ├── sp500.py                 # ✅ S&P 500 stock universe + VIX data (parquet cache)
+│   ├── snapshots.py             # ✅ Daily equity snapshots (parquet) + Alpaca backfill
+│   ├── correlation.py           # ✅ Inter-account correlation monitoring (rolling 21-day)
 │   └── cache/                   # Cached parquet files (gitignored)
 │
 ├── strategies/
@@ -282,11 +284,11 @@ FIRE/
 │
 ├── api/                         # ✅ FastAPI backend
 │   ├── __init__.py
-│   ├── main.py                  # ✅ FastAPI app entry point (CORS, router mounts)
+│   ├── main.py                  # ✅ FastAPI app entry point (CORS, lifespan snapshot hook)
 │   └── routes/
 │       ├── strategies.py        # ✅ List strategies with live backtest metrics
 │       ├── backtests.py         # ✅ Run backtests, equity curves + SPY benchmark
-│       ├── portfolio.py         # ✅ Multi-account portfolio (summary, positions, combined)
+│       ├── portfolio.py         # ✅ Multi-account portfolio, equity history, correlation
 │       └── orders.py            # ✅ Rebalance preview/execute, order history
 │
 ├── dashboard/                   # ✅ React + Vite + TypeScript frontend
@@ -294,12 +296,14 @@ FIRE/
 │   ├── tsconfig.json
 │   └── src/
 │       ├── App.tsx              # ✅ Main app with strategy selection, metrics, charts
-│       ├── api.ts               # ✅ API client (multi-account portfolio, backtests)
-│       ├── types.ts             # ✅ TypeScript interfaces (accounts, positions, orders)
+│       ├── api.ts               # ✅ API client (portfolio, backtests, equity history, correlation)
+│       ├── types.ts             # ✅ TypeScript interfaces (accounts, positions, equity, correlation)
 │       ├── strategyMetadata.ts  # ✅ Strategy categories, descriptions, sort order
 │       └── components/
 │           ├── PortfolioChart.tsx    # ✅ Equity curve + SPY overlay (TradingView)
-│           ├── LivePortfolio.tsx     # ✅ Multi-account live portfolio (switcher, P&L, orders)
+│           ├── LivePortfolio.tsx     # ✅ Multi-account live portfolio (equity chart, correlation, P&L)
+│           ├── EquityHistoryChart.tsx # ✅ Live equity curves (TradingView, per-account + combined)
+│           ├── CorrelationPanel.tsx  # ✅ Correlation matrix + rolling chart + alerts
 │           ├── StrategyPanel.tsx     # ✅ Grouped strategy list (sections, tooltips, badges)
 │           ├── Tooltip.tsx          # ✅ Reusable hover tooltip (dark theme)
 │           └── MetricCard.tsx       # ✅ Metric display cards
@@ -506,8 +510,8 @@ First trades executed **2026-03-10**. Rebalance dates (approximate, adjusted for
 *Note: Currently tracked manually. Automated scheduler is next priority.*
 
 **Remaining:**
-- [ ] **Performance tracking** — Store daily equity snapshots (parquet/SQLite), chart live P&L curves over time per account + combined. Critical for the 3-month review.
-- [ ] **Live correlation monitoring** — Track rolling correlation between account returns in real-time. The 0.56-0.66 backtest correlation is the foundation of our diversification thesis — if accounts start moving together in live trading, the entire 3-account architecture needs reassessment. Dashboard warning if correlation exceeds 0.80.
+- [x] **Performance tracking** — Daily equity snapshots stored in parquet (`data/processed/snapshots_acct{N}.parquet`), live P&L curves charted in dashboard per account + combined. Alpaca portfolio history API backfills gaps automatically on server startup.
+- [x] **Live correlation monitoring** — Rolling 21-day pairwise Pearson correlation between account daily returns. Dashboard shows correlation matrix (color-coded green→yellow→red), rolling chart, confidence badge, and alert banner when any pair exceeds 0.80 threshold. Validates the 0.56-0.66 backtest diversification thesis.
 - [ ] **Circuit breaker alerts** — Active monitoring of -15% portfolio / -10% strategy drawdown thresholds. Warning banner in dashboard when approaching limits (e.g., -8% strategy, -12% portfolio).
 - [ ] **Rebalance UI in dashboard** — "Rebalance" button in Live Portfolio tab showing diff (stocks to buy/sell, dollar amounts) before confirming. Replaces current API-only workflow.
 - [ ] Set up cron/scheduler for automated rebalance execution
@@ -573,11 +577,11 @@ The original proposal cites Ed Thorp, Jim Simons, and Larry Hite. These are the 
 
 ## 10. Next Steps — What We Build Next
 
-Phases 1-5 are complete. All 3 accounts are live on Alpaca paper trading with 101 total positions across 3 factor-diversified strategies. The immediate priorities are:
+Phases 1-5 are complete. All 3 accounts are live on Alpaca paper trading with 101 total positions across 3 factor-diversified strategies. Performance tracking and correlation monitoring are now live.
 
-### Priority 1: Monitoring & Validation (build now)
-1. **Performance tracking** — Daily equity snapshots to parquet, charted in dashboard. Without this, the June review has no data trail.
-2. **Live correlation monitoring** — Rolling 21-day correlation between account daily returns. **This is the most critical validation metric.** Backtest says 0.56-0.66 correlation; if live trading shows 0.80+, the diversification thesis collapses and we need to reassess the 3-account architecture. Dashboard widget with alert threshold.
+### Priority 1: Monitoring & Validation ✅ PARTIALLY COMPLETE
+1. ✅ **Performance tracking** — Daily equity snapshots stored in parquet, charted in dashboard with TradingView charts. Alpaca portfolio history API backfills any gaps on server startup. Shows per-account + combined equity curves.
+2. ✅ **Live correlation monitoring** — Rolling 21-day correlation between account daily returns displayed in dashboard (Combined view). Correlation matrix with color-coded cells, rolling chart with 3 pair lines + 0.80 alert threshold, confidence badges, and alert banners. Compares live correlations against backtest expected values (0.56-0.66).
 3. **Circuit breaker alerts** — Warning banner when any account approaches -10% strategy or -15% portfolio drawdown thresholds. Early warning > post-mortem.
 
 ### Priority 2: Operational (build before first rebalance)
