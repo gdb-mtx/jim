@@ -1,10 +1,22 @@
 """Portfolio endpoints — live account data from Alpaca.
 
 Supports 3 paper trading accounts via ?account=1|2|3 query param.
+Includes equity snapshot storage and correlation monitoring.
 """
+
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
+from data.snapshots import (
+    take_snapshot,
+    take_all_snapshots,
+    backfill_from_alpaca,
+    get_equity_history,
+    get_combined_equity_history,
+    get_all_equity_histories,
+)
+from data.correlation import get_correlation_report
 
 router = APIRouter()
 
@@ -106,3 +118,56 @@ async def portfolio_value(
     """Get just the portfolio value (lightweight)."""
     broker = _get_broker(account)
     return {"portfolio_value": broker.get_portfolio_value()}
+
+
+# ── Equity Snapshots & Correlation ───────────────────────────────────
+
+
+@router.post("/snapshot")
+async def create_snapshot(
+    account: Optional[int] = Query(default=None, ge=1, le=3, description="Account (1-3) or omit for all"),
+):
+    """Take an equity snapshot now. Idempotent — skips if today already recorded.
+
+    Also backfills any missing days from Alpaca portfolio history.
+    """
+    if account is not None:
+        try:
+            backfill_from_alpaca(account)
+        except Exception:
+            pass
+        return take_snapshot(account)
+    else:
+        for acct in (1, 2, 3):
+            try:
+                backfill_from_alpaca(acct)
+            except Exception:
+                pass
+        return take_all_snapshots()
+
+
+@router.get("/history")
+async def equity_history(
+    account: int = Query(default=0, ge=0, le=3, description="0=combined, 1-3=individual"),
+):
+    """Get historical equity time series for charting."""
+    if account == 0:
+        histories = get_all_equity_histories()
+        combined = get_combined_equity_history()
+        return {
+            "equity_curve": combined,
+            "per_account": histories,
+            "days": len(combined),
+        }
+    else:
+        curve = get_equity_history(account)
+        return {
+            "equity_curve": curve,
+            "days": len(curve),
+        }
+
+
+@router.get("/correlation")
+async def correlation_data():
+    """Get inter-account correlation report for monitoring."""
+    return get_correlation_report()

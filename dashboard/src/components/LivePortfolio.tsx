@@ -6,6 +6,8 @@ import {
   fetchCombinedPortfolio,
 } from "../api";
 import type { PortfolioSummary, Position, Order } from "../types";
+import EquityHistoryChart from "./EquityHistoryChart";
+import CorrelationPanel from "./CorrelationPanel";
 
 type AccountView = 0 | 1 | 2 | 3; // 0 = combined
 
@@ -228,6 +230,12 @@ export default function LivePortfolio() {
           </p>
         </div>
       </div>
+
+      {/* Live equity chart */}
+      <EquityHistoryChart account={account} />
+
+      {/* Correlation monitor (combined view only) */}
+      {isCombined && <CorrelationPanel />}
 
       {/* Positions table */}
       <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">

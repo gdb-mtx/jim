@@ -82,3 +82,19 @@ export interface Order {
   filled_at: string | null;
   filled_avg_price: number | null;
 }
+
+export interface EquityHistoryResponse {
+  equity_curve: EquityPoint[];
+  per_account?: Record<string, EquityPoint[]>;
+  days: number;
+}
+
+export interface CorrelationReport {
+  matrix: Record<string, number> | null;
+  rolling: Record<string, EquityPoint[]>;
+  alert_pairs: string[];
+  data_days: number;
+  confidence: "low" | "medium" | "high" | null;
+  alert_threshold: number;
+  backtest_expected: Record<string, number>;
+}

@@ -45,3 +45,22 @@ export async function fetchCombinedPortfolio() {
   const res = await fetch(`${BASE_URL}/portfolio/combined`);
   return res.json();
 }
+
+export async function fetchEquityHistory(account = 0) {
+  const res = await fetch(`${BASE_URL}/portfolio/history?account=${account}`);
+  return res.json();
+}
+
+export async function fetchCorrelation() {
+  const res = await fetch(`${BASE_URL}/portfolio/correlation`);
+  return res.json();
+}
+
+export async function takeSnapshot(account?: number) {
+  const url =
+    account !== undefined
+      ? `${BASE_URL}/portfolio/snapshot?account=${account}`
+      : `${BASE_URL}/portfolio/snapshot`;
+  const res = await fetch(url, { method: "POST" });
+  return res.json();
+}

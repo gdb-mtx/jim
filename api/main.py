@@ -2,11 +2,32 @@
 FastAPI Backend — Serves strategy data to the React dashboard.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, strategies, backtests, orders
 
-app = FastAPI(title="FIRE Trading API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: take today's equity snapshots (idempotent)."""
+    try:
+        from data.snapshots import take_all_snapshots, backfill_from_alpaca
+
+        # Always backfill — fills any gaps since last run (idempotent)
+        for acct in (1, 2, 3):
+            try:
+                backfill_from_alpaca(acct)
+            except Exception:
+                pass
+        take_all_snapshots()
+    except Exception as e:
+        print(f"Snapshot on startup skipped: {e}")
+    yield
+
+
+app = FastAPI(title="FIRE Trading API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
