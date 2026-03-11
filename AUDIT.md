@@ -1,393 +1,334 @@
-# FIRE System Audit — 2026-03-11 (Revised)
+# FIRE System Audit — 2026-03-11 (v2)
 
-Comprehensive audit of the FIRE quantitative trading system covering frontend code quality, backend architecture, testing, security, and production readiness.
+Independent audit of the FIRE quantitative trading system. This audit replaces the previous version and provides a fresh assessment of the entire system, including an honest opinion on the project's viability given its speed of development.
 
-**Revision note**: Original audit conducted 2026-03-11 morning. First revision reflected hardening work (circuit breaker persistence, concurrency locks, rebalance logging, retry logic, error toasts, risk API, 24 backend tests). Second revision (2026-03-11 evening) reflects dashboard surfacing work — all backend features now have frontend UIs: risk status panel, rebalance preview/execute/history, regime filter banners, BTC filter status through full stack. Third revision (2026-03-11 night) reflects performance & startup fixes — eliminated full-page redraws, added React memoization throughout, fixed startup sequencing, cached ETF/SPY data downloads, batched parquet I/O, moved server startup work to background thread.
+---
+
+## Project Context
+
+**Origin**: A January 2020 proposal inspired by Ed Thorp, Jim Simons, and Larry Hite — the idea that quantitative, systematic trading has been democratized enough for a small team to pursue as a side project with asymmetric upside.
+
+**What actually happened**: The concept sat for 6 years. Then, in ~36 hours (March 9-11, 2026), the entire system was built from scratch with an AI coding partner:
+
+- **31 commits** across **43 files**
+- **~5,300 lines of Python** (strategies, execution, API, data pipelines, tests)
+- **~2,800 lines of TypeScript** (React dashboard with 12 components)
+- **9 backtested strategies** across 4 uncorrelated accounts
+- **Automated daily crypto rebalance** via APScheduler
+- **24 passing tests** covering risk management, rebalance logic, and all strategies
+- **Full operational dashboard** with equity charts, rebalance workflow, risk monitoring, correlation tracking
+
+**Intended use**: Personal project. One user. Paper trading now, potentially $10k-$50k of real money after 3+ months of validation.
 
 ---
 
 ## Summary Scorecard
 
-| Dimension | Grade | Δ | Notes |
-|-----------|-------|---|-------|
-| **Strategy Research** | A- | — | Academically grounded, good factor diversification |
-| **Architecture** | A- | ↑ | Clean separation + new safety layers (locks, logging, risk API) |
-| **Dashboard** | A- | ↑↑ | Memoized components, no-flash polling, pre-created chart series, extracted table components |
-| **Code Quality** | A- | ↑ | Memoization throughout, cached data pipeline, batch I/O, non-blocking startup |
-| **Backtest Validity** | C+ | — | Survivorship bias + warmup trimming still inflate metrics ~10-15% |
-| **Execution Safety** | B | ↑↑ | Concurrency locks, retry logic, rebalance journal, circuit breaker persistence |
-| **Risk Management** | B+ | ↑↑↑ | Circuit breakers persist to disk, risk API for status/reset |
-| **Security** | D | — | No auth, no rate limiting, permissive CORS (unchanged) |
-| **Testing** | C | ↑↑↑ | 24 passing tests (risk, rebalance, strategies); no frontend or CI/CD |
-| **Production Readiness** | B- | ↑ | Smooth UX, fast startup, cached data; live money still needs auth + error boundaries |
+| Dimension | Grade | Notes |
+|-----------|-------|-------|
+| **Strategy Research** | A- | Academically grounded, proper factor diversification, 4 uncorrelated accounts |
+| **Architecture** | A- | Clean separation of concerns, well-organized modules, documented patterns (SDD.md) |
+| **Dashboard** | A- | Memoized, no-flash polling, pre-created chart series, good operational panels |
+| **Code Quality** | B+ | Readable, consistent patterns, but speed of development left some rough edges |
+| **Backtest Methodology** | B- | Walk-forward + Monte Carlo + regime testing is excellent; survivorship bias and missing transaction costs are real |
+| **Execution Safety** | B | Concurrency locks, circuit breakers, retry logic, audit trail — solid for paper; gaps remain for live |
+| **Risk Management** | B+ | Fractional Kelly, 2% rule, drawdown breakers, persistence to disk |
+| **Testing** | C+ | 24 backend tests cover critical paths; no frontend tests, no API tests, no CI/CD |
+| **Security** | D | No auth, no rate limiting, permissive CORS — acceptable for localhost paper trading only |
 
-**Overall: B+ as a prototype, B- as production software** (up from B / C+)
-
----
-
-## 1. Frontend Code Quality & Architecture
-
-### Strong Points
-- **Strict TypeScript Configuration** (`strict: true` in tsconfig.app.json) — no implicit `any`, unused variables flagged, strict null checks
-- **Well-organized component structure**: 12 focused, single-responsibility components (~3,000 total lines)
-- **Clean separation**: `EquityHistoryChart`, `CorrelationPanel`, `StrategyPanel`, `LivePortfolio`, `Toast`, `RiskStatusPanel`, `FilterStatusBanner`, `RebalancePanel`, `RebalanceHistory`, etc.
-- **Reusable utilities**: `Tooltip`, `MetricCard`
-- **ESLint + React Hooks rules enforced** with React Refresh for HMR
-- **Proper useState/useEffect patterns** with useRef for TradingView chart integration
-- **Cleanup functions** for event listeners and chart disposal
-- **No console.log() statements** found in production code
-- **Toast notification system** (`Toast.tsx`) — error/warning/info toasts with auto-dismiss
-- **API client timeouts** — 20-second `fetchWithTimeout()` using `AbortController`
-- **Full memoization** — all child components wrapped with `React.memo`, computed data via `useMemo`, callbacks via `useCallback` *(new)*
-- **No-flash polling** — background refreshes swap data silently; loading skeleton only on initial load *(new)*
-- **Instant account switching** — stale data stays visible until new data arrives, no skeleton flash *(new)*
-- **Pre-created chart series** — `EquityHistoryChart` creates all TradingView series on mount with `visible: false`, toggles visibility on view change instead of destroy/recreate *(new)*
-- **Extracted table components** — `PositionsTable` and `OrdersTable` are `memo()`-wrapped sub-components, largest DOM subtrees skip re-render when data unchanged *(new)*
-
-### Issues Fixed Since Original Audit
-
-#### ~~No Request Timeouts~~ → FIXED
-- `api.ts` now uses `fetchWithTimeout()` with `TIMEOUT_MS = 20_000`
-- All fetch calls abort after 20 seconds with a proper error
-
-#### ~~No User-Facing Error Messages~~ → PARTIALLY FIXED
-- Toast system shows error messages on rebalance failures and API errors
-- `LivePortfolio` shows "API not connected" banner with setup instructions
-- **Remaining gap**: `EquityHistoryChart` and `CorrelationPanel` still silently degrade on error
-
-#### ~~Full-Page Redraws on Polling~~ → FIXED
-- `LivePortfolio` no longer sets `loading=true` on background poll — stale data stays visible until new data arrives
-- Account switching no longer clears state to null — old data shows briefly (~200ms) then swaps
-- All child components (`EquityHistoryChart`, `RiskStatusPanel`, `FilterStatusBanner`, `RebalancePanel`, `RebalanceHistory`, `CorrelationPanel`) wrapped with `React.memo`
-- Computed data (`viewData`, `sortedPositions`, `recentOrders`) stabilized with `useMemo`; callbacks with `useCallback`
-- `PositionsTable` and `OrdersTable` extracted as `memo()`-wrapped sub-components (largest DOM subtrees)
-
-#### ~~Chart Blank Flash on Account Switch~~ → FIXED
-- `EquityHistoryChart` pre-creates all 6 series (5 combined + 1 individual) on mount with `visible: false`
-- Account changes call `setData()` on existing series and toggle visibility — no `removeSeries`/`addSeries`
-
-#### ~~Uncoordinated Polling Intervals~~ → FIXED
-- `RiskStatusPanel` polling slowed from 30s to 60s (risk status changes rarely)
-- Reduces independent re-render waves
-
-### Issues Remaining
-
-#### Missing Error Boundaries (High)
-- No React Error Boundary component
-- Single error in any component crashes entire dashboard
-- If `EquityHistoryChart` throws, entire `LivePortfolio` tab fails
-
-#### Silent Failures in Some Components (Medium)
-- `EquityHistoryChart.catch(() => setDays(0))` — hides chart without explanation
-- `CorrelationPanel.catch(() => setReport(null))` — silently clears data
-- Users can't distinguish "no data available" from "API error"
-
-#### ~~Loading State Inconsistencies~~ → MOSTLY FIXED
-- Loading skeleton shown only on initial load; background polls swap data silently
-- Account switches show stale data briefly instead of skeleton flash
-- **Remaining**: No timeout indicator on very long initial loads
-
-#### Type Safety Gaps (Low)
-- API responses not validated — trusts backend types implicitly
-- `api.ts` uses `.json()` without try-catch; JSON parse errors not handled
-- `CorrelationMatrix` has fragile index math with minimal guards
-
-#### Race Conditions (Medium)
-- `EquityHistoryChart` fetches on account change but doesn't cancel pending requests
-- Rapid account switching causes multiple parallel fetches
-- `LivePortfolio` sets state after component unmounts if fetch completes post-unmount
-
-#### Accessibility & UX (Low)
-- No ARIA labels or semantic HTML
-- Tooltips only work on hover (keyboard users can't access)
-- Colors used for meaning without fallback (red/green for P&L) — colorblind unfriendly
+**Overall: B+ for what it is — a personal paper trading system built in 36 hours.**
 
 ---
 
-## 2. Testing Infrastructure
+## 1. Honest Opinion
 
-### Status: 24 BACKEND TESTS, PASSING
+This is a remarkable amount of work for ~36 hours. The system went from a 6-year-old concept document to 4 live paper trading accounts with a full operational dashboard. The architecture is clean, the strategies have academic foundations, and the safety infrastructure (circuit breakers, locks, audit trail) is better than most retail quantitative systems.
 
-**What exists now** *(all new since original audit)*:
-- `tests/test_risk_manager.py` — 8 tests: Kelly sizing, circuit breakers (portfolio + strategy level), persistence across restarts, state file isolation between accounts, 2% rule
-- `tests/test_rebalance.py` — 5 tests: order generation from weight diffs, sell-before-buy ordering, circuit breaker halting, position caps, empty-diff handling
-- `tests/test_strategies.py` — 11 tests: smoke tests for all 9 strategy classes (ETF momentum, stock momentum, crypto, low-vol, reversal, trend, multi-asset, dual momentum, multi-timeframe) + signal invariants (weights sum ≤ 1, no NaN)
-- Pytest configured in `pyproject.toml` with `testpaths = ["tests"]`
-- All 24 tests pass via `uv run pytest tests/`
+**What's genuinely impressive:**
+- Factor diversification across 4 accounts is the right approach. Most retail quants over-optimize a single strategy.
+- The validation framework (walk-forward + Monte Carlo + regime testing) is professional-grade.
+- Circuit breaker persistence, per-account concurrency locks, and structured rebalance logging are the kind of safety infrastructure that many production systems skip.
+- SDD.md documenting architectural patterns shows mature engineering instincts.
+- The 2020 proposal mentioned Larry Hite's "no single bet losing more than 2% of total capital" — and that rule is actually implemented in `risk_manager.py`. The system stayed true to its founding principles.
 
-**What's covered**:
-- Strategy initialization and signal generation (all 9 strategies)
-- Risk calculations (fractional Kelly, position sizing, 2% rule)
-- Circuit breaker persistence (save/load cycle, account isolation)
-- Rebalance logic (order diffing, sell-before-buy, safety halts)
+**What's honest about the risks:**
+- Speed of development means some code paths haven't been stress-tested by real-world edge cases.
+- Backtested Sharpe of 1.59 will almost certainly compress to 1.2-1.4 in live trading (survivorship bias, slippage, market impact).
+- The system has no external alerting — if the API server crashes at 3 AM, nobody knows until you check the dashboard.
+- No authentication means this must stay on localhost. If you ever VPN in or expose the port, anyone could trigger rebalances.
 
-**What's still missing**:
-- No frontend tests (Vitest / React Testing Library)
-- No API endpoint tests (FastAPI TestClient with mocked Alpaca)
-- No integration tests (end-to-end flows)
-- No CI/CD pipeline (GitHub Actions)
-- No test coverage reporting
-
-**Recommendations**:
-- **Next priority**: API endpoint tests with `httpx.AsyncClient` + mocked broker
-- **Frontend**: Vitest + React Testing Library for critical paths (rebalance flow, account switching)
-- **CI/CD**: GitHub Actions running `uv run pytest` + `npm run build` on push
+**But for the intended use case** — one person, paper trading, learning quantitative investing, with a long validation period before real money — this is a very solid foundation. The 3-month paper trading plan before going live is exactly the right call.
 
 ---
 
-## 3. Configuration & Build Setup
+## 2. Strategy & Research Quality
 
-### Strong Points
-- React 19.2.4, TypeScript 5.9.3, Vite 7.3.1 (fast HMR)
-- Tailwind CSS 4.2.1 with dark theme via utility classes
-- TradingView Lightweight Charts 5.1.0 (industry-standard)
-- ESLint with React Hooks rules and TypeScript ESLint integration
-- Strict TypeScript enforced project-wide
+### What's Right
+
+All 9 strategies are grounded in published academic research:
+- **Momentum** (Jegadeesh & Titman 1993): Cross-sectional stock ranking by trailing returns
+- **Time-Series Momentum** (Moskowitz, Ooi & Pedersen 2012): Trend-following with volatility scaling
+- **Low Volatility** (Baker, Bradley & Wurgler 2011): Low-vol anomaly with momentum quality filter
+- **Mean Reversion** (Jegadeesh 1990): Short-term reversal — buy weekly losers
+- **Multi-Asset Trend** (Faber 2007): Trend-following across uncorrelated asset classes
+- **Vol-Scaling** (Moreira & Muir 2017): EWMA volatility targeting overlay
+
+The 4-account architecture achieves genuine diversification:
+- Equity pair correlations: 0.56-0.66 (moderate — each account adds value)
+- Crypto-equity correlations: 0.12-0.18 (nearly uncorrelated — excellent diversifier)
+- Combined 3-account equity: 1.59 Sharpe, -10.2% MaxDD vs SPY's -33.7% MaxDD
+
+The signal generation code is correct. Verified:
+- Proper 1-day lag in `base.py` (`signals.shift(1) * returns` — no look-ahead bias)
+- VIX regime filter applied consistently across strategies
+- Inverted VIX filter for reversal strategy (correct — reversals strengthen at moderate volatility)
+- BTC 200d MA filter is binary (100% cash when below) — appropriate for crypto bear markets
+- Vol-scaling lags the scalar by 1 day to avoid look-ahead
+
+### What Needs Honest Acknowledgment
+
+**Survivorship bias is real (~5-10% return inflation)**:
+The S&P 500 universe uses current constituents from Wikipedia, not point-in-time historical lists. Stocks that were removed (delisted, acquired, bankrupt) are excluded from the backtest retroactively. The momentum strategies in particular benefit from this — they "pick winners" from a universe that already survived.
+
+**Transaction costs are not modeled**:
+Backtests assume perfect fills at daily close prices. In reality:
+- Account 3 (weekly reversal rebalance, 52 stocks) has the highest turnover and slippage risk
+- Even on liquid S&P 500 stocks, market impact on 15-50 position rebalances is 2-5 bps per trade
+- Crypto spreads on Alpaca are wider than on dedicated crypto exchanges
+
+**Realistic adjusted expectations**:
+| Metric | Backtest | Estimated Live | Discount |
+|--------|----------|---------------|----------|
+| Combined Sharpe | 1.59 | 1.2-1.4 | -15-25% |
+| Combined Return | 16.8% | 12-15% | -15-25% |
+| Combined MaxDD | -10.2% | -12 to -15% | Wider |
+| Crypto Sharpe | 1.62 | 1.1-1.4 | -15-30% |
+| Crypto CAGR | 33.2% | 20-28% | -15-40% |
+
+These are still solidly above the SPY benchmark (0.87 Sharpe, -33.7% MaxDD). The factor diversification advantage is robust even after discounting.
+
+---
+
+## 3. Execution Safety
+
+### What's Solid
+
+**Concurrency protection**: Per-account async locks prevent duplicate rebalances. Execute endpoint returns 409 if already running. Accounts can rebalance independently (Account 1 doesn't block Account 4).
+
+**Circuit breakers**: Portfolio-level (-15%) and strategy-level (-10%) drawdown breakers. Persist to disk in `data/risk_state/`. Survive server restarts. Account-isolated state files. Reset requires explicit API call.
+
+**Scheduled job resilience**: Crypto daily rebalance at 00:05 UTC has 3-attempt exponential backoff (immediate, 60s, 120s). Each attempt logged with full traceback.
+
+**Audit trail**: Every rebalance logged to `data/rebalance_log.jsonl` with timestamp, account, strategy, source (manual/scheduled), portfolio value, order count, and per-order status.
+
+**Position sizing**: Fractional Kelly with 2% max loss per position. Position caps enforced in `risk_manager.py`.
+
+### What Needs Fixing Before Live Money
+
+**1. Stale price risk in execute path (HIGH)**
+The execute endpoint calls `compute_rebalance()` which fetches prices, computes orders, then submits them. If the computation takes time or prices moved since the user saw the preview, orders execute at stale prices. For crypto (Account 4), prices can move 5-10% in minutes.
+
+*Fix needed*: Re-fetch prices immediately before order submission. Reject if any price moved >2% from the compute snapshot. Simple staleness check: reject if >30 seconds elapsed since price fetch.
+
+**2. Silent position drops on missing prices (HIGH)**
+If `broker.get_latest_prices()` fails to return a price for a symbol (network error, API rate limit, delisted), that position is silently skipped. The user sees fewer orders than expected without warning.
+
+*Fix needed*: If any target symbol has no price, return an error instead of silently dropping it. Log which symbols failed.
+
+**3. No post-execution reconciliation (MEDIUM)**
+After submitting orders, the system doesn't verify that actual positions match targets. Partial fills, rejected orders, or network failures could leave the portfolio in an unintended state.
+
+*Fix needed*: After execution, compare actual positions to target positions. Log any discrepancies. Alert if drift exceeds threshold (e.g., 5%).
+
+**4. Circuit breaker state corruption (MEDIUM)**
+If the circuit breaker JSON file becomes corrupted (e.g., partial write during crash), `_load_state()` catches the error and falls back to `halted=False`. A halt could be silently lost on restart.
+
+*Fix needed*: Write to a temp file then atomically rename. On load failure, default to `halted=True` (fail-safe, not fail-open).
+
+**5. No order cancellation on mid-execution halt (MEDIUM)**
+If a circuit breaker triggers during execution, orders already submitted to Alpaca are not cancelled. The check happens before submission but a market crash during order submission could trigger the breaker between orders.
+
+*Fix needed*: Check circuit breaker state between individual order submissions in a batch, not just once at the start.
+
+**6. Missing market hours awareness (LOW for paper, MEDIUM for live)**
+Equity rebalance requests are accepted 24/7. Orders submitted after hours queue at Alpaca and execute at next open with potentially very different prices.
+
+*Fix needed*: Warn (not block) if market is closed. For live money, consider blocking equity rebalances outside market hours.
+
+### What's Acceptable As-Is
+
+- **Preview/execute price mismatch**: The execute endpoint re-computes prices (doesn't use cached preview), so execution always uses current data.
+- **Scheduled job skipping on lock**: If the daily crypto rebalance finds the lock held, it skips. For daily rebalancing this is acceptable.
+- **No retry on individual order failures**: Logged but not retried. Fine for paper trading.
+
+---
+
+## 4. Data Pipeline
+
+### Strengths
+- Parquet caching with 16h staleness check prevents stale backtests while avoiding redundant downloads
+- S&P 500 batch downloading (50 tickers per batch) handles yfinance rate limits well
+- Coverage thresholds (80% for stocks, 50% for crypto) catch data quality issues
+- Forward-fill with limits (5 days for stocks, 3 for crypto) is conservative and appropriate
+- Crypto symbol mapping (yfinance BTC-USD to Alpaca BTC/USD) is clean with fallback
+- Live rebalance uses uncached `download_prices()` to ensure fresh data — correct separation
 
 ### Issues
-
-#### Vite Config is Bare Bones
-- No `base` path configuration (works for root-only deployment)
-- No environment variable handling
-- No build optimizations beyond Vite defaults
-- No source maps for production debugging
-
-#### ~~Python Dependencies Not Pinned~~ → FIXED
-All dependencies now have upper bounds (e.g., `alpaca-trade-api>=3.2.0,<4`, `fastapi>=0.135.1,<1`). No open-ended `>=` specs remain.
-
-#### Missing Developer Setup
-- No `.env.example` file (user must guess what Alpaca keys are needed)
-- No "Getting Started" section in docs
-- CORS hardcoded to `http://localhost:5173` — fine for dev, will fail in production
+- **Survivorship bias** (acknowledged but not corrected): Uses current S&P 500 list, not historical
+- **No VIX range validation**: Downloaded VIX values aren't sanity-checked (should be 10-100 range)
+- **Deprecated pandas API**: 6 locations use `reindex(..., method="ffill")` which will break in pandas 3.0. Simple fix: change to `.reindex(...).ffill()`
+- **Equity snapshots skip zero values**: If account equity hits 0 (full liquidation), that day's snapshot is silently dropped
 
 ---
 
-## 4. Scripts & Deployment
+## 5. Dashboard & Frontend
 
-### `scripts/start.sh` Analysis
+### Strengths
+- Full memoization: `React.memo` on all components, `useMemo`/`useCallback` throughout
+- No-flash polling: Background refreshes swap data silently, loading skeleton only on initial mount
+- Pre-created TradingView chart series with visibility toggling (no destroy/recreate on tab switch)
+- Extracted `PositionsTable` and `OrdersTable` as memoized sub-components
+- Toast notification system for error/warning/info feedback
+- 20-second fetch timeouts with AbortController
+- Clean 5-tab account switcher (Combined + 4 individual)
+- Full rebalance workflow: preview -> confirm -> execute with order diff table
+- Risk status panel with circuit breaker visualization and reset buttons
+- Filter status banner showing SPY/BTC price vs 200d MA
 
-**Good**:
-- Kills stale processes on ports 8000 and 5173
-- **Frontend gated on backend health check** — polls `/api/health` up to 30 times before launching frontend *(fixed)*
-- **Backend crash detection** — checks `kill -0 $BACKEND_PID` during wait, exits immediately if backend dies *(fixed)*
-- **30s timeout with error exit** — no longer silently loops forever *(fixed)*
-- Shows dashboard and API docs URLs
+### Issues
+- **No React Error Boundary**: A single component error crashes the entire dashboard. (~30 lines to add)
+- **Race condition on rapid account switching**: If a fetch is in-flight when the user switches tabs, the stale response can briefly overwrite the new tab's data.
+- **Silent failures in some components**: `EquityHistoryChart` and `CorrelationPanel` silently degrade on API errors rather than showing error state.
+- **RebalanceHistory doesn't refetch on account change**: User must refresh the page to see a different account's history.
+- **FilterStatusBanner fetches once and never updates**: Filter status changes daily but only loads on mount.
 
-**Issues**:
-- Hardcoded paths (`$HOME/.local/bin/uv`)
-- No `.env` loading (Alpaca credentials must already be in shell)
-
----
-
-## 5. Dependency Security & Freshness
-
-### Frontend (npm)
-| Package | Status | Risk |
-|---------|--------|------|
-| React | 19.2.0 → 19.2.4 available | Low (patch) |
-| @vitejs/plugin-react | Latest | OK |
-| TypeScript | ~5.9.3 Latest | OK |
-| lightweight-charts | 5.1.0 Latest | OK |
-| Tailwind CSS | 4.2.1 Latest | OK |
-
-### Backend (pyproject.toml)
-| Package | Spec | Risk |
-|---------|------|------|
-| alpaca-trade-api | >=3.2.0,<4 | **LOW** — pinned to major version |
-| fastapi | >=0.135.1,<1 | **LOW** — pinned to 0.x |
-| numpy | >=2.4.3,<3 | **LOW** — pinned to major version |
-| yfinance | >=0.2.58,<1 | **LOW** — stable, but Yahoo API can break |
+### Overall Assessment
+The dashboard is well above average for a personal project — the memoization and polling patterns are production-quality. The documented patterns in SDD.md show these were deliberate architectural choices.
 
 ---
 
-## 6. Backtest Validity Concerns
+## 6. Testing
 
-*Unchanged from original audit — no backtest methodology changes were made.*
+### Current State: 24 Tests, All Passing
 
-### Survivorship Bias (~5-10% Return Inflation)
-- S&P 500 universe uses current constituents, not point-in-time
-- Stock momentum picks "winners" from a universe that already survived
-- Mitigation: acknowledged in CLAUDE.md but not corrected
+| Test File | Count | Coverage |
+|-----------|-------|----------|
+| `test_risk_manager.py` | 8 | Kelly sizing, circuit breakers (portfolio + strategy), persistence, isolation, 2% rule |
+| `test_rebalance.py` | 5 | Order generation, sell-before-buy, circuit breaker halt, position caps, empty diff |
+| `test_strategies.py` | 11 | Smoke tests for all 9 strategies + signal invariants (weights <= 1, no NaN) |
 
-### Warmup Trimming (~3-5% Metric Inflation)
-- Equity curves exclude flat warmup period (12-month lookback)
-- This drops the worst-performing initial segment from Sharpe/MaxDD calculations
-- Real performance will include this drag
+### What's Good
+- Critical execution paths are tested (circuit breakers, rebalance diffing, position caps)
+- Strategy smoke tests catch initialization and signal generation regressions
+- Circuit breaker persistence tested across save/load cycle
+- All tests run in ~1.2 seconds — fast feedback loop
 
-### Transaction Costs Not Fully Modeled
-- Backtests assume commission-free (correct for Alpaca)
-- But slippage not modeled — significant for 50+ stock portfolios
-- Weekly reversal rebalance (Account 3) has highest turnover/slippage risk
+### What's Missing
+- **No API endpoint tests**: FastAPI TestClient + mocked Alpaca broker would catch routing bugs
+- **No frontend tests**: Vitest + React Testing Library for rebalance flow, account switching
+- **No CI/CD**: Tests only run manually, not on push/PR
+- **No integration tests**: End-to-end flow from API request through execution
+- **Edge case coverage**: No tests for network failures, partial fills, zero prices, concurrent requests
 
-### Estimated Real-World Discount
-- Reported combined Sharpe: 1.59 → likely 1.35-1.45 after adjustments
-- Still solidly above SPY benchmark (0.87), but margins are tighter
-
----
-
-## 7. Execution Safety
-
-### Improvements Made
-
-#### ~~No Concurrency Protection~~ → FIXED
-- Per-account async locks in `api/locks.py`
-- `get_rebalance_lock(account)` returns independent `asyncio.Lock` per account
-- Execute endpoint returns **409 Conflict** if rebalance already in progress
-- Accounts can rebalance in parallel (Account 1 and Account 2 don't block each other)
-- Scheduled crypto rebalance checks lock and skips if busy (intentional — no queue)
-
-#### ~~Silent Failures in Scheduled Rebalance~~ → FIXED
-- 3-attempt exponential backoff: immediate → 60s → 120s
-- Each attempt logged with `exc_info=True` for full tracebacks
-- Final failure logged as error (visible in server logs)
-- Lock check prevents duplicate scheduled runs
-
-#### ~~Circuit Breakers Don't Persist~~ → FIXED
-- State persisted to `data/risk_state/circuit_breaker_acct{1|2|3|4}.json`
-- Saved after every circuit breaker check, loaded on init
-- Stores: `equity_peak`, `strategy_peaks`, `halted`, `halted_strategies`
-- Account isolation: each account has independent state file
-- Tested: halt survives save/load cycle, accounts don't cross-contaminate
-
-#### Rebalance Journal *(new)*
-- Structured JSONL log at `data/rebalance_log.jsonl`
-- Records: timestamp, account, strategy, source (manual/scheduled), portfolio value, order count, per-order status/errors
-- API endpoint: `GET /api/orders/rebalance/history?limit=50`
-- Append-only, no overwrites
-
-#### Risk API *(new)*
-- `GET /api/portfolio/risk` — circuit breaker status for all 4 accounts
-- `POST /api/portfolio/risk/reset?account=N&strategy=NAME` — manual reset after review
-- Reads persisted state files, no Alpaca calls needed
-
-### Issues Remaining
-
-#### No Partial Fill Handling (Medium)
-- Rebalance assumes all-or-nothing execution
-- Alpaca market orders can partially fill
-- No reconciliation between target weights and actual fills
-- **Mitigation**: Market orders on liquid stocks/ETFs rarely partial-fill; crypto orders are small
-
-#### No Alerting Beyond Dashboard (Low)
-- Scheduled rebalance failures visible in server logs + dashboard rebalance history
-- Circuit breaker status surfaced in dashboard (`RiskStatusPanel`) with reset buttons
-- Rebalance journal surfaced in dashboard (`RebalanceHistory`) with expandable order details
-- **Remaining gap**: No Slack/email/webhook notification — requires active dashboard monitoring
+### Recommended Priority
+1. CI/CD (GitHub Actions: `uv run pytest` + `npm run build`) — prevents regressions
+2. API endpoint tests with mocked broker — catches routing/serialization bugs
+3. Frontend tests for the rebalance flow — highest-risk user interaction
 
 ---
 
-## 8. Security Concerns
+## 7. Security
 
-*Unchanged — no security hardening was done in this session.*
+**Current state**: No authentication, no rate limiting, CORS allows localhost:5173 only.
 
-- **No hardcoded secrets** in code (Alpaca keys in .env, not committed)
-- **CORS permissive in dev** (`allow_origins=["http://localhost:5173"]`) — must be env-gated for prod
-- **No authentication** on API endpoints — anyone on the network can trigger rebalances
-- **No input validation** on API endpoints beyond type hints
-- **No rate limiting** on API endpoints
-- **No HTTPS** configured (fine for localhost, needed for any remote access)
+**For localhost paper trading**: Acceptable. The API only listens on 127.0.0.1 and trades paper money.
 
-**Note**: Security is the lowest-priority concern while running on localhost with paper accounts. Becomes critical if the API is ever exposed to a network or real money is deployed.
+**Before any of these happen, add authentication**:
+- Exposing the API to a network (even home LAN)
+- Trading real money
+- Running on a cloud server
+- Accessing remotely via VPN
 
----
-
-## 9. Recommended Actions (Updated)
-
-### Priority 1 — Blockers for Live Money
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Add try-catch with error logging to all API calls | **DONE** (toasts + timeouts) |
-| 2 | Create React Error Boundary component | **NOT DONE** |
-| 3 | Add validation for API responses against TypeScript interfaces | **NOT DONE** |
-| 4 | Document `.env` setup with example file | **NOT DONE** |
-| 5 | Add timeouts to all fetch() calls (15-30s) | **DONE** (20s) |
-| 6 | Add concurrency locks to rebalance execution | **DONE** |
-| 7 | Persist circuit breaker state to disk | **DONE** |
-
-**4 of 7 completed.** Remaining 3 are straightforward (error boundary is ~30 lines, `.env.example` is a file copy, response validation is a stretch goal).
-
-### Priority 2 — Should Do During Paper Trading
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Set up Vitest + React Testing Library | NOT DONE |
-| 2 | Add pytest for backend | **DONE** (24 tests) |
-| 3 | Create GitHub Actions workflow | NOT DONE |
-| 4 | Pin Python dependency versions | **DONE** (upper bounds: `>=x.y,<N`) |
-| 5 | Add retry logic to scheduled rebalance jobs | **DONE** |
-| 6 | Handle partial fills in rebalance execution | NOT DONE |
-
-**3 of 6 completed.** Next highest-value items: CI/CD pipeline + frontend tests.
-
-### Priority 3 — Polish
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | ~~Add skeleton loaders~~ | **DONE** (initial-load-only skeleton; background polls swap data silently) |
-| 2 | ~~Eliminate full-page redraws on polling~~ | **DONE** (removed loading gates, added memoization throughout) |
-| 3 | ~~Fix startup script race condition~~ | **DONE** (frontend gated on backend health, crash detection, 30s timeout) |
-| 4 | ~~Cache external data downloads~~ | **DONE** (ETF/SPY cached to parquet with 16h staleness, `download_and_cache()`) |
-| 5 | ~~Non-blocking server startup~~ | **DONE** (backfill/snapshots in background thread, batch parquet I/O) |
-| 6 | Implement request cancellation for rapid account switches | NOT DONE |
-| 7 | Add ARIA labels and keyboard navigation | NOT DONE |
-| 8 | Create production Dockerfile | NOT DONE |
-| 9 | Add Sentry or similar for error tracking | NOT DONE |
-| 10 | Correct survivorship bias in backtests | NOT DONE |
-
-**5 of 10 completed.** Performance and startup items done; remaining are nice-to-haves.
-
-### New Items Identified
-
-| Priority | Item | Notes |
-|----------|------|-------|
-| ~~P2~~ | ~~Surface rebalance journal in dashboard~~ | **DONE** — `RebalanceHistory` component with expandable order details |
-| ~~P2~~ | ~~Surface risk status in dashboard~~ | **DONE** — `RiskStatusPanel` with 30s polling + reset buttons |
-| P2 | Add API endpoint tests | Use FastAPI `TestClient` + mocked broker |
-| P3 | Add alerting (Slack/webhook) on circuit breaker triggers | Dashboard shows status; push notifications still missing |
-| ~~P3~~ | ~~Add rebalance diff preview in dashboard~~ | **DONE** — `RebalancePanel` with full preview → confirm → execute flow |
-| — | BTC filter status surfaced through full stack | **DONE** — `FilterStatusBanner`, rebalance result, API, log, types |
-| ~~P3~~ | ~~Dashboard performance (polling redraws, memoization)~~ | **DONE** — `React.memo` on all components, `useMemo`/`useCallback`, no loading gates on polls |
-| ~~P3~~ | ~~Chart blank flash on account switch~~ | **DONE** — Pre-created series with visibility toggling |
-| ~~P2~~ | ~~Startup script race condition~~ | **DONE** — Frontend gated on backend health check + crash detection |
-| ~~P2~~ | ~~Cache ETF/SPY data downloads~~ | **DONE** — `download_and_cache()` with 16h staleness, separate cache files |
-| ~~P2~~ | ~~Non-blocking server startup~~ | **DONE** — Background thread + batch I/O |
-| — | Architectural patterns documented | **DONE** — `SDD.md` with 10 patterns for future projects |
+**Minimum viable security for live money**:
+- API key or Bearer token on all endpoints
+- Rate limiting on rebalance endpoints (max 1 per minute per account)
+- CORS restricted to specific origin
+- HTTPS if accessed over any network
 
 ---
 
-## Conclusion
+## 8. What Paper Trading Will Teach You
 
-The FIRE system has moved from "impressive prototype with serious safety gaps" to "solid paper trading platform." The hardening session addressed the most critical execution safety issues:
+The 3+ month paper trading period is the most important phase. Here's what to watch:
 
-- **Circuit breakers now survive restarts** — the single most dangerous gap is closed
-- **Concurrent rebalances are prevented** — no more duplicate order risk
-- **Scheduled jobs retry on failure** — missed crypto rebalances are far less likely
-- **Every rebalance is journaled** — full audit trail for debugging and review
-- **24 tests cover critical paths** — risk manager, rebalance logic, and all 9 strategies
+**Track actual vs. backtest Sharpe monthly.** If live Sharpe is within 20% of backtest (i.e., 1.27+ for equity, 1.30+ for crypto), the system is performing as expected. If it's below that, investigate whether the discount comes from slippage, timing, or regime change.
 
-The second revision adds the operational dashboard layer:
+**Monitor turnover and trading costs.** Account 3 (weekly reversal) will have the highest turnover. Track how many shares/lots change each rebalance. If turnover is consistently 30%+ per week, slippage could eat 2-4% annually.
 
-- **Risk status is visible at a glance** — `RiskStatusPanel` polls every 30s, green when healthy, red alert with reset buttons when halted
-- **Regime filter status is always visible** — `FilterStatusBanner` shows SPY/BTC price vs 200d MA, color-coded by account type
-- **Full rebalance workflow in the dashboard** — `RebalancePanel` replaces curl-based API workflow with preview → confirm → execute
-- **Rebalance audit trail is browsable** — `RebalanceHistory` shows all past events with expandable per-order details
-- **BTC filter surfaced end-to-end** — from `RebalanceResult` fields through API responses, rebalance log, TypeScript types, to UI banners
+**Watch for correlation regime changes.** The 0.56-0.66 equity correlations were measured on backtest data. In a real crash, correlations spike toward 1.0 (everyone sells everything). The correlation monitoring dashboard is built for exactly this.
 
-The third revision addresses performance and developer experience:
+**Pay attention to the BTC filter.** The crypto strategy's best feature is sitting out bear markets entirely (BTC < 200d MA -> 100% cash). In 2022, this avoided a -65% drawdown. Watch whether the filter triggers appropriately on real price data.
 
-- **Dashboard no longer redraws on every poll** — `React.memo`, `useMemo`, `useCallback` throughout; loading skeleton only on initial load
-- **Account switching is instant** — stale data visible briefly, no skeleton flash; chart series pre-created and toggled
-- **Server starts in <2 seconds** — backfill/snapshots run in background thread; ETF/SPY data cached to parquet with 16h staleness
-- **Startup script is robust** — frontend only launches after backend health check passes; crash detection and 30s timeout
-- **Batch I/O** — backfill writes single parquet file instead of per-row read/write cycle
-- **Patterns documented in `SDD.md`** — 10 architectural lessons for future projects with similar stacks
+**Circuit breaker effectiveness.** If a circuit breaker fires during paper trading, it's a gift — you get to test the recovery workflow without financial pain.
 
-The adjusted Sharpe estimate (~1.35-1.45 after survivorship/warmup discount) remains solidly above the SPY benchmark (0.87). The 3-month paper trading window is the right call — use it to:
+---
 
-1. Add the React Error Boundary (~30 min)
-2. Set up CI/CD (GitHub Actions running pytest + npm build)
-3. Monitor whether paper returns track backtest expectations
-4. Add push alerting (Slack/webhook) for circuit breaker triggers
+## 9. Prioritized Recommendations
 
-If paper returns hold within ~20% of backtest estimates, going live requires one more focused hardening session (auth + partial fills + alerting), not a rebuild.
+### Before Live Money (Required)
+
+| # | Item | Effort | Why |
+|---|------|--------|-----|
+| 1 | Price staleness check before execution | 1 hour | Prevents executing at stale prices, especially crypto |
+| 2 | Fail-safe circuit breaker loading | 30 min | Default to halted=True on corruption, not halted=False |
+| 3 | Error on missing prices (don't silently skip) | 30 min | Prevents silent position drops |
+| 4 | Post-execution position reconciliation | 2 hours | Verify actual matches target, log discrepancies |
+| 5 | React Error Boundary | 30 min | Prevents single component error from crashing dashboard |
+| 6 | API authentication (Bearer token) | 1 hour | Required before real money or network exposure |
+
+### During Paper Trading (Should Do)
+
+| # | Item | Effort | Why |
+|---|------|--------|-----|
+| 7 | CI/CD pipeline (GitHub Actions) | 1 hour | Prevent regressions on push |
+| 8 | API endpoint tests with mocked broker | 2 hours | Catch routing/serialization bugs |
+| 9 | Fix deprecated pandas `reindex` calls (6 locations) | 15 min | Will break on pandas 3.0 |
+| 10 | Add transaction cost model to backtests | 1 hour | More realistic Sharpe estimates |
+| 11 | Push alerting (Slack webhook) for circuit breakers | 1 hour | Don't rely on checking dashboard |
+| 12 | Market hours awareness for equity rebalances | 30 min | Warn when submitting after hours |
+
+### Nice to Have (Polish)
+
+| # | Item | Effort | Why |
+|---|------|--------|-----|
+| 13 | Frontend tests (Vitest) | 2 hours | Test rebalance flow, account switching |
+| 14 | Request cancellation on rapid tab switches | 30 min | Prevent rare race condition |
+| 15 | FilterStatusBanner auto-refresh | 15 min | Currently stale after mount |
+| 16 | .env.example file | 10 min | Document required Alpaca keys |
+| 17 | Correct survivorship bias (point-in-time S&P 500) | 4+ hours | More accurate backtests, hard to source data |
+
+---
+
+## 10. Conclusion
+
+**For a personal project built in 36 hours, this is exceptional work.**
+
+The system correctly implements the core principles from the 2020 proposal: systematic rules-based trading, factor diversification, the 2% max loss rule, and trend-following with proper risk management. It went from a concept document to 4 live paper trading accounts with a professional-grade validation framework.
+
+The speed of development is both its strength and its risk. The architecture is clean and the code is readable, but some execution edge cases haven't been battle-tested. The 6 items in the "Before Live Money" list are the gap between a paper trading prototype and something you'd trust with $10k-$50k.
+
+The realistic expectation for live performance:
+- **Combined equity**: ~1.2-1.4 Sharpe, ~12-15% annual return, -12 to -15% max drawdown
+- **Crypto**: ~1.1-1.4 Sharpe, ~20-28% CAGR, higher volatility
+- **vs. SPY benchmark**: Still meaningfully better risk-adjusted returns, especially on the drawdown side
+
+**The path to real money:**
+1. Paper trade for 3+ months (already started)
+2. Fix the 6 required items (~5-6 hours of work)
+3. Validate paper Sharpe is within 20% of backtest
+4. Start with $10k across 4 accounts ($2,500 each)
+5. Scale to $50k only after 3+ months of live trading confirms the edge
+
+The 2020 proposal talked about "limiting the downside while allowing unlimited upside" and "removing emotion from the process." Six years later, that's exactly what this system does. The circuit breakers limit the downside. The systematic rebalancing removes emotion. The factor diversification ensures you're not making one big bet.
+
+The biggest risk isn't the code — it's the temptation to skip the paper trading phase and go live too early. Don't.
