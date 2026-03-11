@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { fetchRebalanceHistory } from "../api";
 import type { RebalanceHistoryEntry } from "../types";
 
@@ -29,7 +29,7 @@ function formatUsd(n: number) {
   });
 }
 
-export default function RebalanceHistory({
+export default memo(function RebalanceHistory({
   account,
 }: {
   account: AccountView;
@@ -198,4 +198,4 @@ export default function RebalanceHistory({
       )}
     </div>
   );
-}
+})

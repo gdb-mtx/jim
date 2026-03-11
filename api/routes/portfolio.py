@@ -250,13 +250,13 @@ async def reset_circuit_breaker(
 @router.get("/filters")
 async def filter_status():
     """Get current regime filter status (SPY 200d MA + BTC 200d MA)."""
-    from data.pipeline import download_prices
+    from data.pipeline import download_and_cache
     from data.crypto import download_btc_prices
 
     result = {}
 
     try:
-        spy_prices = download_prices(["SPY"], start="2008-01-01").squeeze()
+        spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze()
         spy_ma = spy_prices.rolling(200).mean()
         spy_price = float(spy_prices.iloc[-1])
         spy_ma_val = float(spy_ma.iloc[-1])

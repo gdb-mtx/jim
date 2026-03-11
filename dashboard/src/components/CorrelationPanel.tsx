@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   createChart,
   LineSeries,
@@ -236,7 +236,7 @@ function RollingChart({ rolling }: { rolling: Record<string, EquityPoint[]> }) {
   );
 }
 
-export default function CorrelationPanel() {
+export default memo(function CorrelationPanel() {
   const [report, setReport] = useState<CorrelationReport | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -316,4 +316,4 @@ export default function CorrelationPanel() {
       </div>
     </div>
   );
-}
+})

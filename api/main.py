@@ -90,21 +90,34 @@ async def _daily_crypto_rebalance():
     log.error(f"Daily crypto rebalance FAILED after {max_retries} attempts")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup: backfill + snapshot all accounts, start crypto scheduler."""
-    # Backfill and snapshot
+def _startup_backfill_and_snapshot():
+    """Backfill equity history and take today's snapshots for all accounts.
+
+    Runs in a background thread so the server can start accepting requests immediately.
+    """
     try:
         from data.snapshots import take_all_snapshots, backfill_from_alpaca
 
+        t0 = time.time()
         for acct in (1, 2, 3, 4):
             try:
-                backfill_from_alpaca(acct)
-            except Exception:
-                pass
+                added = backfill_from_alpaca(acct)
+                if added:
+                    log.info(f"Backfilled {added} rows for account {acct}")
+            except Exception as e:
+                log.warning(f"Backfill account {acct} failed: {e}")
         take_all_snapshots()
+        log.info(f"Startup backfill + snapshots done in {time.time() - t0:.1f}s")
     except Exception as e:
-        print(f"Snapshot on startup skipped: {e}")
+        log.error(f"Startup backfill/snapshot failed: {e}", exc_info=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: schedule backfill in background, start crypto scheduler."""
+    # Run backfill/snapshot in a background thread (non-blocking)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _startup_backfill_and_snapshot)
 
     # Start APScheduler for daily crypto rebalance
     scheduler = AsyncIOScheduler()

@@ -1,7 +1,7 @@
 """Backtest endpoints — run backtests and return equity curves."""
 
 from fastapi import APIRouter, Query
-from data.pipeline import download_prices, EXPANDED_UNIVERSE
+from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
@@ -64,7 +64,7 @@ def _run_strategy(strategy_id: str, start: str, end: str | None = None):
         returns = strategy.generate_returns(prices)
     else:
         # ETF strategies use the smaller universe
-        prices = download_prices(DEFAULT_SYMBOLS, start=start, end=end)
+        prices = download_and_cache(DEFAULT_SYMBOLS, start=start, end=end, cache_name="etf_prices")
         strategy = ETF_STRATEGIES[strategy_id]()
         returns = strategy.generate_returns(prices)
 
@@ -108,7 +108,7 @@ async def run_backtest(
     report = full_report(returns, name=strategy_name, periods_per_year=periods)
 
     # SPY buy-and-hold benchmark for the same active period
-    spy_prices = download_prices(["SPY"], start=start, end=end)
+    spy_prices = download_and_cache(["SPY"], start=start, end=end, cache_name="spy_filter")
     spy_returns = spy_prices.pct_change().dropna().squeeze()
     first_date = returns.index[0]
     last_date = returns.index[-1]

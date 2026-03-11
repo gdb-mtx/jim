@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { fetchFilterStatus } from "../api";
 import type { FilterStatusResponse } from "../types";
 
@@ -8,7 +8,7 @@ function formatPrice(n: number, prefix = "$") {
   return `${prefix}${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-export default function FilterStatusBanner({
+export default memo(function FilterStatusBanner({
   account,
 }: {
   account: AccountView;
@@ -90,4 +90,4 @@ export default function FilterStatusBanner({
       )}
     </div>
   );
-}
+})

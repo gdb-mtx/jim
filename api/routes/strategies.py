@@ -4,7 +4,7 @@ Runs actual backtests to compute live metrics instead of hardcoding.
 """
 
 from fastapi import APIRouter
-from data.pipeline import download_prices, EXPANDED_UNIVERSE
+from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
@@ -51,7 +51,7 @@ async def list_strategies():
 
     # ETF strategies
     symbols = EXPANDED_UNIVERSE + ["SHY"]
-    etf_prices = download_prices(symbols, start="2010-01-01")
+    etf_prices = download_and_cache(symbols, start="2010-01-01", cache_name="etf_prices")
 
     for strategy_id, cls in ETF_STRATEGY_CLASSES:
         strategy = cls()

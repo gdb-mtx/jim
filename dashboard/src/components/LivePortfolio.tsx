@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, memo } from "react";
 import {
   fetchPortfolio,
   fetchPositions,
@@ -65,10 +65,8 @@ export default function LivePortfolio() {
   >([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   const refreshSingle = (acct: number) => {
-    setLoading(true);
     Promise.all([
       fetchPortfolio(acct),
       fetchPositions(acct),
@@ -79,17 +77,14 @@ export default function LivePortfolio() {
         setPositions(p);
         setOrders(o);
         setError(false);
-        setLoading(false);
       })
       .catch((e) => {
         setError(true);
-        setLoading(false);
         showToast(`Failed to load account ${acct}: ${e.message}`);
       });
   };
 
   const refreshCombined = () => {
-    setLoading(true);
     // Fetch combined summary + orders from all accounts
     Promise.all([
       fetchCombinedPortfolio(),
@@ -109,11 +104,9 @@ export default function LivePortfolio() {
         );
         setOrders(allOrders);
         setError(false);
-        setLoading(false);
       })
       .catch((e) => {
         setError(true);
-        setLoading(false);
         showToast(`Failed to load combined view: ${e.message}`);
       });
   };
@@ -130,38 +123,44 @@ export default function LivePortfolio() {
     }
   }, [account]);
 
-  const switchAccount = (acct: AccountView) => {
-    setSummary(null);
-    setCombined(null);
-    setPositions([]);
-    setCombinedPositions([]);
-    setOrders([]);
+  const switchAccount = useCallback((acct: AccountView) => {
     setAccount(acct);
-  };
+  }, []);
 
   // Determine current view data
   const isCombined = account === 0;
-  const viewData = isCombined
-    ? combined
-      ? {
-          equity: combined.equity,
-          cash: combined.cash,
-          daily_pnl: combined.daily_pnl,
-          total_unrealized_pl: combined.total_unrealized_pl,
-          market_open: combined.market_open,
-        }
-      : null
-    : summary
-      ? {
-          equity: summary.equity,
-          cash: summary.cash,
-          daily_pnl: summary.daily_pnl,
-          total_unrealized_pl: summary.total_unrealized_pl,
-          market_open: summary.market_open,
-        }
-      : null;
+  const viewData = useMemo(() => {
+    if (isCombined) {
+      if (!combined) return null;
+      return {
+        equity: combined.equity,
+        cash: combined.cash,
+        daily_pnl: combined.daily_pnl,
+        total_unrealized_pl: combined.total_unrealized_pl,
+        market_open: combined.market_open,
+      };
+    }
+    if (!summary) return null;
+    return {
+      equity: summary.equity,
+      cash: summary.cash,
+      daily_pnl: summary.daily_pnl,
+      total_unrealized_pl: summary.total_unrealized_pl,
+      market_open: summary.market_open,
+    };
+  }, [isCombined, combined, summary]);
 
-  const viewPositions = isCombined ? combinedPositions : positions;
+  const viewPositions = useMemo(
+    () => (isCombined ? combinedPositions : positions),
+    [isCombined, combinedPositions, positions]
+  );
+
+  const sortedPositions = useMemo(
+    () => [...viewPositions].sort((a, b) => b.market_value - a.market_value),
+    [viewPositions]
+  );
+
+  const recentOrders = useMemo(() => orders.slice(0, 20), [orders]);
 
   if (error) {
     return (
@@ -175,7 +174,7 @@ export default function LivePortfolio() {
     );
   }
 
-  if (!viewData || loading) {
+  if (!viewData) {
     return (
       <div className="space-y-4">
         <AccountTabs account={account} onSwitch={switchAccount} />
@@ -262,208 +261,237 @@ export default function LivePortfolio() {
       {isCombined && <CorrelationPanel />}
 
       {/* Positions table */}
-      <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium tracking-wide text-[#8888a0] uppercase">
-            Positions ({viewPositions.length})
-          </h2>
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2 w-2 rounded-full ${viewData.market_open ? "bg-[#00d4aa]" : "bg-[#8888a0]"}`}
-            />
-            <span className="text-xs text-[#8888a0]">
-              {viewData.market_open ? "Market Open" : "Market Closed"}
-            </span>
-          </div>
-        </div>
-        {viewPositions.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[#8888a0]">
-            No open positions
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
-                  <th className="pb-2 pr-4">Symbol</th>
-                  {isCombined && <th className="pb-2 pr-4">Acct</th>}
-                  <th className="pb-2 pr-4 text-right">Qty</th>
-                  <th className="pb-2 pr-4 text-right">Entry</th>
-                  <th className="pb-2 pr-4 text-right">Current</th>
-                  <th className="pb-2 pr-4 text-right">Mkt Value</th>
-                  <th className="pb-2 pr-4 text-right">P&L</th>
-                  <th className="pb-2 text-right">P&L %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...viewPositions]
-                  .sort((a, b) => b.market_value - a.market_value)
-                  .map((p, i) => (
-                    <tr
-                      key={
-                        isCombined
-                          ? `${(p as Position & { account: number }).account}-${p.symbol}`
-                          : p.symbol
-                      }
-                      className="border-b border-[#2a2a3e]/50"
-                    >
-                      <td className="py-2.5 pr-4 font-medium text-[#e8e8f0]">
-                        {p.symbol}
-                      </td>
-                      {isCombined && (
-                        <td className="py-2.5 pr-4">
-                          <span className="rounded bg-[#4d8eff20] px-1.5 py-0.5 text-xs font-medium text-[#4d8eff]">
-                            {ACCOUNT_LABELS[
-                              (p as Position & { account: number }).account
-                            ] || "?"}
-                          </span>
-                        </td>
-                      )}
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                        {p.qty}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-[#8888a0]">
-                        {formatUsd(p.avg_entry_price)}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                        {formatUsd(p.current_price)}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                        {formatUsd(p.market_value)}
-                      </td>
-                      <td
-                        className={`py-2.5 pr-4 text-right tabular-nums ${plColor(p.unrealized_pl)}`}
-                      >
-                        {formatUsd(p.unrealized_pl)}
-                      </td>
-                      <td
-                        className={`py-2.5 text-right tabular-nums ${plColor(p.unrealized_plpc)}`}
-                      >
-                        {(p.unrealized_plpc * 100).toFixed(2)}%
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-[#2a2a3e]">
-                  <td className="pt-2.5 pr-4 font-medium text-[#e8e8f0]">
-                    Total
-                  </td>
-                  {isCombined && <td className="pt-2.5 pr-4" />}
-                  <td className="pt-2.5 pr-4" />
-                  <td className="pt-2.5 pr-4" />
-                  <td className="pt-2.5 pr-4" />
-                  <td className="pt-2.5 pr-4 text-right tabular-nums font-medium text-[#e8e8f0]">
-                    {formatUsd(
-                      viewPositions.reduce((s, p) => s + p.market_value, 0)
-                    )}
-                  </td>
-                  <td
-                    className={`pt-2.5 pr-4 text-right tabular-nums font-medium ${plColor(viewData.total_unrealized_pl)}`}
-                  >
-                    {formatUsd(viewData.total_unrealized_pl)}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
+      <PositionsTable
+        positions={sortedPositions}
+        isCombined={isCombined}
+        totalUnrealizedPl={viewData.total_unrealized_pl}
+        marketOpen={viewData.market_open}
+      />
 
       {/* Rebalance history */}
       <RebalanceHistory account={account} />
 
       {/* Recent orders */}
-      <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
-        <h2 className="mb-3 text-sm font-medium tracking-wide text-[#8888a0] uppercase">
-          Recent Orders
-        </h2>
-        {orders.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[#8888a0]">
-            No orders yet
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
-                  <th className="pb-2 pr-4">Time</th>
-                  <th className="pb-2 pr-4">Symbol</th>
-                  <th className="pb-2 pr-4">Side</th>
-                  <th className="pb-2 pr-4 text-right">Qty</th>
-                  <th className="pb-2 pr-4 text-right">Fill Price</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.slice(0, 20).map((o) => (
-                  <tr
-                    key={o.order_id}
-                    className="border-b border-[#2a2a3e]/50"
-                  >
-                    <td className="py-2.5 pr-4 tabular-nums text-[#8888a0]">
-                      {o.filled_at
-                        ? new Date(o.filled_at).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : new Date(o.submitted_at).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                    </td>
-                    <td className="py-2.5 pr-4 font-medium text-[#e8e8f0]">
-                      {o.symbol}
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                          o.side === "buy"
-                            ? "bg-[#00d4aa20] text-[#00d4aa]"
-                            : "bg-[#ff4d6a20] text-[#ff4d6a]"
-                        }`}
-                      >
-                        {o.side.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                      {o.filled_qty || o.qty}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-[#8888a0]">
-                      {o.filled_avg_price
-                        ? formatUsd(o.filled_avg_price)
-                        : "\u2014"}
-                    </td>
-                    <td className="py-2.5">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                          o.status === "filled"
-                            ? "bg-[#00d4aa20] text-[#00d4aa]"
-                            : o.status === "canceled" || o.status === "expired"
-                              ? "bg-[#8888a020] text-[#8888a0]"
-                              : "bg-[#ffc04d20] text-[#ffc04d]"
-                        }`}
-                      >
-                        {o.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <OrdersTable orders={recentOrders} />
     </div>
   );
 }
 
-function AccountTabs({
+const PositionsTable = memo(function PositionsTable({
+  positions,
+  isCombined,
+  totalUnrealizedPl,
+  marketOpen,
+}: {
+  positions: (Position & { account?: number })[];
+  isCombined: boolean;
+  totalUnrealizedPl: number;
+  marketOpen: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-medium tracking-wide text-[#8888a0] uppercase">
+          Positions ({positions.length})
+        </h2>
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-2 w-2 rounded-full ${marketOpen ? "bg-[#00d4aa]" : "bg-[#8888a0]"}`}
+          />
+          <span className="text-xs text-[#8888a0]">
+            {marketOpen ? "Market Open" : "Market Closed"}
+          </span>
+        </div>
+      </div>
+      {positions.length === 0 ? (
+        <p className="py-8 text-center text-sm text-[#8888a0]">
+          No open positions
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
+                <th className="pb-2 pr-4">Symbol</th>
+                {isCombined && <th className="pb-2 pr-4">Acct</th>}
+                <th className="pb-2 pr-4 text-right">Qty</th>
+                <th className="pb-2 pr-4 text-right">Entry</th>
+                <th className="pb-2 pr-4 text-right">Current</th>
+                <th className="pb-2 pr-4 text-right">Mkt Value</th>
+                <th className="pb-2 pr-4 text-right">P&L</th>
+                <th className="pb-2 text-right">P&L %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((p) => (
+                <tr
+                  key={
+                    isCombined
+                      ? `${(p as Position & { account: number }).account}-${p.symbol}`
+                      : p.symbol
+                  }
+                  className="border-b border-[#2a2a3e]/50"
+                >
+                  <td className="py-2.5 pr-4 font-medium text-[#e8e8f0]">
+                    {p.symbol}
+                  </td>
+                  {isCombined && (
+                    <td className="py-2.5 pr-4">
+                      <span className="rounded bg-[#4d8eff20] px-1.5 py-0.5 text-xs font-medium text-[#4d8eff]">
+                        {ACCOUNT_LABELS[
+                          (p as Position & { account: number }).account
+                        ] || "?"}
+                      </span>
+                    </td>
+                  )}
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
+                    {p.qty}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#8888a0]">
+                    {formatUsd(p.avg_entry_price)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
+                    {formatUsd(p.current_price)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
+                    {formatUsd(p.market_value)}
+                  </td>
+                  <td
+                    className={`py-2.5 pr-4 text-right tabular-nums ${plColor(p.unrealized_pl)}`}
+                  >
+                    {formatUsd(p.unrealized_pl)}
+                  </td>
+                  <td
+                    className={`py-2.5 text-right tabular-nums ${plColor(p.unrealized_plpc)}`}
+                  >
+                    {(p.unrealized_plpc * 100).toFixed(2)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-[#2a2a3e]">
+                <td className="pt-2.5 pr-4 font-medium text-[#e8e8f0]">
+                  Total
+                </td>
+                {isCombined && <td className="pt-2.5 pr-4" />}
+                <td className="pt-2.5 pr-4" />
+                <td className="pt-2.5 pr-4" />
+                <td className="pt-2.5 pr-4" />
+                <td className="pt-2.5 pr-4 text-right tabular-nums font-medium text-[#e8e8f0]">
+                  {formatUsd(
+                    positions.reduce((s, p) => s + p.market_value, 0)
+                  )}
+                </td>
+                <td
+                  className={`pt-2.5 pr-4 text-right tabular-nums font-medium ${plColor(totalUnrealizedPl)}`}
+                >
+                  {formatUsd(totalUnrealizedPl)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+});
+
+const OrdersTable = memo(function OrdersTable({
+  orders,
+}: {
+  orders: Order[];
+}) {
+  return (
+    <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
+      <h2 className="mb-3 text-sm font-medium tracking-wide text-[#8888a0] uppercase">
+        Recent Orders
+      </h2>
+      {orders.length === 0 ? (
+        <p className="py-8 text-center text-sm text-[#8888a0]">
+          No orders yet
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
+                <th className="pb-2 pr-4">Time</th>
+                <th className="pb-2 pr-4">Symbol</th>
+                <th className="pb-2 pr-4">Side</th>
+                <th className="pb-2 pr-4 text-right">Qty</th>
+                <th className="pb-2 pr-4 text-right">Fill Price</th>
+                <th className="pb-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr
+                  key={o.order_id}
+                  className="border-b border-[#2a2a3e]/50"
+                >
+                  <td className="py-2.5 pr-4 tabular-nums text-[#8888a0]">
+                    {o.filled_at
+                      ? new Date(o.filled_at).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : new Date(o.submitted_at).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                  </td>
+                  <td className="py-2.5 pr-4 font-medium text-[#e8e8f0]">
+                    {o.symbol}
+                  </td>
+                  <td className="py-2.5 pr-4">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                        o.side === "buy"
+                          ? "bg-[#00d4aa20] text-[#00d4aa]"
+                          : "bg-[#ff4d6a20] text-[#ff4d6a]"
+                      }`}
+                    >
+                      {o.side.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
+                    {o.filled_qty || o.qty}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#8888a0]">
+                    {o.filled_avg_price
+                      ? formatUsd(o.filled_avg_price)
+                      : "\u2014"}
+                  </td>
+                  <td className="py-2.5">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                        o.status === "filled"
+                          ? "bg-[#00d4aa20] text-[#00d4aa]"
+                          : o.status === "canceled" || o.status === "expired"
+                            ? "bg-[#8888a020] text-[#8888a0]"
+                            : "bg-[#ffc04d20] text-[#ffc04d]"
+                      }`}
+                    >
+                      {o.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+});
+
+const AccountTabs = memo(function AccountTabs({
   account,
   onSwitch,
 }: {
@@ -490,4 +518,4 @@ function AccountTabs({
       ))}
     </div>
   );
-}
+});

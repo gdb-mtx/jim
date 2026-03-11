@@ -46,26 +46,34 @@ def download_and_cache(
     start: str = "2005-01-01",
     end: str | None = None,
     cache_name: str = "prices",
+    max_age_hours: int = 16,
 ) -> pd.DataFrame:
     """Download prices and cache to parquet file for fast reloading.
+
+    Uses cached data if the file exists, has all requested symbols,
+    and is younger than max_age_hours. Otherwise re-downloads.
 
     Args:
         symbols: List of ticker symbols
         start: Start date
         end: End date
         cache_name: Name for the cache file
+        max_age_hours: Re-download if cache is older than this (default 16h)
 
     Returns:
         DataFrame of prices (from cache if available and fresh)
     """
+    import time
+
     cache_path = DATA_DIR / "raw" / f"{cache_name}.parquet"
 
     if cache_path.exists():
-        cached = pd.read_parquet(cache_path)
-        # Check if cache has all requested symbols
-        if all(s in cached.columns for s in symbols):
-            print(f"Loaded {len(cached)} rows from cache: {cache_path}")
-            return cached
+        age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+        if age_hours < max_age_hours:
+            cached = pd.read_parquet(cache_path)
+            if all(s in cached.columns for s in symbols):
+                print(f"Loaded {len(cached)} rows from cache: {cache_path}")
+                return cached
 
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)

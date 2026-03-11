@@ -7,6 +7,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 
 ### Key Documents
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
+- `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions
@@ -130,7 +131,9 @@ dashboard/               — React + Vite + TradingView Charts
 - **Combined 3-account (equity): 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
 - **Account 4 (crypto): 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** — 0.18 SPY correlation, excellent diversifier
 - Dashboard: 5-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3 / 0.4), live equity charts, correlation monitor (Combined view), Backtests with grouped strategy panel
-- **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup, live equity curves in dashboard
+- **Dashboard performance**: All components wrapped with `React.memo`, `useMemo`/`useCallback` throughout, no loading gates on background polls, EquityHistoryChart pre-creates all TradingView series and toggles visibility (no destroy/recreate). See `SDD.md` for patterns.
+- **Data caching**: ETF prices cached to `data/raw/etf_prices.parquet`, SPY to `spy_filter.parquet` — `download_and_cache()` with 16h staleness check. S&P 500, VIX, crypto have their own caches. `execution/rebalance.py` uses uncached `download_prices()` for fresh live data.
+- **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup (background thread, batch I/O), live equity curves in dashboard
 - **Correlation monitoring**: Rolling 21-day pairwise correlation (6 pairs), matrix + rolling chart, alert at 0.80 threshold, confidence badges
 - **Automated trading**: APScheduler runs daily crypto rebalance at 00:05 UTC inside FastAPI lifespan
 - **Circuit breaker monitoring**: RiskStatusPanel polls `/api/portfolio/risk` every 30s, shows green bar when healthy, red alert with reset buttons when halted

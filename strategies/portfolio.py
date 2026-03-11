@@ -19,7 +19,7 @@ Academic basis:
 
 import numpy as np
 import pandas as pd
-from data.pipeline import download_prices, EXPANDED_UNIVERSE
+from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
@@ -182,7 +182,7 @@ def compute_spy_trend_filter(
         Series of scalars (1.0 or reduction) indexed by date
     """
     # Download extra history for MA warmup
-    spy_prices = download_prices(["SPY"], start="2008-01-01")
+    spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter")
     spy_close = spy_prices.squeeze()
     spy_ma = spy_close.rolling(ma_period).mean()
 
@@ -281,7 +281,7 @@ def run_portfolio(
 
     # Load data
     symbols = EXPANDED_UNIVERSE + ["SHY"]
-    etf_prices = download_prices(symbols, start=start, end=end)
+    etf_prices = download_and_cache(symbols, start=start, end=end, cache_name="etf_prices")
 
     stock_prices = None
     vix = None

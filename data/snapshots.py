@@ -114,24 +114,32 @@ def backfill_from_alpaca(account: int) -> int:
         return 0
 
     df = load_snapshots(account)
-    added = 0
 
+    # Collect all new rows, then append in one batch
+    new_rows = []
     for ts, equity, pl in zip(history.timestamp, history.equity, history.profit_loss):
-        dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        dt = pd.Timestamp(datetime.fromtimestamp(ts).strftime("%Y-%m-%d")).normalize()
         if equity is None or float(equity) == 0:
             continue
-        created = save_snapshot(
-            account=account,
-            snap_date=dt,
-            equity=float(equity),
-            cash=0.0,  # Not available from history API
-            daily_pnl=float(pl) if pl is not None else 0.0,
-            positions_count=0,  # Not available from history API
-        )
-        if created:
-            added += 1
+        if dt in df.index:
+            continue
+        new_rows.append({
+            "date": dt,
+            "equity": float(equity),
+            "cash": 0.0,  # Not available from history API
+            "daily_pnl": float(pl) if pl is not None else 0.0,
+            "positions_count": 0,  # Not available from history API
+        })
 
-    return added
+    if not new_rows:
+        return 0
+
+    new_df = pd.DataFrame(new_rows).set_index("date")
+    df = pd.concat([df, new_df]).sort_index()
+
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    df.to_parquet(_snapshot_path(account))
+    return len(new_rows)
 
 
 # ── Query functions ──────────────────────────────────────────────────

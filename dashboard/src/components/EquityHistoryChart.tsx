@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   createChart,
   LineSeries,
@@ -6,7 +6,7 @@ import {
   type ISeriesApi,
   LineType,
 } from "lightweight-charts";
-import type { EquityPoint } from "../types";
+import type { EquityHistoryResponse } from "../types";
 import { fetchEquityHistory } from "../api";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
@@ -23,16 +23,19 @@ interface Props {
   account: AccountView;
 }
 
-export default function EquityHistoryChart({ account }: Props) {
+export default memo(function EquityHistoryChart({ account }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const [days, setDays] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Create chart once
+  // Create chart and pre-create all series once
   useEffect(() => {
     if (!containerRef.current) return;
+
+    const priceFormatter = (price: number) =>
+      "$" + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
     const chart = createChart(containerRef.current, {
       layout: {
@@ -56,6 +59,28 @@ export default function EquityHistoryChart({ account }: Props) {
 
     chartRef.current = chart;
 
+    // Pre-create combined view series (5 lines), initially hidden
+    for (const cfg of SERIES_CONFIG) {
+      const series = chart.addSeries(LineSeries, {
+        color: cfg.color,
+        lineWidth: cfg.key === "combined" ? 2 : 1,
+        lineType: LineType.Curved,
+        priceFormat: { type: "custom", formatter: priceFormatter },
+        visible: false,
+      });
+      seriesRefs.current.set(cfg.key, series);
+    }
+
+    // Pre-create individual account series (1 line), initially hidden
+    const mainSeries = chart.addSeries(LineSeries, {
+      color: "#00d4aa",
+      lineWidth: 2,
+      lineType: LineType.Curved,
+      priceFormat: { type: "custom", formatter: priceFormatter },
+      visible: false,
+    });
+    seriesRefs.current.set("main", mainSeries);
+
     const handleResize = () => {
       if (containerRef.current) {
         chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -70,61 +95,41 @@ export default function EquityHistoryChart({ account }: Props) {
     };
   }, []);
 
-  // Fetch data and update series when account changes
+  // Fetch data and update series visibility when account changes
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart) return;
-
-    // Remove old series
-    for (const [, series] of seriesRefs.current) {
-      chart.removeSeries(series);
-    }
-    seriesRefs.current.clear();
+    if (!chart || seriesRefs.current.size === 0) return;
 
     setLoading(true);
 
     fetchEquityHistory(account)
-      .then((resp) => {
+      .then((raw) => {
+        const resp = raw as EquityHistoryResponse;
         if (!chartRef.current) return;
 
-        const priceFormatter = (price: number) =>
-          "$" + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
         if (account === 0 && resp.per_account) {
-          // Combined view: show all 4 lines
+          // Combined view: show combined series, hide main
+          seriesRefs.current.get("main")?.applyOptions({ visible: false });
           for (const cfg of SERIES_CONFIG) {
-            const data: EquityPoint[] = resp.per_account?.[cfg.key] ?? resp.equity_curve;
-            if (cfg.key === "combined") {
-              // Combined uses the top-level equity_curve
-              const series = chart.addSeries(LineSeries, {
-                color: cfg.color,
-                lineWidth: 2,
-                lineType: LineType.Curved,
-                priceFormat: { type: "custom", formatter: priceFormatter },
-              });
-              series.setData(resp.equity_curve ?? []);
-              seriesRefs.current.set(cfg.key, series);
-            } else {
-              const series = chart.addSeries(LineSeries, {
-                color: cfg.color,
-                lineWidth: 1,
-                lineType: LineType.Curved,
-                priceFormat: { type: "custom", formatter: priceFormatter },
-              });
-              series.setData(data);
-              seriesRefs.current.set(cfg.key, series);
-            }
+            const series = seriesRefs.current.get(cfg.key);
+            if (!series) continue;
+            const points =
+              cfg.key === "combined"
+                ? resp.equity_curve ?? []
+                : resp.per_account?.[cfg.key] ?? [];
+            series.setData(points);
+            series.applyOptions({ visible: true });
           }
         } else {
-          // Individual account: single green line
-          const series = chart.addSeries(LineSeries, {
-            color: "#00d4aa",
-            lineWidth: 2,
-            lineType: LineType.Curved,
-            priceFormat: { type: "custom", formatter: priceFormatter },
-          });
-          series.setData(resp.equity_curve ?? []);
-          seriesRefs.current.set("main", series);
+          // Individual account: show main, hide combined series
+          for (const cfg of SERIES_CONFIG) {
+            seriesRefs.current.get(cfg.key)?.applyOptions({ visible: false });
+          }
+          const mainSeries = seriesRefs.current.get("main");
+          if (mainSeries) {
+            mainSeries.setData(resp.equity_curve ?? []);
+            mainSeries.applyOptions({ visible: true });
+          }
         }
 
         setDays(resp.days ?? 0);
@@ -178,4 +183,4 @@ export default function EquityHistoryChart({ account }: Props) {
       )}
     </div>
   );
-}
+})

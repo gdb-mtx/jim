@@ -2,7 +2,7 @@
 
 Comprehensive audit of the FIRE quantitative trading system covering frontend code quality, backend architecture, testing, security, and production readiness.
 
-**Revision note**: Original audit conducted 2026-03-11 morning. First revision reflected hardening work (circuit breaker persistence, concurrency locks, rebalance logging, retry logic, error toasts, risk API, 24 backend tests). Second revision (2026-03-11 evening) reflects dashboard surfacing work — all backend features now have frontend UIs: risk status panel, rebalance preview/execute/history, regime filter banners, BTC filter status through full stack.
+**Revision note**: Original audit conducted 2026-03-11 morning. First revision reflected hardening work (circuit breaker persistence, concurrency locks, rebalance logging, retry logic, error toasts, risk API, 24 backend tests). Second revision (2026-03-11 evening) reflects dashboard surfacing work — all backend features now have frontend UIs: risk status panel, rebalance preview/execute/history, regime filter banners, BTC filter status through full stack. Third revision (2026-03-11 night) reflects performance & startup fixes — eliminated full-page redraws, added React memoization throughout, fixed startup sequencing, cached ETF/SPY data downloads, batched parquet I/O, moved server startup work to background thread.
 
 ---
 
@@ -12,16 +12,16 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 |-----------|-------|---|-------|
 | **Strategy Research** | A- | — | Academically grounded, good factor diversification |
 | **Architecture** | A- | ↑ | Clean separation + new safety layers (locks, logging, risk API) |
-| **Dashboard** | B+ | ↑ | 12 components, full rebalance flow, risk/filter panels, still needs error boundaries |
-| **Code Quality** | B+ | ↑ | Error handling improved, rebalance logging, structured risk state |
+| **Dashboard** | A- | ↑↑ | Memoized components, no-flash polling, pre-created chart series, extracted table components |
+| **Code Quality** | A- | ↑ | Memoization throughout, cached data pipeline, batch I/O, non-blocking startup |
 | **Backtest Validity** | C+ | — | Survivorship bias + warmup trimming still inflate metrics ~10-15% |
 | **Execution Safety** | B | ↑↑ | Concurrency locks, retry logic, rebalance journal, circuit breaker persistence |
 | **Risk Management** | B+ | ↑↑↑ | Circuit breakers persist to disk, risk API for status/reset |
 | **Security** | D | — | No auth, no rate limiting, permissive CORS (unchanged) |
 | **Testing** | C | ↑↑↑ | 24 passing tests (risk, rebalance, strategies); no frontend or CI/CD |
-| **Production Readiness** | C+ | ↑↑ | Paper trading is solid; live money needs auth + error boundaries + more tests |
+| **Production Readiness** | B- | ↑ | Smooth UX, fast startup, cached data; live money still needs auth + error boundaries |
 
-**Overall: B as a prototype, C+ as production software** (up from B- / D+)
+**Overall: B+ as a prototype, B- as production software** (up from B / C+)
 
 ---
 
@@ -36,8 +36,13 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 - **Proper useState/useEffect patterns** with useRef for TradingView chart integration
 - **Cleanup functions** for event listeners and chart disposal
 - **No console.log() statements** found in production code
-- **Toast notification system** (`Toast.tsx`) — error/warning/info toasts with auto-dismiss *(new)*
-- **API client timeouts** — 20-second `fetchWithTimeout()` using `AbortController` *(new)*
+- **Toast notification system** (`Toast.tsx`) — error/warning/info toasts with auto-dismiss
+- **API client timeouts** — 20-second `fetchWithTimeout()` using `AbortController`
+- **Full memoization** — all child components wrapped with `React.memo`, computed data via `useMemo`, callbacks via `useCallback` *(new)*
+- **No-flash polling** — background refreshes swap data silently; loading skeleton only on initial load *(new)*
+- **Instant account switching** — stale data stays visible until new data arrives, no skeleton flash *(new)*
+- **Pre-created chart series** — `EquityHistoryChart` creates all TradingView series on mount with `visible: false`, toggles visibility on view change instead of destroy/recreate *(new)*
+- **Extracted table components** — `PositionsTable` and `OrdersTable` are `memo()`-wrapped sub-components, largest DOM subtrees skip re-render when data unchanged *(new)*
 
 ### Issues Fixed Since Original Audit
 
@@ -49,6 +54,21 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 - Toast system shows error messages on rebalance failures and API errors
 - `LivePortfolio` shows "API not connected" banner with setup instructions
 - **Remaining gap**: `EquityHistoryChart` and `CorrelationPanel` still silently degrade on error
+
+#### ~~Full-Page Redraws on Polling~~ → FIXED
+- `LivePortfolio` no longer sets `loading=true` on background poll — stale data stays visible until new data arrives
+- Account switching no longer clears state to null — old data shows briefly (~200ms) then swaps
+- All child components (`EquityHistoryChart`, `RiskStatusPanel`, `FilterStatusBanner`, `RebalancePanel`, `RebalanceHistory`, `CorrelationPanel`) wrapped with `React.memo`
+- Computed data (`viewData`, `sortedPositions`, `recentOrders`) stabilized with `useMemo`; callbacks with `useCallback`
+- `PositionsTable` and `OrdersTable` extracted as `memo()`-wrapped sub-components (largest DOM subtrees)
+
+#### ~~Chart Blank Flash on Account Switch~~ → FIXED
+- `EquityHistoryChart` pre-creates all 6 series (5 combined + 1 individual) on mount with `visible: false`
+- Account changes call `setData()` on existing series and toggle visibility — no `removeSeries`/`addSeries`
+
+#### ~~Uncoordinated Polling Intervals~~ → FIXED
+- `RiskStatusPanel` polling slowed from 30s to 60s (risk status changes rarely)
+- Reduces independent re-render waves
 
 ### Issues Remaining
 
@@ -62,9 +82,10 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 - `CorrelationPanel.catch(() => setReport(null))` — silently clears data
 - Users can't distinguish "no data available" from "API error"
 
-#### Loading State Inconsistencies (Medium)
-- No skeleton loaders; abrupt placeholder text
-- No timeout indicator on long loads
+#### ~~Loading State Inconsistencies~~ → MOSTLY FIXED
+- Loading skeleton shown only on initial load; background polls swap data silently
+- Account switches show stale data briefly instead of skeleton flash
+- **Remaining**: No timeout indicator on very long initial loads
 
 #### Type Safety Gaps (Low)
 - API responses not validated — trusts backend types implicitly
@@ -131,14 +152,8 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 - No build optimizations beyond Vite defaults
 - No source maps for production debugging
 
-#### Python Dependencies Not Pinned
-```toml
-alpaca-trade-api >= 3.2.0   # Could jump 3.x → 4.0
-fastapi >= 0.135.1
-numpy >= 2.4.3
-```
-- **Risk**: Major version bumps in transitive dependencies without warning
-- **Recommendation**: Pin to semver ranges (`alpaca-trade-api = "^3.2"`)
+#### ~~Python Dependencies Not Pinned~~ → FIXED
+All dependencies now have upper bounds (e.g., `alpaca-trade-api>=3.2.0,<4`, `fastapi>=0.135.1,<1`). No open-ended `>=` specs remain.
 
 #### Missing Developer Setup
 - No `.env.example` file (user must guess what Alpaca keys are needed)
@@ -153,14 +168,14 @@ numpy >= 2.4.3
 
 **Good**:
 - Kills stale processes on ports 8000 and 5173
-- Waits for backend health check before reporting "ready"
+- **Frontend gated on backend health check** — polls `/api/health` up to 30 times before launching frontend *(fixed)*
+- **Backend crash detection** — checks `kill -0 $BACKEND_PID` during wait, exits immediately if backend dies *(fixed)*
+- **30s timeout with error exit** — no longer silently loops forever *(fixed)*
 - Shows dashboard and API docs URLs
 
 **Issues**:
 - Hardcoded paths (`$HOME/.local/bin/uv`)
-- No error handling if backend fails to start (silently waits 15 loops)
 - No `.env` loading (Alpaca credentials must already be in shell)
-- Race condition: frontend can start before backend is ready
 
 ---
 
@@ -178,10 +193,10 @@ numpy >= 2.4.3
 ### Backend (pyproject.toml)
 | Package | Spec | Risk |
 |---------|------|------|
-| alpaca-trade-api | >=3.2.0 | **HIGH** — open-ended, could jump major versions |
-| fastapi | >=0.135.1 | **MEDIUM** — active project with breaking changes |
-| numpy | >=2.4.3 | **MEDIUM** — pandas/sklearn depend heavily |
-| yfinance | >=0.2.58 | **LOW** — stable, but Yahoo API can break |
+| alpaca-trade-api | >=3.2.0,<4 | **LOW** — pinned to major version |
+| fastapi | >=0.135.1,<1 | **LOW** — pinned to 0.x |
+| numpy | >=2.4.3,<3 | **LOW** — pinned to major version |
+| yfinance | >=0.2.58,<1 | **LOW** — stable, but Yahoo API can break |
 
 ---
 
@@ -299,24 +314,28 @@ numpy >= 2.4.3
 | 1 | Set up Vitest + React Testing Library | NOT DONE |
 | 2 | Add pytest for backend | **DONE** (24 tests) |
 | 3 | Create GitHub Actions workflow | NOT DONE |
-| 4 | Pin Python dependency versions | NOT DONE |
+| 4 | Pin Python dependency versions | **DONE** (upper bounds: `>=x.y,<N`) |
 | 5 | Add retry logic to scheduled rebalance jobs | **DONE** |
 | 6 | Handle partial fills in rebalance execution | NOT DONE |
 
-**2 of 6 completed.** Next highest-value items: CI/CD pipeline + frontend tests.
+**3 of 6 completed.** Next highest-value items: CI/CD pipeline + frontend tests.
 
 ### Priority 3 — Polish
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Add skeleton loaders | NOT DONE |
-| 2 | Implement request cancellation for rapid account switches | NOT DONE |
-| 3 | Add ARIA labels and keyboard navigation | NOT DONE |
-| 4 | Create production Dockerfile | NOT DONE |
-| 5 | Add Sentry or similar for error tracking | NOT DONE |
-| 6 | Correct survivorship bias in backtests | NOT DONE |
+| 1 | ~~Add skeleton loaders~~ | **DONE** (initial-load-only skeleton; background polls swap data silently) |
+| 2 | ~~Eliminate full-page redraws on polling~~ | **DONE** (removed loading gates, added memoization throughout) |
+| 3 | ~~Fix startup script race condition~~ | **DONE** (frontend gated on backend health, crash detection, 30s timeout) |
+| 4 | ~~Cache external data downloads~~ | **DONE** (ETF/SPY cached to parquet with 16h staleness, `download_and_cache()`) |
+| 5 | ~~Non-blocking server startup~~ | **DONE** (backfill/snapshots in background thread, batch parquet I/O) |
+| 6 | Implement request cancellation for rapid account switches | NOT DONE |
+| 7 | Add ARIA labels and keyboard navigation | NOT DONE |
+| 8 | Create production Dockerfile | NOT DONE |
+| 9 | Add Sentry or similar for error tracking | NOT DONE |
+| 10 | Correct survivorship bias in backtests | NOT DONE |
 
-**0 of 6 completed.** These are nice-to-haves during the paper trading window.
+**5 of 10 completed.** Performance and startup items done; remaining are nice-to-haves.
 
 ### New Items Identified
 
@@ -328,6 +347,12 @@ numpy >= 2.4.3
 | P3 | Add alerting (Slack/webhook) on circuit breaker triggers | Dashboard shows status; push notifications still missing |
 | ~~P3~~ | ~~Add rebalance diff preview in dashboard~~ | **DONE** — `RebalancePanel` with full preview → confirm → execute flow |
 | — | BTC filter status surfaced through full stack | **DONE** — `FilterStatusBanner`, rebalance result, API, log, types |
+| ~~P3~~ | ~~Dashboard performance (polling redraws, memoization)~~ | **DONE** — `React.memo` on all components, `useMemo`/`useCallback`, no loading gates on polls |
+| ~~P3~~ | ~~Chart blank flash on account switch~~ | **DONE** — Pre-created series with visibility toggling |
+| ~~P2~~ | ~~Startup script race condition~~ | **DONE** — Frontend gated on backend health check + crash detection |
+| ~~P2~~ | ~~Cache ETF/SPY data downloads~~ | **DONE** — `download_and_cache()` with 16h staleness, separate cache files |
+| ~~P2~~ | ~~Non-blocking server startup~~ | **DONE** — Background thread + batch I/O |
+| — | Architectural patterns documented | **DONE** — `SDD.md` with 10 patterns for future projects |
 
 ---
 
@@ -348,6 +373,15 @@ The second revision adds the operational dashboard layer:
 - **Full rebalance workflow in the dashboard** — `RebalancePanel` replaces curl-based API workflow with preview → confirm → execute
 - **Rebalance audit trail is browsable** — `RebalanceHistory` shows all past events with expandable per-order details
 - **BTC filter surfaced end-to-end** — from `RebalanceResult` fields through API responses, rebalance log, TypeScript types, to UI banners
+
+The third revision addresses performance and developer experience:
+
+- **Dashboard no longer redraws on every poll** — `React.memo`, `useMemo`, `useCallback` throughout; loading skeleton only on initial load
+- **Account switching is instant** — stale data visible briefly, no skeleton flash; chart series pre-created and toggled
+- **Server starts in <2 seconds** — backfill/snapshots run in background thread; ETF/SPY data cached to parquet with 16h staleness
+- **Startup script is robust** — frontend only launches after backend health check passes; crash detection and 30s timeout
+- **Batch I/O** — backfill writes single parquet file instead of per-row read/write cycle
+- **Patterns documented in `SDD.md`** — 10 architectural lessons for future projects with similar stacks
 
 The adjusted Sharpe estimate (~1.35-1.45 after survivorship/warmup discount) remains solidly above the SPY benchmark (0.87). The 3-month paper trading window is the right call — use it to:
 

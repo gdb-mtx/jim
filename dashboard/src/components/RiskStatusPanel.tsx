@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { fetchRiskStatus, resetCircuitBreaker } from "../api";
 import type { RiskStatusResponse, AccountRiskStatus } from "../types";
 import { showToast } from "./Toast";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
 
-export default function RiskStatusPanel({ account }: { account: AccountView }) {
+export default memo(function RiskStatusPanel({ account }: { account: AccountView }) {
   const [risk, setRisk] = useState<RiskStatusResponse | null>(null);
 
   const load = () => {
@@ -14,7 +14,7 @@ export default function RiskStatusPanel({ account }: { account: AccountView }) {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30000);
+    const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -106,4 +106,4 @@ export default function RiskStatusPanel({ account }: { account: AccountView }) {
       </div>
     </div>
   );
-}
+})

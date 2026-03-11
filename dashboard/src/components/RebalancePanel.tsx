@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { fetchRebalancePreview, executeRebalance } from "../api";
 import type { RebalancePreview } from "../types";
 import { showToast } from "./Toast";
@@ -13,7 +13,7 @@ function formatUsd(n: number) {
   });
 }
 
-export default function RebalancePanel({
+export default memo(function RebalancePanel({
   account,
   strategyId,
 }: {
@@ -236,4 +236,4 @@ export default function RebalancePanel({
       )}
     </div>
   );
-}
+})
