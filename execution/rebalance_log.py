@@ -24,6 +24,8 @@ def log_rebalance(
     order_details: list[dict],
     spy_filter_active: bool = False,
     spy_filter_scalar: float = 1.0,
+    btc_filter_active: bool = False,
+    btc_filter_scalar: float = 1.0,
     source: str = "manual",
 ):
     """Append a rebalance event to the JSONL log.
@@ -37,6 +39,8 @@ def log_rebalance(
         order_details: List of order result dicts
         spy_filter_active: Whether SPY filter reduced exposure
         spy_filter_scalar: SPY filter scalar (1.0 = full, 0.5 = reduced)
+        btc_filter_active: Whether BTC filter reduced exposure
+        btc_filter_scalar: BTC filter scalar (1.0 = full, 0.0 = cash)
         source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
     """
     entry = {
@@ -49,6 +53,8 @@ def log_rebalance(
         "orders_failed": orders_failed,
         "spy_filter_active": spy_filter_active,
         "spy_filter_scalar": spy_filter_scalar,
+        "btc_filter_active": btc_filter_active,
+        "btc_filter_scalar": btc_filter_scalar,
         "orders": [
             {
                 "symbol": o.get("symbol", "?"),

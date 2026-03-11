@@ -69,6 +69,8 @@ async def _daily_crypto_rebalance():
                         orders_submitted=len(order_results),
                         orders_failed=len(failed),
                         order_details=order_results,
+                        btc_filter_active=result.btc_filter_active,
+                        btc_filter_scalar=result.btc_filter_scalar,
                         source="scheduled",
                     )
                 else:

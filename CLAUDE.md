@@ -88,16 +88,23 @@ backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
+execution/rebalance_log.py — Structured JSONL rebalance audit trail
 api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
-api/routes/portfolio.py  — Account summary, positions, equity history, correlation
-api/routes/orders.py     — Rebalance preview/execute, order history (?account=1|2|3|4)
+api/locks.py             — Per-account async rebalance locks (prevents concurrent execution)
+api/routes/portfolio.py  — Account summary, positions, equity history, correlation, risk status, filter status
+api/routes/orders.py     — Rebalance preview/execute, order history, rebalance journal (?account=1|2|3|4)
 api/routes/backtests.py  — Backtest runner (individual + combined + crypto)
 api/routes/strategies.py — Strategy list with live metrics
 dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
 dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
+dashboard/src/components/Toast.tsx — Global toast notification system (error/warning/info)
 dashboard/src/components/EquityHistoryChart.tsx — Live equity curves (TradingView, per-account + combined)
 dashboard/src/components/CorrelationPanel.tsx — Correlation matrix + rolling chart + alerts (Combined view)
 dashboard/src/components/StrategyPanel.tsx — Grouped strategy list (Live/Portfolio/Building Blocks)
+dashboard/src/components/RiskStatusPanel.tsx — Circuit breaker status + reset (polls every 30s)
+dashboard/src/components/FilterStatusBanner.tsx — SPY/BTC trend filter status with price vs 200d MA
+dashboard/src/components/RebalancePanel.tsx — Preview/execute rebalance with order diff table
+dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with expandable order details
 dashboard/               — React + Vite + TradingView Charts
 ```
 
@@ -126,5 +133,10 @@ dashboard/               — React + Vite + TradingView Charts
 - **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup, live equity curves in dashboard
 - **Correlation monitoring**: Rolling 21-day pairwise correlation (6 pairs), matrix + rolling chart, alert at 0.80 threshold, confidence badges
 - **Automated trading**: APScheduler runs daily crypto rebalance at 00:05 UTC inside FastAPI lifespan
+- **Circuit breaker monitoring**: RiskStatusPanel polls `/api/portfolio/risk` every 30s, shows green bar when healthy, red alert with reset buttons when halted
+- **Regime filter status**: FilterStatusBanner shows SPY price vs 200d MA (accounts 1-3) and BTC price vs 200d MA (account 4), color-coded green/amber/red
+- **Rebalance UI**: RebalancePanel with preview → confirm → execute flow, order diff table, SPY/BTC filter warnings, handles 409 (concurrent) and 403 (circuit breaker) errors
+- **Rebalance history**: RebalanceHistory shows past rebalance events with expandable per-order details, source badges, filter badges
+- **Execution safety**: Per-account async locks (409 on concurrent rebalance), circuit breaker persistence to disk, structured JSONL rebalance audit trail, retry logic on scheduled jobs
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- Next: Set up Account 4 Alpaca paper credentials, circuit breaker alerts, rebalance UI, walk-forward validation, track paper trading 3+ months before live money
+- Next: Automated equity rebalance scheduler, reconciliation, walk-forward validation, track paper trading 3+ months before live money

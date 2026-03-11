@@ -8,6 +8,10 @@ import {
 import type { PortfolioSummary, Position, Order } from "../types";
 import EquityHistoryChart from "./EquityHistoryChart";
 import CorrelationPanel from "./CorrelationPanel";
+import RiskStatusPanel from "./RiskStatusPanel";
+import RebalancePanel from "./RebalancePanel";
+import RebalanceHistory from "./RebalanceHistory";
+import FilterStatusBanner from "./FilterStatusBanner";
 import { showToast } from "./Toast";
 
 type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined
@@ -189,6 +193,12 @@ export default function LivePortfolio() {
       {/* Account switcher */}
       <AccountTabs account={account} onSwitch={switchAccount} />
 
+      {/* Risk status */}
+      <RiskStatusPanel account={account} />
+
+      {/* Regime filter status */}
+      <FilterStatusBanner account={account} />
+
       {/* Account summary cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
@@ -236,6 +246,14 @@ export default function LivePortfolio() {
           </p>
         </div>
       </div>
+
+      {/* Rebalance — individual accounts only */}
+      {!isCombined && summary && (
+        <RebalancePanel
+          account={account as 1 | 2 | 3 | 4}
+          strategyId={summary.default_strategy}
+        />
+      )}
 
       {/* Live equity chart */}
       <EquityHistoryChart account={account} />
@@ -352,6 +370,9 @@ export default function LivePortfolio() {
           </div>
         )}
       </div>
+
+      {/* Rebalance history */}
+      <RebalanceHistory account={account} />
 
       {/* Recent orders */}
       <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">

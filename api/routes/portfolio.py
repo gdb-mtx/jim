@@ -242,3 +242,45 @@ async def reset_circuit_breaker(
         "reset": strategy or "portfolio",
         "can_trade": rm.can_trade(strategy),
     }
+
+
+# ── Regime Filter Status ─────────────────────────────────────────
+
+
+@router.get("/filters")
+async def filter_status():
+    """Get current regime filter status (SPY 200d MA + BTC 200d MA)."""
+    from data.pipeline import download_prices
+    from data.crypto import download_btc_prices
+
+    result = {}
+
+    try:
+        spy_prices = download_prices(["SPY"], start="2008-01-01").squeeze()
+        spy_ma = spy_prices.rolling(200).mean()
+        spy_price = float(spy_prices.iloc[-1])
+        spy_ma_val = float(spy_ma.iloc[-1])
+        result["spy"] = {
+            "price": round(spy_price, 2),
+            "ma_200": round(spy_ma_val, 2),
+            "above_ma": spy_price > spy_ma_val,
+            "filter_scalar": 1.0 if spy_price > spy_ma_val else 0.5,
+        }
+    except Exception:
+        result["spy"] = {"error": "Could not load SPY data"}
+
+    try:
+        btc_prices = download_btc_prices()
+        btc_ma = btc_prices.rolling(200, min_periods=1).mean()
+        btc_price = float(btc_prices.iloc[-1])
+        btc_ma_val = float(btc_ma.iloc[-1])
+        result["btc"] = {
+            "price": round(btc_price, 2),
+            "ma_200": round(btc_ma_val, 2),
+            "above_ma": btc_price > btc_ma_val,
+            "filter_scalar": 1.0 if btc_price > btc_ma_val else 0.0,
+        }
+    except Exception:
+        result["btc"] = {"error": "Could not load BTC data"}
+
+    return result

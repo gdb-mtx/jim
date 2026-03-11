@@ -2,7 +2,7 @@
 
 Comprehensive audit of the FIRE quantitative trading system covering frontend code quality, backend architecture, testing, security, and production readiness.
 
-**Revision note**: Original audit conducted 2026-03-11 morning. This revision reflects hardening work completed the same day — circuit breaker persistence, concurrency locks, rebalance logging, retry logic, error toasts, risk API, and 24 backend tests.
+**Revision note**: Original audit conducted 2026-03-11 morning. First revision reflected hardening work (circuit breaker persistence, concurrency locks, rebalance logging, retry logic, error toasts, risk API, 24 backend tests). Second revision (2026-03-11 evening) reflects dashboard surfacing work — all backend features now have frontend UIs: risk status panel, rebalance preview/execute/history, regime filter banners, BTC filter status through full stack.
 
 ---
 
@@ -12,7 +12,7 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 |-----------|-------|---|-------|
 | **Strategy Research** | A- | — | Academically grounded, good factor diversification |
 | **Architecture** | A- | ↑ | Clean separation + new safety layers (locks, logging, risk API) |
-| **Dashboard** | B | — | Functional, good UX, toasts added, still needs error boundaries |
+| **Dashboard** | B+ | ↑ | 12 components, full rebalance flow, risk/filter panels, still needs error boundaries |
 | **Code Quality** | B+ | ↑ | Error handling improved, rebalance logging, structured risk state |
 | **Backtest Validity** | C+ | — | Survivorship bias + warmup trimming still inflate metrics ~10-15% |
 | **Execution Safety** | B | ↑↑ | Concurrency locks, retry logic, rebalance journal, circuit breaker persistence |
@@ -29,8 +29,8 @@ Comprehensive audit of the FIRE quantitative trading system covering frontend co
 
 ### Strong Points
 - **Strict TypeScript Configuration** (`strict: true` in tsconfig.app.json) — no implicit `any`, unused variables flagged, strict null checks
-- **Well-organized component structure**: 8 focused, single-responsibility components (~2,100 total lines)
-- **Clean separation**: `EquityHistoryChart`, `CorrelationPanel`, `StrategyPanel`, `LivePortfolio`, `Toast`, etc.
+- **Well-organized component structure**: 12 focused, single-responsibility components (~3,000 total lines)
+- **Clean separation**: `EquityHistoryChart`, `CorrelationPanel`, `StrategyPanel`, `LivePortfolio`, `Toast`, `RiskStatusPanel`, `FilterStatusBanner`, `RebalancePanel`, `RebalanceHistory`, etc.
 - **Reusable utilities**: `Tooltip`, `MetricCard`
 - **ESLint + React Hooks rules enforced** with React Refresh for HMR
 - **Proper useState/useEffect patterns** with useRef for TradingView chart integration
@@ -253,10 +253,11 @@ numpy >= 2.4.3
 - No reconciliation between target weights and actual fills
 - **Mitigation**: Market orders on liquid stocks/ETFs rarely partial-fill; crypto orders are small
 
-#### No Alerting Beyond Logs (Low)
-- Scheduled rebalance failures only visible in server logs
-- No Slack/email/webhook notification on circuit breaker trigger
-- Rebalance journal exists but isn't surfaced in dashboard yet
+#### No Alerting Beyond Dashboard (Low)
+- Scheduled rebalance failures visible in server logs + dashboard rebalance history
+- Circuit breaker status surfaced in dashboard (`RiskStatusPanel`) with reset buttons
+- Rebalance journal surfaced in dashboard (`RebalanceHistory`) with expandable order details
+- **Remaining gap**: No Slack/email/webhook notification — requires active dashboard monitoring
 
 ---
 
@@ -321,11 +322,12 @@ numpy >= 2.4.3
 
 | Priority | Item | Notes |
 |----------|------|-------|
-| P2 | Surface rebalance journal in dashboard | Data exists via API, needs frontend table |
-| P2 | Surface risk status in dashboard | API exists (`/api/portfolio/risk`), needs UI widget |
+| ~~P2~~ | ~~Surface rebalance journal in dashboard~~ | **DONE** — `RebalanceHistory` component with expandable order details |
+| ~~P2~~ | ~~Surface risk status in dashboard~~ | **DONE** — `RiskStatusPanel` with 30s polling + reset buttons |
 | P2 | Add API endpoint tests | Use FastAPI `TestClient` + mocked broker |
-| P3 | Add alerting (Slack/webhook) on circuit breaker triggers | Currently log-only |
-| P3 | Add rebalance diff preview in dashboard | Backend supports preview, frontend doesn't show it |
+| P3 | Add alerting (Slack/webhook) on circuit breaker triggers | Dashboard shows status; push notifications still missing |
+| ~~P3~~ | ~~Add rebalance diff preview in dashboard~~ | **DONE** — `RebalancePanel` with full preview → confirm → execute flow |
+| — | BTC filter status surfaced through full stack | **DONE** — `FilterStatusBanner`, rebalance result, API, log, types |
 
 ---
 
@@ -339,11 +341,19 @@ The FIRE system has moved from "impressive prototype with serious safety gaps" t
 - **Every rebalance is journaled** — full audit trail for debugging and review
 - **24 tests cover critical paths** — risk manager, rebalance logic, and all 9 strategies
 
+The second revision adds the operational dashboard layer:
+
+- **Risk status is visible at a glance** — `RiskStatusPanel` polls every 30s, green when healthy, red alert with reset buttons when halted
+- **Regime filter status is always visible** — `FilterStatusBanner` shows SPY/BTC price vs 200d MA, color-coded by account type
+- **Full rebalance workflow in the dashboard** — `RebalancePanel` replaces curl-based API workflow with preview → confirm → execute
+- **Rebalance audit trail is browsable** — `RebalanceHistory` shows all past events with expandable per-order details
+- **BTC filter surfaced end-to-end** — from `RebalanceResult` fields through API responses, rebalance log, TypeScript types, to UI banners
+
 The adjusted Sharpe estimate (~1.35-1.45 after survivorship/warmup discount) remains solidly above the SPY benchmark (0.87). The 3-month paper trading window is the right call — use it to:
 
 1. Add the React Error Boundary (~30 min)
 2. Set up CI/CD (GitHub Actions running pytest + npm build)
-3. Surface risk status and rebalance history in the dashboard
-4. Monitor whether paper returns track backtest expectations
+3. Monitor whether paper returns track backtest expectations
+4. Add push alerting (Slack/webhook) for circuit breaker triggers
 
 If paper returns hold within ~20% of backtest estimates, going live requires one more focused hardening session (auth + partial fills + alerting), not a rebuild.

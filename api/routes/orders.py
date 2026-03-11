@@ -87,6 +87,8 @@ async def preview_rebalance(
         "risk_check": result.risk_check,
         "spy_filter_active": result.spy_filter_active,
         "spy_filter_scalar": result.spy_filter_scalar,
+        "btc_filter_active": result.btc_filter_active,
+        "btc_filter_scalar": result.btc_filter_scalar,
     }
 
 
@@ -153,6 +155,8 @@ async def execute_rebalance_endpoint(
             order_details=order_results,
             spy_filter_active=result.spy_filter_active,
             spy_filter_scalar=result.spy_filter_scalar,
+            btc_filter_active=result.btc_filter_active,
+            btc_filter_scalar=result.btc_filter_scalar,
             source="manual",
         )
 
@@ -165,6 +169,8 @@ async def execute_rebalance_endpoint(
             "orders": order_results,
             "spy_filter_active": result.spy_filter_active,
             "spy_filter_scalar": result.spy_filter_scalar,
+            "btc_filter_active": result.btc_filter_active,
+            "btc_filter_scalar": result.btc_filter_scalar,
         }
 
 

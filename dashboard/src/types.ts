@@ -98,3 +98,95 @@ export interface CorrelationReport {
   alert_threshold: number;
   backtest_expected: Record<string, number>;
 }
+
+// Risk / Circuit Breaker types
+export interface AccountRiskStatus {
+  account: number;
+  label: string;
+  halted: boolean;
+  equity_peak: number;
+  halted_strategies: string[];
+  strategy_peaks?: Record<string, number>;
+  error?: string;
+}
+
+export interface RiskStatusResponse {
+  any_halted: boolean;
+  accounts: Record<string, AccountRiskStatus>;
+}
+
+// Rebalance types
+export interface RebalanceOrder {
+  symbol: string;
+  qty: number;
+  side: "buy" | "sell";
+  type: string;
+}
+
+export interface RebalancePreview {
+  account: number;
+  strategy_id: string;
+  portfolio_value: number;
+  target_weights: Record<string, number>;
+  target_positions: Record<string, number>;
+  current_positions: Record<string, number>;
+  orders: RebalanceOrder[];
+  num_buys: number;
+  num_sells: number;
+  risk_check: Record<string, unknown>;
+  spy_filter_active: boolean;
+  spy_filter_scalar: number;
+  btc_filter_active: boolean;
+  btc_filter_scalar: number;
+}
+
+export interface RebalanceExecuteResult {
+  account: number;
+  strategy_id: string;
+  portfolio_value: number;
+  orders_submitted: number;
+  orders_failed: number;
+  orders: Record<string, unknown>[];
+  spy_filter_active: boolean;
+  spy_filter_scalar: number;
+  btc_filter_active: boolean;
+  btc_filter_scalar: number;
+  message?: string;
+}
+
+export interface RebalanceHistoryOrder {
+  symbol: string;
+  side: string;
+  qty: number;
+  status: string;
+  error: string | null;
+}
+
+export interface RebalanceHistoryEntry {
+  timestamp: string;
+  account: number;
+  strategy_id: string;
+  source: string;
+  portfolio_value: number;
+  orders_submitted: number;
+  orders_failed: number;
+  spy_filter_active: boolean;
+  spy_filter_scalar: number;
+  btc_filter_active?: boolean;
+  btc_filter_scalar?: number;
+  orders: RebalanceHistoryOrder[];
+}
+
+// Regime filter status
+export interface FilterInfo {
+  price: number;
+  ma_200: number;
+  above_ma: boolean;
+  filter_scalar: number;
+  error?: string;
+}
+
+export interface FilterStatusResponse {
+  spy: FilterInfo;
+  btc: FilterInfo;
+}

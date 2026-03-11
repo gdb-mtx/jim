@@ -73,3 +73,50 @@ export async function takeSnapshot(account?: number) {
       : `${BASE_URL}/portfolio/snapshot`;
   return fetchJSON(url, { method: "POST" });
 }
+
+export async function fetchRiskStatus() {
+  return fetchJSON<import("./types").RiskStatusResponse>(
+    `${BASE_URL}/portfolio/risk`
+  );
+}
+
+export async function resetCircuitBreaker(
+  account: number,
+  strategy?: string
+) {
+  const params = new URLSearchParams({ account: String(account) });
+  if (strategy) params.set("strategy", strategy);
+  return fetchJSON<{ account: number; reset: string; can_trade: boolean }>(
+    `${BASE_URL}/portfolio/risk/reset?${params}`,
+    { method: "POST" }
+  );
+}
+
+export async function fetchRebalancePreview(
+  strategyId: string,
+  account: number
+) {
+  return fetchJSON<import("./types").RebalancePreview>(
+    `${BASE_URL}/orders/rebalance/preview?strategy_id=${strategyId}&account=${account}`,
+    { method: "POST" }
+  );
+}
+
+export async function executeRebalance(strategyId: string, account: number) {
+  return fetchJSON<import("./types").RebalanceExecuteResult>(
+    `${BASE_URL}/orders/rebalance/execute?strategy_id=${strategyId}&account=${account}`,
+    { method: "POST" }
+  );
+}
+
+export async function fetchRebalanceHistory(limit = 50) {
+  return fetchJSON<import("./types").RebalanceHistoryEntry[]>(
+    `${BASE_URL}/orders/rebalance/history?limit=${limit}`
+  );
+}
+
+export async function fetchFilterStatus() {
+  return fetchJSON<import("./types").FilterStatusResponse>(
+    `${BASE_URL}/portfolio/filters`
+  );
+}

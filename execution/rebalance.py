@@ -41,6 +41,8 @@ class RebalanceResult:
     risk_check: dict
     spy_filter_active: bool = False
     spy_filter_scalar: float = 1.0
+    btc_filter_active: bool = False
+    btc_filter_scalar: float = 1.0
 
 
 def get_current_signals(
@@ -301,6 +303,14 @@ def compute_rebalance(
         spy_filter_scalar = float(spy_filter.iloc[-1])
         spy_filter_active = spy_filter_scalar < 1.0
 
+    # Check BTC filter status
+    btc_filter_active = False
+    btc_filter_scalar = 1.0
+    if strategy_id in PORTFOLIOS and PORTFOLIOS[strategy_id].get("btc_filter"):
+        btc_filter = compute_btc_trend_filter()
+        btc_filter_scalar = float(btc_filter.iloc[-1])
+        btc_filter_active = btc_filter_scalar < 1.0
+
     return RebalanceResult(
         strategy_id=strategy_id,
         portfolio_value=portfolio_value,
@@ -311,6 +321,8 @@ def compute_rebalance(
         risk_check=risk_check,
         spy_filter_active=spy_filter_active,
         spy_filter_scalar=spy_filter_scalar,
+        btc_filter_active=btc_filter_active,
+        btc_filter_scalar=btc_filter_scalar,
     )
 
 

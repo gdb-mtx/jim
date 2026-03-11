@@ -288,16 +288,18 @@ FIRE/
 │   ├── __init__.py
 │   ├── alpaca_broker.py         # ✅ Multi-account Alpaca client (account 1/2/3/4)
 │   ├── rebalance.py             # ✅ Signal-to-order pipeline (target weights → trades, fractional crypto qty)
-│   └── risk_manager.py          # ✅ Fractional Kelly + 2% rule + circuit breakers
+│   ├── rebalance_log.py         # ✅ Structured JSONL rebalance audit trail
+│   └── risk_manager.py          # ✅ Fractional Kelly + 2% rule + circuit breakers (persisted to disk)
 │
 ├── api/                         # ✅ FastAPI backend
 │   ├── __init__.py
 │   ├── main.py                  # ✅ FastAPI app entry point (lifespan + APScheduler for daily crypto rebalance)
+│   ├── locks.py                 # ✅ Per-account async rebalance locks (prevents concurrent execution)
 │   └── routes/
 │       ├── strategies.py        # ✅ List strategies with live backtest metrics
 │       ├── backtests.py         # ✅ Run backtests (equity + crypto), equity curves + SPY benchmark
-│       ├── portfolio.py         # ✅ Multi-account portfolio (4 accounts), equity history, correlation
-│       └── orders.py            # ✅ Rebalance preview/execute, order history (accounts 1-4)
+│       ├── portfolio.py         # ✅ Multi-account portfolio, equity history, correlation, risk status, filter status
+│       └── orders.py            # ✅ Rebalance preview/execute, order history, rebalance journal (accounts 1-4)
 │
 ├── dashboard/                   # ✅ React + Vite + TypeScript frontend
 │   ├── package.json
@@ -314,9 +316,20 @@ FIRE/
 │           ├── CorrelationPanel.tsx  # ✅ Correlation matrix + rolling chart + alerts
 │           ├── StrategyPanel.tsx     # ✅ Grouped strategy list (sections, tooltips, badges)
 │           ├── Tooltip.tsx          # ✅ Reusable hover tooltip (dark theme)
-│           └── MetricCard.tsx       # ✅ Metric display cards
+│           ├── Toast.tsx            # ✅ Global toast notification system (error/warning/info)
+│           ├── MetricCard.tsx       # ✅ Metric display cards
+│           ├── RiskStatusPanel.tsx  # ✅ Circuit breaker status + reset (polls every 30s)
+│           ├── FilterStatusBanner.tsx # ✅ SPY/BTC trend filter status (price vs 200d MA)
+│           ├── RebalancePanel.tsx   # ✅ Preview/execute rebalance with order diff table
+│           └── RebalanceHistory.tsx # ✅ Rebalance event journal with expandable details
 │
-└── tests/                       # Unit tests (TODO)
+├── tests/                       # ✅ 24 backend tests (risk, rebalance, strategies)
+│   ├── test_risk_manager.py     # ✅ 8 tests: Kelly sizing, circuit breakers, persistence
+│   ├── test_rebalance.py        # ✅ 5 tests: order generation, sell-before-buy, safety halts
+│   └── test_strategies.py       # ✅ 11 tests: smoke tests for all 9 strategy classes
+│
+└── scripts/
+    └── start.sh                 # ✅ One-command startup (backend + frontend)
 ```
 
 ### Core Dependencies (Installed)
@@ -535,8 +548,9 @@ First equity trades executed **2026-03-10**. Rebalance dates (approximate, adjus
 - [x] **Performance tracking** — Daily equity snapshots stored in parquet (`data/processed/snapshots_acct{N}.parquet`), live P&L curves charted in dashboard per account + combined. Alpaca portfolio history API backfills gaps automatically on server startup.
 - [x] **Live correlation monitoring** — Rolling 21-day pairwise Pearson correlation between account daily returns. Dashboard shows correlation matrix (color-coded green→yellow→red), rolling chart, confidence badge, and alert banner when any pair exceeds 0.80 threshold. Validates the 0.56-0.66 backtest diversification thesis.
 - [x] **Automated crypto rebalance** — APScheduler runs daily at 00:05 UTC inside FastAPI lifespan. Computes signals, diffs positions, submits fractional crypto orders, takes snapshot.
-- [ ] **Circuit breaker alerts** — Active monitoring of -15% portfolio / -10% strategy drawdown thresholds. Warning banner in dashboard when approaching limits (e.g., -8% strategy, -12% portfolio).
-- [ ] **Rebalance UI in dashboard** — "Rebalance" button in Live Portfolio tab showing diff (stocks to buy/sell, dollar amounts) before confirming. Replaces current API-only workflow.
+- [x] **Circuit breaker monitoring** — `RiskStatusPanel` polls `/api/portfolio/risk` every 30s, shows green bar when healthy, red alert with per-account reset buttons when halted. Risk API reads persisted state files (`data/risk_state/circuit_breaker_acct{N}.json`).
+- [x] **Rebalance UI in dashboard** — `RebalancePanel` with preview → confirm → execute flow. Shows order diff table (symbol, side, qty, type), SPY/BTC filter warnings, handles 409 (concurrent rebalance) and 403 (circuit breaker) errors. `RebalanceHistory` shows past events with expandable per-order details.
+- [x] **Regime filter status** — `FilterStatusBanner` shows SPY price vs 200d MA (accounts 1-3) and BTC price vs 200d MA (account 4) at a glance. Color-coded green/amber/red. New `GET /api/portfolio/filters` endpoint.
 - [ ] Set up automated scheduler for equity accounts (Accounts 1-3 weekly/monthly)
 - [ ] Add reconciliation — compare expected positions vs Alpaca actual holdings, flag discrepancies
 - [ ] **Transaction cost analysis** — Compare actual Alpaca fill prices vs backtest closing prices to measure real slippage
@@ -643,26 +657,27 @@ Phases 1-6 are complete. All 4 accounts are configured on Alpaca paper trading: 
 ### Priority 0: Immediate ✅ COMPLETE
 1. ✅ **Account 4 Alpaca paper credentials** — Created, added to `.env`, connection verified ($100k paper account). BTC trend filter active (BTC below 200d MA) — Account 4 correctly holding cash.
 
-### Priority 1: Monitoring & Validation ✅ MOSTLY COMPLETE
+### Priority 1: Monitoring & Validation ✅ COMPLETE
 2. ✅ **Performance tracking** — Daily equity snapshots stored in parquet, charted in dashboard with TradingView charts. Alpaca portfolio history API backfills any gaps on server startup. Shows per-account + combined equity curves.
 3. ✅ **Live correlation monitoring** — Rolling 21-day correlation between account daily returns displayed in dashboard (Combined view). Now monitors 6 pairs (including crypto-equity). Correlation matrix with color-coded cells, rolling chart, confidence badges, and alert banners.
 4. ✅ **Automated crypto rebalance** — APScheduler runs daily at 00:05 UTC inside FastAPI lifespan. Full pipeline: signals → diffs → fractional orders → snapshot.
-5. **Circuit breaker alerts** — Warning banner when any account approaches -10% strategy or -15% portfolio drawdown thresholds. Early warning > post-mortem.
+5. ✅ **Circuit breaker monitoring** — `RiskStatusPanel` polls `/api/portfolio/risk` every 30s. Green bar when healthy, red alert with per-account reset buttons when halted. Risk state persisted to disk and survives restarts.
+6. ✅ **Regime filter status** — `FilterStatusBanner` shows SPY/BTC price vs 200d MA at a glance. BTC filter status surfaced through full stack (rebalance result → API → rebalance log → dashboard).
 
-### Priority 2: Operational (build before first equity rebalance)
-6. **Rebalance UI in dashboard** — Preview diff + confirm button, replacing API-only curl workflow. Needed before Account 3's first weekly rebalance.
-7. **Automated equity rebalance scheduler** — Scheduler for Account 3 weekly + Accounts 1 & 2 monthly (Account 4 crypto is already automated).
-8. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
+### Priority 2: Operational ✅ MOSTLY COMPLETE
+7. ✅ **Rebalance UI in dashboard** — `RebalancePanel` with preview → confirm → execute flow, order diff table, filter warnings. `RebalanceHistory` shows past events with expandable details and filter badges.
+8. **Automated equity rebalance scheduler** — Scheduler for Account 3 weekly + Accounts 1 & 2 monthly (Account 4 crypto is already automated).
+9. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
 
 ### Priority 3: Analysis (build during paper trading period)
-9. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage (especially important for crypto altcoins).
-10. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
-11. **Walk-forward validation** — Formal walk-forward on the newer strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal, Crypto Momentum).
+10. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage (especially important for crypto altcoins).
+11. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
+12. **Walk-forward validation** — Formal walk-forward on the newer strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal, Crypto Momentum).
 
 ### Priority 4: Future improvements
-12. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-13. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
-14. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
-15. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
+13. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+14. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+15. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
+16. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
 
 Our 4-account architecture delivers strong diversification: the 3-account equity portfolio (**16.8% return, 1.59 Sharpe, -10.2% MaxDD**) is complemented by crypto momentum (**33.2% CAGR, 1.62 Sharpe, -23.5% MaxDD**) with only 0.18 correlation to equities. The combination of equity factor diversification (momentum + trend/low-vol + reversal) plus a nearly uncorrelated crypto stream provides the best risk-adjusted returns of any configuration we've tested — but **this must be validated in live trading before we trust it with real money.**
