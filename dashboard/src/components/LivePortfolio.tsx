@@ -8,6 +8,7 @@ import {
 import type { PortfolioSummary, Position, Order } from "../types";
 import EquityHistoryChart from "./EquityHistoryChart";
 import CorrelationPanel from "./CorrelationPanel";
+import { showToast } from "./Toast";
 
 type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined
 
@@ -76,9 +77,10 @@ export default function LivePortfolio() {
         setError(false);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
         setError(true);
         setLoading(false);
+        showToast(`Failed to load account ${acct}: ${e.message}`);
       });
   };
 
@@ -87,10 +89,10 @@ export default function LivePortfolio() {
     // Fetch combined summary + orders from all accounts
     Promise.all([
       fetchCombinedPortfolio(),
-      fetchOrders(1).catch(() => []),
-      fetchOrders(2).catch(() => []),
-      fetchOrders(3).catch(() => []),
-      fetchOrders(4).catch(() => []),
+      fetchOrders(1).catch((e) => { console.warn("Orders acct 1:", e.message); return []; }),
+      fetchOrders(2).catch((e) => { console.warn("Orders acct 2:", e.message); return []; }),
+      fetchOrders(3).catch((e) => { console.warn("Orders acct 3:", e.message); return []; }),
+      fetchOrders(4).catch((e) => { console.warn("Orders acct 4:", e.message); return []; }),
     ])
       .then(([c, o1, o2, o3, o4]) => {
         setCombined(c);
@@ -105,9 +107,10 @@ export default function LivePortfolio() {
         setError(false);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
         setError(true);
         setLoading(false);
+        showToast(`Failed to load combined view: ${e.message}`);
       });
   };
 

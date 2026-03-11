@@ -1,0 +1,94 @@
+"""Structured rebalance log — appends one JSON line per rebalance event.
+
+Log file: data/rebalance_log.jsonl
+Each line is a self-contained JSON object with timestamp, account, strategy,
+orders submitted, failures, and filter state.
+"""
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+
+log = logging.getLogger("fire.rebalance_log")
+
+LOG_FILE = Path(__file__).parent.parent / "data" / "rebalance_log.jsonl"
+
+
+def log_rebalance(
+    account: int,
+    strategy_id: str,
+    portfolio_value: float,
+    orders_submitted: int,
+    orders_failed: int,
+    order_details: list[dict],
+    spy_filter_active: bool = False,
+    spy_filter_scalar: float = 1.0,
+    source: str = "manual",
+):
+    """Append a rebalance event to the JSONL log.
+
+    Args:
+        account: Account number (1-4)
+        strategy_id: Strategy that was rebalanced
+        portfolio_value: Portfolio value at time of rebalance
+        orders_submitted: Total orders submitted
+        orders_failed: Number of failed orders
+        order_details: List of order result dicts
+        spy_filter_active: Whether SPY filter reduced exposure
+        spy_filter_scalar: SPY filter scalar (1.0 = full, 0.5 = reduced)
+        source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
+    """
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "account": account,
+        "strategy_id": strategy_id,
+        "source": source,
+        "portfolio_value": round(portfolio_value, 2),
+        "orders_submitted": orders_submitted,
+        "orders_failed": orders_failed,
+        "spy_filter_active": spy_filter_active,
+        "spy_filter_scalar": spy_filter_scalar,
+        "orders": [
+            {
+                "symbol": o.get("symbol", "?"),
+                "side": o.get("side", "?"),
+                "qty": o.get("qty") or o.get("requested_qty"),
+                "status": o.get("status", "unknown"),
+                "error": o.get("error"),
+            }
+            for o in order_details
+        ],
+    }
+
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError as e:
+        log.warning(f"Could not write rebalance log: {e}")
+
+
+def get_recent_rebalances(limit: int = 50) -> list[dict]:
+    """Read the most recent rebalance events from the log.
+
+    Returns newest-first, up to `limit` entries.
+    """
+    if not LOG_FILE.exists():
+        return []
+
+    entries = []
+    try:
+        with open(LOG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+    except OSError:
+        return []
+
+    # Return newest first
+    return entries[-limit:][::-1]

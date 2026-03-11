@@ -3,6 +3,7 @@ import PortfolioChart from "./components/PortfolioChart";
 import MetricCard from "./components/MetricCard";
 import StrategyPanel from "./components/StrategyPanel";
 import LivePortfolio from "./components/LivePortfolio";
+import ToastContainer, { showToast } from "./components/Toast";
 import { fetchStrategies, fetchBacktest } from "./api";
 import type { StrategyMetrics, BacktestResult } from "./types";
 import "./index.css";
@@ -20,7 +21,10 @@ function App() {
   useEffect(() => {
     fetchStrategies()
       .then(setStrategies)
-      .catch(() => setApiError(true));
+      .catch((e) => {
+        setApiError(true);
+        showToast(`Backend unreachable: ${e.message}`, "warning");
+      });
   }, []);
 
   useEffect(() => {
@@ -31,7 +35,10 @@ function App() {
         setBacktest(data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((e) => {
+        setLoading(false);
+        showToast(`Backtest failed: ${e.message}`);
+      });
   }, [selected]);
 
   const m = backtest?.metrics;
@@ -181,6 +188,8 @@ function App() {
       <footer className="mt-12 text-center text-xs text-[#8888a050]">
         FIRE Quantitative Trading System &mdash; Built with Claude Code
       </footer>
+
+      <ToastContainer />
     </div>
   );
 }

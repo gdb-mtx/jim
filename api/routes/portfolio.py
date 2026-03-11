@@ -1,13 +1,15 @@
 """Portfolio endpoints — live account data from Alpaca.
 
-Supports 3 paper trading accounts via ?account=1|2|3 query param.
-Includes equity snapshot storage and correlation monitoring.
+Supports 4 paper trading accounts via ?account=1|2|3|4 query param.
+Includes equity snapshot storage, correlation monitoring, and risk status.
 """
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
+from execution.risk_manager import RiskManager, STATE_DIR
 from data.snapshots import (
     take_snapshot,
     take_all_snapshots,
@@ -171,3 +173,72 @@ async def equity_history(
 async def correlation_data():
     """Get inter-account correlation report for monitoring."""
     return get_correlation_report()
+
+
+# ── Risk / Circuit Breaker Status ─────────────────────────────────
+
+
+@router.get("/risk")
+async def risk_status():
+    """Get circuit breaker state for all accounts.
+
+    Reads persisted state files — no Alpaca API calls needed.
+    """
+    accounts = {}
+    any_halted = False
+
+    for acct_num in ACCOUNT_INFO:
+        state_file = STATE_DIR / f"circuit_breaker_acct{acct_num}.json"
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text())
+                halted = data.get("halted", False)
+                if halted:
+                    any_halted = True
+                accounts[acct_num] = {
+                    "account": acct_num,
+                    "label": ACCOUNT_INFO[acct_num]["label"],
+                    "halted": halted,
+                    "equity_peak": data.get("equity_peak", 0),
+                    "halted_strategies": data.get("halted_strategies", []),
+                    "strategy_peaks": data.get("strategy_peaks", {}),
+                }
+            except (json.JSONDecodeError, OSError):
+                accounts[acct_num] = {
+                    "account": acct_num,
+                    "label": ACCOUNT_INFO[acct_num]["label"],
+                    "halted": False,
+                    "error": "Could not read state file",
+                }
+        else:
+            accounts[acct_num] = {
+                "account": acct_num,
+                "label": ACCOUNT_INFO[acct_num]["label"],
+                "halted": False,
+                "equity_peak": 0,
+                "halted_strategies": [],
+            }
+
+    return {
+        "any_halted": any_halted,
+        "accounts": accounts,
+    }
+
+
+@router.post("/risk/reset")
+async def reset_circuit_breaker(
+    account: int = Query(ge=1, le=4, description="Account number (1-4)"),
+    strategy: Optional[str] = Query(default=None, description="Strategy name to reset, or omit for portfolio-level"),
+):
+    """Manually reset a circuit breaker after review.
+
+    WARNING: Only do this after investigating the drawdown cause.
+    """
+    rm = RiskManager(account=account)
+    rm.reset_halt(strategy)
+
+    return {
+        "account": account,
+        "reset": strategy or "portfolio",
+        "can_trade": rm.can_trade(strategy),
+    }
