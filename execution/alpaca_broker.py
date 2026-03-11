@@ -176,12 +176,45 @@ class AlpacaBroker:
         for order in sells + buys:
             try:
                 result = self.submit_order(order)
+                result["requested_qty"] = order.qty
                 results.append(result)
             except Exception as e:
                 results.append({
                     "symbol": order.symbol,
                     "side": order.side,
                     "qty": order.qty,
+                    "requested_qty": order.qty,
+                    "status": "error",
+                    "error": str(e),
+                })
+        return results
+
+    def check_fill_status(self, order_ids: list[str]) -> list[dict]:
+        """Check fill status for submitted orders.
+
+        Returns list of order statuses with filled quantities.
+        Useful for detecting partial fills after rebalance.
+        """
+        results = []
+        for order_id in order_ids:
+            try:
+                o = self.api.get_order(order_id)
+                results.append({
+                    "order_id": o.id,
+                    "symbol": o.symbol,
+                    "side": o.side,
+                    "requested_qty": float(o.qty),
+                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
+                    "status": o.status,
+                    "partial_fill": (
+                        o.status == "partially_filled"
+                        or (o.filled_qty and float(o.filled_qty) < float(o.qty))
+                    ),
+                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
+                })
+            except Exception as e:
+                results.append({
+                    "order_id": order_id,
                     "status": "error",
                     "error": str(e),
                 })

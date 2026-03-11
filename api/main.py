@@ -4,7 +4,9 @@ FastAPI Backend — Serves strategy data to the React dashboard.
 Includes APScheduler for daily crypto rebalance at 00:05 UTC.
 """
 
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -12,43 +14,67 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, strategies, backtests, orders
+from api.locks import get_rebalance_lock
 
 log = logging.getLogger("fire.scheduler")
 
 
 async def _daily_crypto_rebalance():
-    """Run daily crypto rebalance for Account 4 at 00:05 UTC."""
-    try:
-        from execution.alpaca_broker import AlpacaBroker
-        from execution.rebalance import compute_rebalance, execute_rebalance
-        from execution.risk_manager import RiskManager
-        from data.snapshots import take_snapshot
+    """Run daily crypto rebalance for Account 4 at 00:05 UTC.
 
-        log.info("Daily crypto rebalance starting...")
+    Retries up to 3 times with exponential backoff on failure.
+    """
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            from execution.alpaca_broker import AlpacaBroker
+            from execution.rebalance import compute_rebalance, execute_rebalance
+            from execution.risk_manager import RiskManager
+            from data.snapshots import take_snapshot
 
-        broker = AlpacaBroker(account=4)
-        result = compute_rebalance(
-            broker=broker,
-            strategy_id="crypto_momentum_filtered",
-            risk_manager=RiskManager(),
-        )
+            log.info(f"Daily crypto rebalance starting (attempt {attempt}/{max_retries})...")
 
-        if result.risk_check.get("portfolio_halted"):
-            log.warning("Crypto rebalance skipped — circuit breaker active")
-            return
+            lock = get_rebalance_lock(4)
+            if lock.locked():
+                log.warning("Crypto rebalance skipped — another rebalance already running")
+                return
 
-        if result.orders:
-            order_results = execute_rebalance(broker, result)
-            log.info(f"Crypto rebalance: {len(order_results)} orders submitted")
-        else:
-            log.info("Crypto rebalance: no trades needed")
+            async with lock:
+                broker = AlpacaBroker(account=4)
+                result = compute_rebalance(
+                    broker=broker,
+                    strategy_id="crypto_momentum_filtered",
+                    risk_manager=RiskManager(account=4),
+                )
 
-        # Take snapshot after rebalance
-        take_snapshot(4)
-        log.info("Daily crypto rebalance complete")
+                if result.risk_check.get("portfolio_halted"):
+                    log.warning("Crypto rebalance skipped — circuit breaker active")
+                    return
 
-    except Exception as e:
-        log.error(f"Daily crypto rebalance failed: {e}", exc_info=True)
+                if result.orders:
+                    order_results = execute_rebalance(broker, result)
+                    failed = [o for o in order_results if o.get("status") == "error"]
+                    log.info(
+                        f"Crypto rebalance: {len(order_results)} orders submitted"
+                        + (f" ({len(failed)} failed)" if failed else "")
+                    )
+                    for f in failed:
+                        log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
+                else:
+                    log.info("Crypto rebalance: no trades needed")
+
+                take_snapshot(4)
+                log.info("Daily crypto rebalance complete")
+                return  # Success — exit retry loop
+
+        except Exception as e:
+            log.error(f"Daily crypto rebalance attempt {attempt} failed: {e}", exc_info=True)
+            if attempt < max_retries:
+                wait = 2 ** attempt * 30  # 60s, 120s
+                log.info(f"Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+
+    log.error(f"Daily crypto rebalance FAILED after {max_retries} attempts")
 
 
 @asynccontextmanager

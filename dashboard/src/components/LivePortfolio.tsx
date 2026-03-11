@@ -87,10 +87,10 @@ export default function LivePortfolio() {
     // Fetch combined summary + orders from all accounts
     Promise.all([
       fetchCombinedPortfolio(),
-      fetchOrders(1).catch(() => []),
-      fetchOrders(2).catch(() => []),
-      fetchOrders(3).catch(() => []),
-      fetchOrders(4).catch(() => []),
+      fetchOrders(1).catch((e) => { console.warn("Orders acct 1:", e.message); return []; }),
+      fetchOrders(2).catch((e) => { console.warn("Orders acct 2:", e.message); return []; }),
+      fetchOrders(3).catch((e) => { console.warn("Orders acct 3:", e.message); return []; }),
+      fetchOrders(4).catch((e) => { console.warn("Orders acct 4:", e.message); return []; }),
     ])
       .then(([c, o1, o2, o3, o4]) => {
         setCombined(c);
