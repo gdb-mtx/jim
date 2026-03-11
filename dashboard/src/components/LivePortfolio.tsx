@@ -8,6 +8,7 @@ import {
 import type { PortfolioSummary, Position, Order } from "../types";
 import EquityHistoryChart from "./EquityHistoryChart";
 import CorrelationPanel from "./CorrelationPanel";
+import { showToast } from "./Toast";
 
 type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined
 
@@ -76,9 +77,10 @@ export default function LivePortfolio() {
         setError(false);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
         setError(true);
         setLoading(false);
+        showToast(`Failed to load account ${acct}: ${e.message}`);
       });
   };
 
@@ -105,9 +107,10 @@ export default function LivePortfolio() {
         setError(false);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
         setError(true);
         setLoading(false);
+        showToast(`Failed to load combined view: ${e.message}`);
       });
   };
 

@@ -29,6 +29,7 @@ async def _daily_crypto_rebalance():
         try:
             from execution.alpaca_broker import AlpacaBroker
             from execution.rebalance import compute_rebalance, execute_rebalance
+            from execution.rebalance_log import log_rebalance
             from execution.risk_manager import RiskManager
             from data.snapshots import take_snapshot
 
@@ -60,6 +61,16 @@ async def _daily_crypto_rebalance():
                     )
                     for f in failed:
                         log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
+
+                    log_rebalance(
+                        account=4,
+                        strategy_id="crypto_momentum_filtered",
+                        portfolio_value=result.portfolio_value,
+                        orders_submitted=len(order_results),
+                        orders_failed=len(failed),
+                        order_details=order_results,
+                        source="scheduled",
+                    )
                 else:
                     log.info("Crypto rebalance: no trades needed")
 

@@ -6,6 +6,7 @@ Supports 4 paper trading accounts via ?account=1|2|3|4 query param.
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
 from execution.rebalance import compute_rebalance, execute_rebalance
+from execution.rebalance_log import log_rebalance, get_recent_rebalances
 from execution.risk_manager import RiskManager
 from api.locks import get_rebalance_lock
 
@@ -142,6 +143,19 @@ async def execute_rebalance_endpoint(
         # Report partial fills / failures
         failed = [o for o in order_results if o.get("status") == "error"]
 
+        # Log to rebalance history
+        log_rebalance(
+            account=account,
+            strategy_id=result.strategy_id,
+            portfolio_value=result.portfolio_value,
+            orders_submitted=len(order_results),
+            orders_failed=len(failed),
+            order_details=order_results,
+            spy_filter_active=result.spy_filter_active,
+            spy_filter_scalar=result.spy_filter_scalar,
+            source="manual",
+        )
+
         return {
             "account": account,
             "strategy_id": result.strategy_id,
@@ -152,6 +166,14 @@ async def execute_rebalance_endpoint(
             "spy_filter_active": result.spy_filter_active,
             "spy_filter_scalar": result.spy_filter_scalar,
         }
+
+
+@router.get("/rebalance/history")
+async def rebalance_history(
+    limit: int = Query(default=50, le=200),
+):
+    """Get recent rebalance events from the structured log."""
+    return get_recent_rebalances(limit=limit)
 
 
 @router.post("/cancel-all")
