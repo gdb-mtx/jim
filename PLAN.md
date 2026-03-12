@@ -669,15 +669,40 @@ Phases 1-6 are complete. All 4 accounts are configured on Alpaca paper trading: 
 8. **Automated equity rebalance scheduler** — Scheduler for Account 3 weekly + Accounts 1 & 2 monthly (Account 4 crypto is already automated).
 9. **Reconciliation** — Compare expected positions vs Alpaca actual holdings, flag discrepancies after each rebalance.
 
-### Priority 3: Analysis (build during paper trading period)
-10. **Transaction cost analysis** — Actual Alpaca fills vs backtest closing prices. Measures real slippage (especially important for crypto altcoins).
-11. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
-12. **Walk-forward validation** — Formal walk-forward on the newer strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal, Crypto Momentum).
+### Priority 3: Paper vs. Backtest Validation (THE critical analysis)
+*The whole point of paper trading is answering one question: does live performance match backtest expectations? Without structured measurement, 3 months of paper trading is just 3 months of watching numbers go up and down.*
+
+10. **Paper vs. backtest performance report** — The go/no-go gate for real money.
+    - Compute live metrics (rolling Sharpe, annualized return, MaxDD) from daily equity snapshots using the same math as `backtesting/metrics.py`
+    - Compare side-by-side with backtest metrics per account: backtest Sharpe vs. live Sharpe, backtest return vs. live return, backtest MaxDD vs. live MaxDD
+    - **Key threshold**: Live Sharpe within 20% of backtest (i.e., 1.27+ for equity, 1.30+ for crypto) = system performing as expected
+    - Dashboard panel or API endpoint: `GET /api/portfolio/performance-report?account=N` returning both live and backtest metrics with the gap percentage
+    - Monthly cadence: meaningful after 30+ trading days, statistically significant after 60+
+
+11. **Fill price capture + slippage tracking** — Measures real transaction costs.
+    - After order submission, query Alpaca for actual fill prices (`filled_avg_price`) and log them in the rebalance journal alongside the compute-time prices already in `RebalanceResult.prices`
+    - Per-order slippage = `|fill_price - compute_price| / compute_price`
+    - Aggregate: average slippage per rebalance, per account, rolling over time
+    - This directly answers: "how much are transaction costs eating into returns?"
+    - Expected: 2-5 bps for equity, 50-100 bps for crypto on Alpaca
+
+12. **Turnover tracking** — Measures churn and its cost impact.
+    - Track percentage of portfolio value traded at each rebalance (sum of |buy| + |sell| / portfolio_value)
+    - Account 3 (weekly reversal, 52 stocks) is the highest risk — if turnover exceeds 30%/week, slippage could eat 2-4% annually
+    - Consider adding a **minimum rebalance threshold** (skip trades where weight change < 1% of portfolio) to reduce unnecessary churn
+
+13. **Strategy drift detection** — How far current holdings have drifted from target weights between rebalances.
+    - Compare actual Alpaca positions vs. last computed target weights
+    - Flag accounts where any position has drifted >5% from target
+    - Useful for deciding whether to rebalance early (especially Account 1 & 2 with monthly frequency)
+
+14. **Walk-forward validation** — Formal walk-forward on the newer strategies (Multi-Asset Trend, Low Volatility, Short-Term Reversal, Crypto Momentum).
 
 ### Priority 4: Future improvements
-13. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
-14. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
-15. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
-16. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
+15. **Transaction cost model in backtests** — Add a flat cost per trade (5 bps equity, 75 bps crypto) to `base.py` for more realistic backtest Sharpe estimates. Quick win that makes the paper vs. backtest comparison fairer.
+16. **Staggered rebalancing** — Split monthly rebalance into 4 weekly tranches to reduce timing luck.
+17. **Sector momentum pre-filter + quality screen** — Further refinements to stock selection.
+18. **Mobile-friendly dashboard** — Responsive pass for checking positions from phone.
+19. **Backtest date range selector** — UI date picker instead of hardcoded 2010-01-01.
 
 Our 4-account architecture delivers strong diversification: the 3-account equity portfolio (**16.8% return, 1.59 Sharpe, -10.2% MaxDD**) is complemented by crypto momentum (**33.2% CAGR, 1.62 Sharpe, -23.5% MaxDD**) with only 0.18 correlation to equities. The combination of equity factor diversification (momentum + trend/low-vol + reversal) plus a nearly uncorrelated crypto stream provides the best risk-adjusted returns of any configuration we've tested — but **this must be validated in live trading before we trust it with real money.**
