@@ -28,6 +28,9 @@ venv/
 # Data files (too large for git)
 data/raw/
 data/processed/
+data/risk_state/
+data/rebalance_log.jsonl
+data/snapshots/
 *.csv
 *.parquet
 *.h5
