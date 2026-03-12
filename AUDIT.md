@@ -1,6 +1,8 @@
-# FIRE System Audit — 2026-03-11 (v2)
+# FIRE System Audit — 2026-03-11 (v2, updated)
 
 Independent audit of the FIRE quantitative trading system. This audit replaces the previous version and provides a fresh assessment of the entire system, including an honest opinion on the project's viability given its speed of development.
+
+**Update (2026-03-11):** Items #1, #2, #3, #5, #9, #15 completed and pushed. RebalanceHistory account-change bug also fixed. Test count: 26 (24 + 2 new). See Section 9 for updated checklist.
 
 ---
 
@@ -15,7 +17,7 @@ Independent audit of the FIRE quantitative trading system. This audit replaces t
 - **~2,800 lines of TypeScript** (React dashboard with 12 components)
 - **9 backtested strategies** across 4 uncorrelated accounts
 - **Automated daily crypto rebalance** via APScheduler
-- **24 passing tests** covering risk management, rebalance logic, and all strategies
+- **26 passing tests** covering risk management, rebalance logic, and all strategies
 - **Full operational dashboard** with equity charts, rebalance workflow, risk monitoring, correlation tracking
 
 **Intended use**: Personal project. One user. Paper trading now, potentially $10k-$50k of real money after 3+ months of validation.
@@ -31,9 +33,9 @@ Independent audit of the FIRE quantitative trading system. This audit replaces t
 | **Dashboard** | A- | Memoized, no-flash polling, pre-created chart series, good operational panels |
 | **Code Quality** | B+ | Readable, consistent patterns, but speed of development left some rough edges |
 | **Backtest Methodology** | B- | Walk-forward + Monte Carlo + regime testing is excellent; survivorship bias and missing transaction costs are real |
-| **Execution Safety** | B | Concurrency locks, circuit breakers, retry logic, audit trail — solid for paper; gaps remain for live |
+| **Execution Safety** | B+ | Concurrency locks, circuit breakers (fail-safe), price staleness guard, missing price detection, retry logic, audit trail |
 | **Risk Management** | B+ | Fractional Kelly, 2% rule, drawdown breakers, persistence to disk |
-| **Testing** | C+ | 24 backend tests cover critical paths; no frontend tests, no API tests, no CI/CD |
+| **Testing** | C+ | 26 backend tests cover critical paths; no frontend tests, no API tests, no CI/CD |
 | **Security** | D | No auth, no rate limiting, permissive CORS — acceptable for localhost paper trading only |
 
 **Overall: B+ for what it is — a personal paper trading system built in 36 hours.**
@@ -115,7 +117,7 @@ These are still solidly above the SPY benchmark (0.87 Sharpe, -33.7% MaxDD). The
 
 **Concurrency protection**: Per-account async locks prevent duplicate rebalances. Execute endpoint returns 409 if already running. Accounts can rebalance independently (Account 1 doesn't block Account 4).
 
-**Circuit breakers**: Portfolio-level (-15%) and strategy-level (-10%) drawdown breakers. Persist to disk in `data/risk_state/`. Survive server restarts. Account-isolated state files. Reset requires explicit API call.
+**Circuit breakers**: Portfolio-level (-15%) and strategy-level (-10%) drawdown breakers. Persist to disk in `data/risk_state/` via atomic writes (tmp+rename). Survive server restarts. Account-isolated state files. **Fail-safe on corruption** — defaults to halted=True, not halted=False. Reset requires explicit API call.
 
 **Scheduled job resilience**: Crypto daily rebalance at 00:05 UTC has 3-attempt exponential backoff (immediate, 60s, 120s). Each attempt logged with full traceback.
 
@@ -125,25 +127,22 @@ These are still solidly above the SPY benchmark (0.87 Sharpe, -33.7% MaxDD). The
 
 ### What Needs Fixing Before Live Money
 
-**1. Stale price risk in execute path (HIGH)**
-The execute endpoint calls `compute_rebalance()` which fetches prices, computes orders, then submits them. If the computation takes time or prices moved since the user saw the preview, orders execute at stale prices. For crypto (Account 4), prices can move 5-10% in minutes.
+**~~1. Stale price risk in execute path (HIGH)~~ — DONE**
+~~The execute endpoint calls `compute_rebalance()` which fetches prices, computes orders, then submits them.~~
+**Fixed:** `check_price_staleness()` re-fetches prices before execution and blocks (HTTP 409) if any symbol moved >2%. Automated crypto rebalance raises into retry loop for re-computation with fresh prices. Both manual (API) and automated (APScheduler) paths protected.
 
-*Fix needed*: Re-fetch prices immediately before order submission. Reject if any price moved >2% from the compute snapshot. Simple staleness check: reject if >30 seconds elapsed since price fetch.
-
-**2. Silent position drops on missing prices (HIGH)**
-If `broker.get_latest_prices()` fails to return a price for a symbol (network error, API rate limit, delisted), that position is silently skipped. The user sees fewer orders than expected without warning.
-
-*Fix needed*: If any target symbol has no price, return an error instead of silently dropping it. Log which symbols failed.
+**~~2. Silent position drops on missing prices (HIGH)~~ — DONE**
+~~If `broker.get_latest_prices()` fails to return a price for a symbol, that position is silently skipped.~~
+**Fixed:** `compute_rebalance()` now detects missing prices and sets `price_error=True` + `missing_prices=[...]`. Preview shows warnings. Execute endpoint returns HTTP 422 refusing to trade. Automated path skips execution and logs error. Test: `test_missing_prices_flagged`.
 
 **3. No post-execution reconciliation (MEDIUM)**
 After submitting orders, the system doesn't verify that actual positions match targets. Partial fills, rejected orders, or network failures could leave the portfolio in an unintended state.
 
 *Fix needed*: After execution, compare actual positions to target positions. Log any discrepancies. Alert if drift exceeds threshold (e.g., 5%).
 
-**4. Circuit breaker state corruption (MEDIUM)**
-If the circuit breaker JSON file becomes corrupted (e.g., partial write during crash), `_load_state()` catches the error and falls back to `halted=False`. A halt could be silently lost on restart.
-
-*Fix needed*: Write to a temp file then atomically rename. On load failure, default to `halted=True` (fail-safe, not fail-open).
+**~~4. Circuit breaker state corruption (MEDIUM)~~ — DONE**
+~~If the circuit breaker JSON file becomes corrupted, `_load_state()` catches the error and falls back to `halted=False`.~~
+**Fixed:** Atomic writes via tmp+rename. On load failure, defaults to `halted=True` (fail-safe). Test: `test_corrupted_state_defaults_to_halted`.
 
 **5. No order cancellation on mid-execution halt (MEDIUM)**
 If a circuit breaker triggers during execution, orders already submitted to Alpaca are not cancelled. The check happens before submission but a market crash during order submission could trigger the breaker between orders.
@@ -157,7 +156,7 @@ Equity rebalance requests are accepted 24/7. Orders submitted after hours queue 
 
 ### What's Acceptable As-Is
 
-- **Preview/execute price mismatch**: The execute endpoint re-computes prices (doesn't use cached preview), so execution always uses current data.
+- **Preview/execute price mismatch**: The execute endpoint re-computes prices (doesn't use cached preview), and `check_price_staleness()` blocks execution if prices drifted >2% since computation.
 - **Scheduled job skipping on lock**: If the daily crypto rebalance finds the lock held, it skips. For daily rebalancing this is acceptable.
 - **No retry on individual order failures**: Logged but not retried. Fine for paper trading.
 
@@ -176,7 +175,7 @@ Equity rebalance requests are accepted 24/7. Orders submitted after hours queue 
 ### Issues
 - **Survivorship bias** (acknowledged but not corrected): Uses current S&P 500 list, not historical
 - **No VIX range validation**: Downloaded VIX values aren't sanity-checked (should be 10-100 range)
-- **Deprecated pandas API**: 6 locations use `reindex(..., method="ffill")` which will break in pandas 3.0. Simple fix: change to `.reindex(...).ffill()`
+- ~~**Deprecated pandas API**~~ — **DONE**: All 6 locations updated from `reindex(..., method="ffill")` to `.reindex(...).ffill()`
 - **Equity snapshots skip zero values**: If account equity hits 0 (full liquidation), that day's snapshot is silently dropped
 
 ---
@@ -196,11 +195,11 @@ Equity rebalance requests are accepted 24/7. Orders submitted after hours queue 
 - Filter status banner showing SPY/BTC price vs 200d MA
 
 ### Issues
-- **No React Error Boundary**: A single component error crashes the entire dashboard. (~30 lines to add)
+- ~~**No React Error Boundary**~~ — **DONE**: ErrorBoundary wraps tab content; header stays outside so user can still switch tabs after a crash.
 - **Race condition on rapid account switching**: If a fetch is in-flight when the user switches tabs, the stale response can briefly overwrite the new tab's data.
 - **Silent failures in some components**: `EquityHistoryChart` and `CorrelationPanel` silently degrade on API errors rather than showing error state.
-- **RebalanceHistory doesn't refetch on account change**: User must refresh the page to see a different account's history.
-- **FilterStatusBanner fetches once and never updates**: Filter status changes daily but only loads on mount.
+- ~~**RebalanceHistory doesn't refetch on account change**~~ — **DONE**: Deps changed from `[]` to `[account]`.
+- ~~**FilterStatusBanner fetches once and never updates**~~ — **DONE**: Refetches on account switch + 5-minute interval polling.
 
 ### Overall Assessment
 The dashboard is well above average for a personal project — the memoization and polling patterns are production-quality. The documented patterns in SDD.md show these were deliberate architectural choices.
@@ -209,12 +208,12 @@ The dashboard is well above average for a personal project — the memoization a
 
 ## 6. Testing
 
-### Current State: 24 Tests, All Passing
+### Current State: 26 Tests, All Passing
 
 | Test File | Count | Coverage |
 |-----------|-------|----------|
-| `test_risk_manager.py` | 8 | Kelly sizing, circuit breakers (portfolio + strategy), persistence, isolation, 2% rule |
-| `test_rebalance.py` | 5 | Order generation, sell-before-buy, circuit breaker halt, position caps, empty diff |
+| `test_risk_manager.py` | 9 | Kelly sizing, circuit breakers (portfolio + strategy), persistence, isolation, 2% rule, **corrupted state fail-safe** |
+| `test_rebalance.py` | 6 | Order generation, sell-before-buy, circuit breaker halt, position caps, empty diff, **missing price detection** |
 | `test_strategies.py` | 11 | Smoke tests for all 9 strategies + signal invariants (weights <= 1, no NaN) |
 
 ### What's Good
@@ -277,33 +276,33 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 
 ### Before Live Money (Required)
 
-| # | Item | Effort | Why |
+| # | Item | Status | Why |
 |---|------|--------|-----|
-| 1 | Price staleness check before execution | 1 hour | Prevents executing at stale prices, especially crypto |
-| 2 | Fail-safe circuit breaker loading | 30 min | Default to halted=True on corruption, not halted=False |
-| 3 | Error on missing prices (don't silently skip) | 30 min | Prevents silent position drops |
+| 1 | Price staleness check before execution | **DONE** | Server-side >2% drift guard on both manual and automated paths |
+| 2 | Fail-safe circuit breaker loading | **DONE** | Atomic writes + defaults to halted=True on corruption |
+| 3 | Error on missing prices (don't silently skip) | **DONE** | HTTP 422 blocks execution, preview shows warnings |
 | 4 | Post-execution position reconciliation | 2 hours | Verify actual matches target, log discrepancies |
-| 5 | React Error Boundary | 30 min | Prevents single component error from crashing dashboard |
+| 5 | React Error Boundary | **DONE** | Wraps tab content, prevents white-screen crashes |
 | 6 | API authentication (Bearer token) | 1 hour | Required before real money or network exposure |
 
 ### During Paper Trading (Should Do)
 
-| # | Item | Effort | Why |
+| # | Item | Status | Why |
 |---|------|--------|-----|
 | 7 | CI/CD pipeline (GitHub Actions) | 1 hour | Prevent regressions on push |
 | 8 | API endpoint tests with mocked broker | 2 hours | Catch routing/serialization bugs |
-| 9 | Fix deprecated pandas `reindex` calls (6 locations) | 15 min | Will break on pandas 3.0 |
+| 9 | Fix deprecated pandas `reindex` calls | **DONE** | All 6 locations updated for pandas 3.0 |
 | 10 | Add transaction cost model to backtests | 1 hour | More realistic Sharpe estimates |
 | 11 | Push alerting (Slack webhook) for circuit breakers | 1 hour | Don't rely on checking dashboard |
 | 12 | Market hours awareness for equity rebalances | 30 min | Warn when submitting after hours |
 
 ### Nice to Have (Polish)
 
-| # | Item | Effort | Why |
+| # | Item | Status | Why |
 |---|------|--------|-----|
 | 13 | Frontend tests (Vitest) | 2 hours | Test rebalance flow, account switching |
 | 14 | Request cancellation on rapid tab switches | 30 min | Prevent rare race condition |
-| 15 | FilterStatusBanner auto-refresh | 15 min | Currently stale after mount |
+| 15 | FilterStatusBanner auto-refresh | **DONE** | Refetches on account switch + 5-min polling |
 | 16 | .env.example file | 10 min | Document required Alpaca keys |
 | 17 | Correct survivorship bias (point-in-time S&P 500) | 4+ hours | More accurate backtests, hard to source data |
 
@@ -315,7 +314,7 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 
 The system correctly implements the core principles from the 2020 proposal: systematic rules-based trading, factor diversification, the 2% max loss rule, and trend-following with proper risk management. It went from a concept document to 4 live paper trading accounts with a professional-grade validation framework.
 
-The speed of development is both its strength and its risk. The architecture is clean and the code is readable, but some execution edge cases haven't been battle-tested. The 6 items in the "Before Live Money" list are the gap between a paper trading prototype and something you'd trust with $10k-$50k.
+The speed of development is both its strength and its risk. The architecture is clean and the code is readable. Of the original 6 "Before Live Money" items, 4 are now complete (price staleness guard, fail-safe circuit breakers, missing price detection, error boundary). The remaining 2 items — post-execution reconciliation and API authentication — are the gap between a paper trading prototype and something you'd trust with $10k-$50k.
 
 The realistic expectation for live performance:
 - **Combined equity**: ~1.2-1.4 Sharpe, ~12-15% annual return, -12 to -15% max drawdown
@@ -324,7 +323,7 @@ The realistic expectation for live performance:
 
 **The path to real money:**
 1. Paper trade for 3+ months (already started)
-2. Fix the 6 required items (~5-6 hours of work)
+2. Fix the remaining 2 required items: post-execution reconciliation + API authentication (~3 hours of work)
 3. Validate paper Sharpe is within 20% of backtest
 4. Start with $10k across 4 accounts ($2,500 each)
 5. Scale to $50k only after 3+ months of live trading confirms the edge

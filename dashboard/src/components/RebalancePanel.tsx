@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { fetchRebalancePreview, executeRebalance } from "../api";
 import type { RebalancePreview } from "../types";
 import { showToast } from "./Toast";
@@ -26,6 +26,13 @@ export default memo(function RebalancePanel({
     submitted: number;
     failed: number;
   } | null>(null);
+
+  // Reset state when account or strategy changes
+  useEffect(() => {
+    setState("idle");
+    setPreview(null);
+    setResult(null);
+  }, [account, strategyId]);
 
   const handlePreview = async () => {
     setState("previewing");
