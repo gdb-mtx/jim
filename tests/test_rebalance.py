@@ -115,3 +115,27 @@ def test_no_orders_when_at_target(mock_signals):
     )
 
     assert result.orders == []
+
+
+@patch("execution.rebalance.get_current_signals")
+def test_missing_prices_flagged(mock_signals):
+    """Missing prices are detected and flagged in the result."""
+    mock_signals.return_value = {"AAPL": 0.10, "MISSING": 0.10}
+
+    # Broker only returns price for AAPL, not MISSING
+    broker = _mock_broker(
+        positions={},
+        value=100_000,
+        prices={"AAPL": 100.0},
+    )
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="test_strategy",
+        risk_manager=RiskManager(persist=False),
+    )
+
+    assert result.price_error is True
+    assert "MISSING" in result.missing_prices
+    # AAPL should still have an order (partial computation works)
+    assert any(o.symbol == "AAPL" for o in result.orders)

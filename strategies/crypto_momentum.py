@@ -72,7 +72,7 @@ class CryptoMomentum(BaseStrategy):
             return pd.Series(1.0, index=dates)
 
         # Align BTC to strategy dates
-        btc_aligned = self._btc.reindex(dates, method="ffill")
+        btc_aligned = self._btc.reindex(dates).ffill()
         btc_ma = btc_aligned.rolling(self.btc_ma_period, min_periods=1).mean()
 
         scalar = pd.Series(

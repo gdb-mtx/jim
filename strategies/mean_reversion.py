@@ -90,7 +90,7 @@ class ShortTermReversal(BaseStrategy):
         if self._vix is None:
             return pd.Series(1.0, index=dates)
 
-        vix_aligned = self._vix.reindex(dates, method="ffill")
+        vix_aligned = self._vix.reindex(dates).ffill()
 
         scalar = pd.Series(1.0, index=dates)
         # Boost exposure when VIX is moderately elevated (reversal sweet spot)

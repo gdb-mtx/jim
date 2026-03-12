@@ -39,12 +39,13 @@ export default memo(function RebalanceHistory({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setExpanded(null);
     setLoading(true);
     fetchRebalanceHistory(50)
       .then(setEntries)
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [account]);
 
   const filtered =
     account === 0

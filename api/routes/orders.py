@@ -5,7 +5,7 @@ Supports 4 paper trading accounts via ?account=1|2|3|4 query param.
 
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
-from execution.rebalance import compute_rebalance, execute_rebalance
+from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
 from execution.rebalance_log import log_rebalance, get_recent_rebalances
 from execution.risk_manager import RiskManager
 from api.locks import get_rebalance_lock
@@ -89,6 +89,9 @@ async def preview_rebalance(
         "spy_filter_scalar": result.spy_filter_scalar,
         "btc_filter_active": result.btc_filter_active,
         "btc_filter_scalar": result.btc_filter_scalar,
+        "prices": result.prices,
+        "missing_prices": result.missing_prices,
+        "price_error": result.price_error,
     }
 
 
@@ -125,12 +128,29 @@ async def execute_rebalance_endpoint(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Rebalance computation failed: {e}")
 
+        # Don't execute with missing prices
+        if result.price_error:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Missing prices for: {', '.join(result.missing_prices)}. Cannot execute.",
+            )
+
         # Don't execute if circuit breaker tripped
         if result.risk_check.get("portfolio_halted"):
             raise HTTPException(
                 status_code=403,
                 detail="Portfolio circuit breaker active — trading halted",
             )
+
+        # Price staleness guard — re-fetch and compare
+        if result.prices:
+            drifted = check_price_staleness(broker, result.prices)
+            if drifted:
+                symbols = ", ".join(f"{d['symbol']} ({d['drift_pct']}%)" for d in drifted)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Prices moved >2% since computation: {symbols}. Re-preview for current prices.",
+                )
 
         if not result.orders:
             return {

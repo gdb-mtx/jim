@@ -16,7 +16,18 @@ async function fetchWithTimeout(
 
 async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T> {
   const res = await fetchWithTimeout(url, opts);
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail)
+        detail =
+          typeof body.detail === "string"
+            ? body.detail
+            : JSON.stringify(body.detail);
+    } catch {}
+    throw new Error(detail);
+  }
   return res.json() as Promise<T>;
 }
 

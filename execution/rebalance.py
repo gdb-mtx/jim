@@ -43,6 +43,9 @@ class RebalanceResult:
     spy_filter_scalar: float = 1.0
     btc_filter_active: bool = False
     btc_filter_scalar: float = 1.0
+    prices: dict[str, float] = field(default_factory=dict)
+    missing_prices: list[str] = field(default_factory=list)
+    price_error: bool = False
 
 
 def get_current_signals(
@@ -243,6 +246,13 @@ def compute_rebalance(
     all_symbols = set(list(target_weights.keys()) + list(current_positions.keys()))
     prices = broker.get_latest_prices(list(all_symbols))
 
+    # Detect missing prices for target symbols
+    missing_prices = [
+        s for s in target_weights
+        if s not in prices or prices.get(s, 0) <= 0
+    ]
+    price_error = len(missing_prices) > 0
+
     # 5. Convert weights to target quantities
     # Detect if this is a crypto strategy (needs fractional quantities)
     is_crypto = (
@@ -323,7 +333,37 @@ def compute_rebalance(
         spy_filter_scalar=spy_filter_scalar,
         btc_filter_active=btc_filter_active,
         btc_filter_scalar=btc_filter_scalar,
+        prices=prices,
+        missing_prices=missing_prices,
+        price_error=price_error,
     )
+
+
+def check_price_staleness(
+    broker: AlpacaBroker,
+    compute_prices: dict[str, float],
+    threshold: float = 0.02,
+) -> list[dict]:
+    """Re-fetch prices and compare to compute-time prices.
+
+    Returns list of drifted symbols (empty if all prices are within threshold).
+    Used as a safety guard before executing orders — blocks execution if any
+    price moved >threshold since computation.
+    """
+    fresh = broker.get_latest_prices(list(compute_prices.keys()))
+    drifted = []
+    for sym, old_price in compute_prices.items():
+        new_price = fresh.get(sym)
+        if new_price and old_price > 0:
+            pct = abs(new_price - old_price) / old_price
+            if pct > threshold:
+                drifted.append({
+                    "symbol": sym,
+                    "compute_price": old_price,
+                    "current_price": new_price,
+                    "drift_pct": round(pct * 100, 2),
+                })
+    return drifted
 
 
 def execute_rebalance(

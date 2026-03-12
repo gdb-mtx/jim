@@ -74,12 +74,10 @@ export default memo(function RebalancePanel({
       }, 5000);
     } catch (e) {
       const msg = (e as Error).message;
-      if (msg.includes("409")) {
-        showToast("Rebalance already in progress for this account", "warning");
-      } else if (msg.includes("403")) {
-        showToast("Circuit breaker active — trading halted", "error");
+      if (msg.toLowerCase().includes("already in progress")) {
+        showToast(msg, "warning");
       } else {
-        showToast(`Execute failed: ${msg}`);
+        showToast(msg, "error");
       }
       setState("previewed");
     }

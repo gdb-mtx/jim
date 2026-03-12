@@ -88,7 +88,7 @@ class StockMomentum(BaseStrategy):
             return pd.Series(1.0, index=dates)
 
         # Align VIX to strategy dates
-        vix_aligned = self._vix.reindex(dates, method="ffill")
+        vix_aligned = self._vix.reindex(dates).ffill()
 
         scalar = pd.Series(1.0, index=dates)
         scalar[vix_aligned >= self.vix_threshold_reduce] = self.vix_reduce_factor

@@ -17,7 +17,11 @@ export default memo(function FilterStatusBanner({
 
   useEffect(() => {
     fetchFilterStatus().then(setFilters).catch(() => {});
-  }, []);
+    const interval = setInterval(() => {
+      fetchFilterStatus().then(setFilters).catch(() => {});
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [account]);
 
   if (!filters) return null;
 

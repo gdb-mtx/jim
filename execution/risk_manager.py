@@ -13,6 +13,7 @@ See PLAN.md Section 3 (Kelly) and Section 5 (Constraints).
 """
 
 import json
+import os
 import logging
 import os
 from pathlib import Path
@@ -80,7 +81,12 @@ class RiskManager:
         return STATE_DIR / f"circuit_breaker{suffix}.json"
 
     def _load_state(self):
-        """Load circuit breaker state from disk."""
+        """Load circuit breaker state from disk.
+
+        Fail-safe: if the state file exists but is corrupted, default to
+        halted=True. Better to block trading until manually reset than to
+        silently lose a halt after a crash.
+        """
         if not self._state_file.exists():
             return
         try:
@@ -91,10 +97,14 @@ class RiskManager:
             self._halted_strategies = set(data.get("halted_strategies", []))
             log.info(f"Loaded circuit breaker state from {self._state_file}")
         except (json.JSONDecodeError, OSError) as e:
-            log.warning(f"Could not load circuit breaker state: {e}")
+            self._halted = True
+            log.error(
+                f"Circuit breaker state corrupted ({self._state_file}): {e}. "
+                "Defaulting to HALTED (fail-safe). Reset manually via API."
+            )
 
     def _save_state(self):
-        """Save circuit breaker state to disk."""
+        """Save circuit breaker state to disk (atomic write)."""
         if not self._persist:
             return
         try:
@@ -105,7 +115,9 @@ class RiskManager:
                 "halted": self._halted,
                 "halted_strategies": list(self._halted_strategies),
             }
-            self._state_file.write_text(json.dumps(data, indent=2))
+            tmp = self._state_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2))
+            os.rename(str(tmp), str(self._state_file))
         except OSError as e:
             log.warning(f"Could not save circuit breaker state: {e}")
 

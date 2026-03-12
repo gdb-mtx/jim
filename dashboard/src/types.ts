@@ -138,6 +138,9 @@ export interface RebalancePreview {
   spy_filter_scalar: number;
   btc_filter_active: boolean;
   btc_filter_scalar: number;
+  prices?: Record<string, number>;
+  missing_prices?: string[];
+  price_error?: boolean;
 }
 
 export interface RebalanceExecuteResult {

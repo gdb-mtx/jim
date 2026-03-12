@@ -309,13 +309,13 @@ def run_portfolio(
     # Apply SPY trend filter
     if use_spy_filter:
         spy_filter = compute_spy_trend_filter(start=start)
-        spy_aligned = spy_filter.reindex(combined.index, method="ffill").fillna(1.0)
+        spy_aligned = spy_filter.reindex(combined.index).ffill().fillna(1.0)
         combined = combined * spy_aligned
 
     # Apply BTC trend filter (binary: 1.0 or 0.0)
     if use_btc_filter:
         btc_filter = compute_btc_trend_filter(start=start)
-        btc_aligned = btc_filter.reindex(combined.index, method="ffill").fillna(1.0)
+        btc_aligned = btc_filter.reindex(combined.index).ffill().fillna(1.0)
         combined = combined * btc_aligned
 
     # Apply vol-scaling overlay (Moreira & Muir 2017)

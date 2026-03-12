@@ -3,6 +3,7 @@ import PortfolioChart from "./components/PortfolioChart";
 import MetricCard from "./components/MetricCard";
 import StrategyPanel from "./components/StrategyPanel";
 import LivePortfolio from "./components/LivePortfolio";
+import ErrorBoundary from "./components/ErrorBoundary";
 import ToastContainer, { showToast } from "./components/Toast";
 import { fetchStrategies, fetchBacktest } from "./api";
 import type { StrategyMetrics, BacktestResult } from "./types";
@@ -94,6 +95,7 @@ function App() {
         </div>
       )}
 
+      <ErrorBoundary>
       {/* Live Portfolio view */}
       {tab === "portfolio" && (
         <LivePortfolio />
@@ -183,6 +185,7 @@ function App() {
           </div>
         </div>
       )}
+      </ErrorBoundary>
 
       {/* Footer */}
       <footer className="mt-12 text-center text-xs text-[#8888a050]">

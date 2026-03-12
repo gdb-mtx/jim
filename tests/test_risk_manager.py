@@ -149,3 +149,16 @@ def test_two_percent_rule():
     )
     assert result2.final_position_pct <= 0.20
     assert abs(result2.max_loss_capped_pct - 0.20) < 1e-10  # 2% / 10% = 20%
+
+
+def test_corrupted_state_defaults_to_halted(tmp_path):
+    """Corrupted state file should fail-safe to halted, not halted=False."""
+    state_dir = tmp_path / "risk_state"
+    state_dir.mkdir(parents=True)
+    state_file = state_dir / "circuit_breaker_acct1.json"
+    state_file.write_text("not valid json {{{")
+
+    with patch("execution.risk_manager.STATE_DIR", state_dir):
+        rm = RiskManager(account=1, persist=True)
+        assert rm._halted is True
+        assert not rm.can_trade()

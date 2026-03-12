@@ -28,7 +28,7 @@ async def _daily_crypto_rebalance():
     for attempt in range(1, max_retries + 1):
         try:
             from execution.alpaca_broker import AlpacaBroker
-            from execution.rebalance import compute_rebalance, execute_rebalance
+            from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
             from execution.rebalance_log import log_rebalance
             from execution.risk_manager import RiskManager
             from data.snapshots import take_snapshot
@@ -48,9 +48,19 @@ async def _daily_crypto_rebalance():
                     risk_manager=RiskManager(account=4),
                 )
 
+                if result.price_error:
+                    log.error(f"Crypto rebalance skipped — missing prices: {result.missing_prices}")
+                    return
+
                 if result.risk_check.get("portfolio_halted"):
                     log.warning("Crypto rebalance skipped — circuit breaker active")
                     return
+
+                # Price staleness guard — re-fetch and block on >2% drift
+                if result.prices:
+                    drifted = check_price_staleness(broker, result.prices)
+                    if drifted:
+                        raise RuntimeError(f"Price drift detected: {drifted}")
 
                 if result.orders:
                     order_results = execute_rebalance(broker, result)
