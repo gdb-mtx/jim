@@ -21,6 +21,13 @@ const SERIES_CONFIG = [
 
 const ACCT_SERIES = SERIES_CONFIG.filter((c) => c.key !== "combined");
 
+const ACCT_COLOR: Record<number, string> = {
+  1: "#00d4aa",
+  2: "#4d8eff",
+  3: "#ffc04d",
+  4: "#ff6b9d",
+};
+
 const CHART_OPTS = {
   layout: {
     background: { color: "#1a1a2e" },
@@ -187,7 +194,10 @@ export default memo(function EquityHistoryChart({ account }: Props) {
           const mainSeries = seriesRefs.current.get("main");
           if (mainSeries) {
             mainSeries.setData(resp.equity_curve ?? []);
-            mainSeries.applyOptions({ visible: true });
+            mainSeries.applyOptions({
+              visible: true,
+              color: ACCT_COLOR[account] ?? "#00d4aa",
+            });
           }
           // Clear breakdown chart
           perAccountData.current = null;
@@ -232,7 +242,7 @@ export default memo(function EquityHistoryChart({ account }: Props) {
   const legend =
     account === 0
       ? [SERIES_CONFIG[0]]
-      : [{ key: "main", label: `FIRE 0.${account}`, color: "#00d4aa" }];
+      : [{ key: "main", label: `FIRE 0.${account}`, color: ACCT_COLOR[account] ?? "#00d4aa" }];
 
   return (
     <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
