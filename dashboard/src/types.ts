@@ -121,6 +121,9 @@ export interface RebalanceOrder {
   qty: number;
   side: "buy" | "sell";
   type: string;
+  current_qty?: number;
+  target_qty?: number;
+  action?: "new" | "increase" | "decrease" | "exit";
 }
 
 export interface RebalancePreview {

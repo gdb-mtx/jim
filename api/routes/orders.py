@@ -79,6 +79,14 @@ async def preview_rebalance(
                 "qty": o.qty,
                 "side": o.side,
                 "type": o.order_type,
+                "current_qty": result.current_positions.get(o.symbol, 0),
+                "target_qty": result.target_positions.get(o.symbol, 0),
+                "action": (
+                    "new" if result.current_positions.get(o.symbol, 0) == 0
+                    else "increase" if o.side == "buy"
+                    else "exit" if result.target_positions.get(o.symbol, 0) == 0
+                    else "decrease"
+                ),
             }
             for o in result.orders
         ],

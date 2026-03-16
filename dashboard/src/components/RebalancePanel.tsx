@@ -1,9 +1,19 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { fetchRebalancePreview, executeRebalance } from "../api";
-import type { RebalancePreview } from "../types";
+import type { RebalanceOrder, RebalancePreview } from "../types";
 import { showToast } from "./Toast";
 
 type State = "idle" | "previewing" | "previewed" | "executing" | "executed";
+type Action = "new" | "increase" | "decrease" | "exit";
+
+const ACTION_CONFIG: Record<Action, { label: string; color: string; bg: string }> = {
+  new:      { label: "NEW",      color: "#00d4aa", bg: "#00d4aa20" },
+  increase: { label: "INCREASE", color: "#4d8eff", bg: "#4d8eff20" },
+  decrease: { label: "DECREASE", color: "#ffc04d", bg: "#ffc04d20" },
+  exit:     { label: "EXIT",     color: "#ff4d6a", bg: "#ff4d6a20" },
+};
+
+const ACTION_ORDER: Action[] = ["new", "exit", "increase", "decrease"];
 
 function formatUsd(n: number) {
   return n.toLocaleString("en-US", {
@@ -11,6 +21,106 @@ function formatUsd(n: number) {
     currency: "USD",
     minimumFractionDigits: 2,
   });
+}
+
+function OrdersTable({
+  orders,
+  prices,
+}: {
+  orders: RebalanceOrder[];
+  prices?: Record<string, number>;
+}) {
+  const grouped = useMemo(() => {
+    const groups: Record<Action, RebalanceOrder[]> = {
+      new: [],
+      increase: [],
+      decrease: [],
+      exit: [],
+    };
+    for (const o of orders) {
+      const action = (o.action ?? (o.side === "buy" ? "increase" : "decrease")) as Action;
+      groups[action].push(o);
+    }
+    // Sort each group by symbol
+    for (const g of Object.values(groups)) {
+      g.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    }
+    return groups;
+  }, [orders]);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
+            <th className="pb-2 pr-4">Symbol</th>
+            <th className="pb-2 pr-4">Action</th>
+            <th className="pb-2 pr-4 text-right">Current</th>
+            <th className="pb-2 pr-4 text-center">→</th>
+            <th className="pb-2 pr-4 text-right">Target</th>
+            <th className="pb-2 pr-4 text-right">Change</th>
+            <th className="pb-2 text-right">Est. Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ACTION_ORDER.map((action) => {
+            const group = grouped[action];
+            if (group.length === 0) return null;
+            const cfg = ACTION_CONFIG[action];
+            return group.map((o, i) => {
+              const currentQty = o.current_qty ?? 0;
+              const targetQty = o.target_qty ?? 0;
+              const change = o.side === "buy" ? o.qty : -o.qty;
+              const price = prices?.[o.symbol] ?? 0;
+              const dollarImpact = Math.abs(o.qty * price);
+              return (
+                <tr
+                  key={`${action}-${o.symbol}`}
+                  className="border-b border-[#2a2a3e]/50"
+                >
+                  <td className="py-2 pr-4 font-medium text-[#e8e8f0]">
+                    {i === 0 && group.length > 1 ? (
+                      <span
+                        className="mr-2 text-[10px] font-normal uppercase tracking-wider"
+                        style={{ color: cfg.color + "80" }}
+                      >
+                        {cfg.label}
+                      </span>
+                    ) : null}
+                    {o.symbol}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <span
+                      className="rounded px-1.5 py-0.5 text-xs font-medium"
+                      style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                    >
+                      {cfg.label}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-[#8888a0]">
+                    {currentQty}
+                  </td>
+                  <td className="py-2 pr-4 text-center text-[#5a5a70]">→</td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-[#e8e8f0]">
+                    {targetQty}
+                  </td>
+                  <td
+                    className="py-2 pr-4 text-right tabular-nums font-medium"
+                    style={{ color: change > 0 ? "#00d4aa" : "#ff4d6a" }}
+                  >
+                    {change > 0 ? `+${change}` : change}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-[#8888a0]">
+                    {price > 0 ? formatUsd(dollarImpact) : "—"}
+                  </td>
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default memo(function RebalancePanel({
@@ -146,14 +256,17 @@ export default memo(function RebalancePanel({
                 {formatUsd(preview.portfolio_value)}
               </span>
             </span>
-            <span className="text-[#8888a0]">
-              Buys:{" "}
-              <span className="text-[#00d4aa]">{preview.num_buys}</span>
-            </span>
-            <span className="text-[#8888a0]">
-              Sells:{" "}
-              <span className="text-[#ff4d6a]">{preview.num_sells}</span>
-            </span>
+            {ACTION_ORDER.map((action) => {
+              const count = preview.orders.filter((o) => o.action === action).length;
+              if (count === 0) return null;
+              const cfg = ACTION_CONFIG[action];
+              return (
+                <span key={action} className="text-[#8888a0]">
+                  {cfg.label[0] + cfg.label.slice(1).toLowerCase()}:{" "}
+                  <span style={{ color: cfg.color }}>{count}</span>
+                </span>
+              );
+            })}
           </div>
 
           {/* SPY filter warning */}
@@ -191,47 +304,7 @@ export default memo(function RebalancePanel({
               Portfolio already at target — no trades needed
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#2a2a3e] text-left text-xs font-medium tracking-wide text-[#8888a0] uppercase">
-                    <th className="pb-2 pr-4">Symbol</th>
-                    <th className="pb-2 pr-4">Side</th>
-                    <th className="pb-2 pr-4 text-right">Qty</th>
-                    <th className="pb-2 text-right">Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.orders.map((o, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-[#2a2a3e]/50"
-                    >
-                      <td className="py-2 pr-4 font-medium text-[#e8e8f0]">
-                        {o.symbol}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                            o.side === "buy"
-                              ? "bg-[#00d4aa20] text-[#00d4aa]"
-                              : "bg-[#ff4d6a20] text-[#ff4d6a]"
-                          }`}
-                        >
-                          {o.side.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                        {o.qty}
-                      </td>
-                      <td className="py-2 text-right text-[#8888a0]">
-                        {o.type}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <OrdersTable orders={preview.orders} prices={preview.prices} />
           )}
 
           {/* Action buttons */}
