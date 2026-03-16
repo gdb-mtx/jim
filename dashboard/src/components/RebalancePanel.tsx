@@ -26,16 +26,19 @@ export default memo(function RebalancePanel({
     submitted: number;
     failed: number;
   } | null>(null);
+  const [execError, setExecError] = useState<string | null>(null);
 
   // Reset state when account or strategy changes
   useEffect(() => {
     setState("idle");
     setPreview(null);
     setResult(null);
+    setExecError(null);
   }, [account, strategyId]);
 
   const handlePreview = async () => {
     setState("previewing");
+    setExecError(null);
     try {
       const data = await fetchRebalancePreview(strategyId, account);
       setPreview(data);
@@ -81,6 +84,7 @@ export default memo(function RebalancePanel({
       }, 5000);
     } catch (e) {
       const msg = (e as Error).message;
+      setExecError(msg);
       if (msg.toLowerCase().includes("already in progress")) {
         showToast(msg, "warning");
       } else {
@@ -164,6 +168,20 @@ export default memo(function RebalancePanel({
           {preview.btc_filter_active && (
             <div className="rounded-lg border border-[#ff4d6a40] bg-[#ff4d6a08] px-3 py-2 text-xs text-[#ff4d6a]">
               BTC trend filter active — {preview.btc_filter_scalar === 0 ? "100% cash (0% exposure)" : `exposure reduced to ${(preview.btc_filter_scalar * 100).toFixed(0)}%`}
+            </div>
+          )}
+
+          {/* Missing prices warning */}
+          {preview.missing_prices && preview.missing_prices.length > 0 && (
+            <div className="rounded-lg border border-[#ffc04d40] bg-[#ffc04d08] px-3 py-2 text-xs text-[#ffc04d]">
+              Missing prices for: {preview.missing_prices.join(", ")} — these symbols will be excluded from target positions
+            </div>
+          )}
+
+          {/* Execution error */}
+          {execError && (
+            <div className="rounded-lg border border-[#ff4d6a40] bg-[#ff4d6a08] px-3 py-2 text-xs text-[#ff4d6a]">
+              Execution failed: {execError}
             </div>
           )}
 

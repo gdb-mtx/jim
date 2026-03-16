@@ -598,6 +598,7 @@ First equity trades executed **2026-03-10**. Rebalance dates (approximate, adjus
 - [ ] Claude API for strategy ideation, code generation, analysis acceleration
 - [ ] Analyze less-trafficked data: small-cap SEC filings (EDGAR), niche RSS feeds
 - [ ] ML-based feature engineering (what features predict returns beyond momentum?)
+- [ ] HMM regime detection overlay — 2-3 state Hidden Markov Model as a probabilistic replacement for binary VIX/trend filters. Must use walk-forward training. (Reviewed 2026-03-15, not viable as standalone strategy but promising as portfolio-level regime filter.)
 - [ ] *Note: Institutional NLP pipelines (Bloomberg, RavenPack) are faster on breaking news — our AI edge is in research depth and speed, not latency*
 
 ### Phase 8: Go Live (After 3+ months of paper trading)

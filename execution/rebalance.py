@@ -29,6 +29,15 @@ from data.sp500 import download_sp500_prices, download_vix
 from data.crypto import download_crypto_prices, download_btc_prices, to_alpaca_symbol
 
 
+def to_alpaca_equity_symbol(sym: str) -> str:
+    """Convert yfinance equity ticker to Alpaca format.
+
+    yfinance uses hyphens for share classes (BF-B, BRK-B),
+    Alpaca uses dots (BF.B, BRK.B).
+    """
+    return sym.replace("-", ".")
+
+
 @dataclass
 class RebalanceResult:
     """Result of a rebalance computation."""
@@ -89,8 +98,8 @@ def _get_stock_strategy_signals(
 
     # Get the most recent row of weights
     latest = signals.iloc[-1]
-    # Filter to non-zero weights only
-    return {sym: w for sym, w in latest.items() if abs(w) > 1e-6}
+    # Filter to non-zero weights, convert tickers to Alpaca format
+    return {to_alpaca_equity_symbol(sym): w for sym, w in latest.items() if abs(w) > 1e-6}
 
 
 def _get_etf_strategy_signals(
@@ -178,7 +187,8 @@ def _get_portfolio_signals(
             latest = signals.iloc[-1]
             for sym, w in latest.items():
                 if abs(w) > 1e-6:
-                    combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
+                    alpaca_sym = to_alpaca_equity_symbol(sym)
+                    combined_weights[alpaca_sym] = combined_weights.get(alpaca_sym, 0) + w * blend_weight
         else:
             strategy = ETF_STRATEGIES[strategy_id]()
             signals = strategy.generate_signals(etf_prices)
@@ -251,7 +261,16 @@ def compute_rebalance(
         s for s in target_weights
         if s not in prices or prices.get(s, 0) <= 0
     ]
-    price_error = len(missing_prices) > 0
+    # Also check current positions — if we hold something we can't price,
+    # that's dangerous (can't compute sell qty properly)
+    missing_current = [
+        s for s in current_positions
+        if s not in prices or prices.get(s, 0) <= 0
+    ]
+    # Only block execution if missing prices affect current holdings
+    # (can't safely compute diffs). Missing prices for weight-only symbols
+    # are harmless — they simply get excluded from target_positions.
+    price_error = len(missing_current) > 0
 
     # 5. Convert weights to target quantities
     # Detect if this is a crypto strategy (needs fractional quantities)
