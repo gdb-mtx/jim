@@ -104,7 +104,7 @@ dashboard/src/components/CorrelationPanel.tsx — Correlation matrix + rolling c
 dashboard/src/components/StrategyPanel.tsx — Grouped strategy list (Live/Portfolio/Building Blocks)
 dashboard/src/components/RiskStatusPanel.tsx — Circuit breaker status + reset (polls every 30s)
 dashboard/src/components/FilterStatusBanner.tsx — SPY/BTC trend filter status with price vs 200d MA
-dashboard/src/components/RebalancePanel.tsx — Preview/execute rebalance with order diff table
+dashboard/src/components/RebalancePanel.tsx — Preview/execute rebalance with action-classified order table (new/increase/decrease/exit)
 dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with expandable order details
 dashboard/               — React + Vite + TradingView Charts
 ```
@@ -126,7 +126,7 @@ dashboard/               — React + Vite + TradingView Charts
 - **All 4 accounts live on paper**: $400k total deployed across 4 uncorrelated strategies
   - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
-  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10
+  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10, first weekly rebalance 2026-03-16 (minor qty adjustments, BF.B pending)
   - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC
 - **Combined 3-account (equity): 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
 - **Account 4 (crypto): 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** — 0.18 SPY correlation, excellent diversifier
@@ -138,8 +138,9 @@ dashboard/               — React + Vite + TradingView Charts
 - **Automated trading**: APScheduler runs daily crypto rebalance at 00:05 UTC inside FastAPI lifespan
 - **Circuit breaker monitoring**: RiskStatusPanel polls `/api/portfolio/risk` every 30s, shows green bar when healthy, red alert with reset buttons when halted
 - **Regime filter status**: FilterStatusBanner shows SPY price vs 200d MA (accounts 1-3) and BTC price vs 200d MA (account 4), color-coded green/amber/red
-- **Rebalance UI**: RebalancePanel with preview → confirm → execute flow, order diff table, SPY/BTC filter warnings, handles 409 (concurrent) and 403 (circuit breaker) errors
+- **Rebalance UI**: RebalancePanel with preview → confirm → execute flow, action-classified order table (new/increase/decrease/exit with color-coded badges, current→target quantities, dollar impact), missing price warnings, inline execution errors, SPY/BTC filter warnings, handles 409 (concurrent) and 403 (circuit breaker) errors
+- **Ticker mapping**: yfinance uses hyphens (BF-B, BRK-B), Alpaca uses dots (BF.B, BRK.B) — `to_alpaca_equity_symbol()` in `execution/rebalance.py` converts at signal generation time
 - **Rebalance history**: RebalanceHistory shows past rebalance events with expandable per-order details, source badges, filter badges
 - **Execution safety**: Per-account async locks (409 on concurrent rebalance), circuit breaker persistence to disk, structured JSONL rebalance audit trail, retry logic on scheduled jobs
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- Next: Automated equity rebalance scheduler, reconciliation, walk-forward validation, track paper trading 3+ months before live money
+- Next: Rebalance markers on equity charts, automated equity rebalance scheduler, reconciliation, walk-forward validation, track paper trading 3+ months before live money
