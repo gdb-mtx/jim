@@ -8,15 +8,30 @@ type AccountView = 0 | 1 | 2 | 3 | 4;
 export default memo(function RiskStatusPanel({ account }: { account: AccountView }) {
   const [risk, setRisk] = useState<RiskStatusResponse | null>(null);
 
+  const [fetchError, setFetchError] = useState(false);
+
   const load = () => {
-    fetchRiskStatus().then(setRisk).catch(() => {});
+    fetchRiskStatus()
+      .then((data) => { setRisk(data); setFetchError(false); })
+      .catch(() => setFetchError(true));
   };
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 60000);
+    const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  if (!risk && !fetchError) return null;
+
+  if (fetchError && !risk) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-[#ffc04d40] bg-[#ffc04d08] px-4 py-3">
+        <span className="h-2 w-2 rounded-full bg-[#ffc04d]" />
+        <span className="text-sm text-[#ffc04d]">Risk status unavailable — API error</span>
+      </div>
+    );
+  }
 
   if (!risk) return null;
 
@@ -46,6 +61,9 @@ export default memo(function RiskStatusPanel({ account }: { account: AccountView
       <div className="flex items-center gap-2 rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] px-4 py-3">
         <span className="h-2 w-2 rounded-full bg-[#00d4aa]" />
         <span className="text-sm text-[#8888a0]">All circuit breakers OK</span>
+        {fetchError && (
+          <span className="ml-2 text-xs text-[#ffc04d]">(stale — API error)</span>
+        )}
       </div>
     );
   }

@@ -245,6 +245,11 @@ export default memo(function CorrelationPanel() {
       .then(setReport)
       .catch(() => setReport(null))
       .finally(() => setLoading(false));
+    // Correlation changes slowly — refresh every 5 minutes
+    const interval = setInterval(() => {
+      fetchCorrelation().then(setReport).catch(() => {});
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {

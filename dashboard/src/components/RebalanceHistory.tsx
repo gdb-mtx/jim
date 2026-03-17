@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { fetchRebalanceHistory } from "../api";
 import type { RebalanceHistoryEntry } from "../types";
 
@@ -41,16 +41,13 @@ export default memo(function RebalanceHistory({
   useEffect(() => {
     setExpanded(null);
     setLoading(true);
-    fetchRebalanceHistory(50)
+    fetchRebalanceHistory(50, account === 0 ? undefined : account)
       .then(setEntries)
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
   }, [account]);
 
-  const filtered =
-    account === 0
-      ? entries
-      : entries.filter((e) => e.account === account);
+  const filtered = entries;
 
   return (
     <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
@@ -82,9 +79,8 @@ export default memo(function RebalanceHistory({
             </thead>
             <tbody>
               {filtered.map((e, i) => (
-                <>
+                <React.Fragment key={i}>
                   <tr
-                    key={`row-${i}`}
                     className="border-b border-[#2a2a3e]/50 cursor-pointer hover:bg-[#2a2a3e20]"
                     onClick={() => setExpanded(expanded === i ? null : i)}
                   >
@@ -141,7 +137,7 @@ export default memo(function RebalanceHistory({
                     </td>
                   </tr>
                   {expanded === i && e.orders.length > 0 && (
-                    <tr key={`detail-${i}`}>
+                    <tr>
                       <td colSpan={7} className="px-4 pb-3 pt-1">
                         <div className="rounded-lg border border-[#2a2a3e] bg-[#12121a] p-3">
                           <table className="w-full text-xs">
@@ -191,7 +187,7 @@ export default memo(function RebalanceHistory({
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

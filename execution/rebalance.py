@@ -12,10 +12,14 @@ Flow:
 Supports both individual strategies and portfolio blends with SPY filter.
 """
 
+import logging
+
 import pandas as pd
 from dataclasses import dataclass, field
 from execution.alpaca_broker import AlpacaBroker, OrderRequest
 from execution.risk_manager import RiskManager, RiskLimits
+
+log = logging.getLogger("fire.rebalance")
 from strategies.portfolio import (
     PORTFOLIOS,
     compute_spy_trend_filter,
@@ -267,10 +271,9 @@ def compute_rebalance(
         s for s in current_positions
         if s not in prices or prices.get(s, 0) <= 0
     ]
-    # Only block execution if missing prices affect current holdings
-    # (can't safely compute diffs). Missing prices for weight-only symbols
-    # are harmless — they simply get excluded from target_positions.
-    price_error = len(missing_current) > 0
+    # Block execution if ANY symbols can't be priced — missing targets mean
+    # under-allocation, missing current positions mean incorrect sell sizing
+    price_error = len(missing_prices) > 0 or len(missing_current) > 0
 
     # 5. Convert weights to target quantities
     # Detect if this is a crypto strategy (needs fractional quantities)
@@ -285,8 +288,12 @@ def compute_rebalance(
     for symbol, weight in target_weights.items():
         if symbol not in prices or prices[symbol] <= 0:
             continue
+        # Reject negative weights — system is long-only (no shorting)
+        if weight < 0:
+            log.warning(f"Negative weight for {symbol}: {weight:.4f}, skipping (long-only system)")
+            continue
         # Cap individual position at max_position_pct
-        capped_weight = min(abs(weight), risk_manager.limits.max_position_pct)
+        capped_weight = min(weight, risk_manager.limits.max_position_pct)
         dollar_amount = portfolio_value * capped_weight
         if is_crypto:
             qty = round(dollar_amount / prices[symbol], 8)
