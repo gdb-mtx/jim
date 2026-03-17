@@ -441,20 +441,20 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 
 | # | File | Severity | Issue |
 |---|------|----------|-------|
-| 18 | orders.py | **MEDIUM** | No snapshot after manual rebalance — equity curves lag |
-| 19 | orders.py | LOW | Strategy-level halts not checked in execute |
-| 20 | rebalance.py | LOW | abs(weight) silently flips negatives to positive |
-| 21 | backtests.py | **MEDIUM** | Returns 200 with error body, not proper HTTP error |
-| 22 | risk_manager.py | TRIVIAL | Duplicate `import os` |
-| 23 | RiskStatusPanel.tsx | **MEDIUM** | Polls at 60s, not documented 30s |
-| 24 | RebalanceHistory.tsx | **MEDIUM** | Global fetch with limit=50, client-side filter |
-| 25 | CorrelationPanel.tsx | LOW | Never refreshes after initial load |
-| 26 | RebalanceHistory.tsx | LOW | React Fragment missing key prop |
-| 27 | FilterStatusBanner.tsx | LOW | Silently hides on API error |
-| 28 | RiskStatusPanel.tsx | LOW | Silently swallows fetch errors |
-| 29 | crypto_momentum.py | LOW (live) / MEDIUM (backtest) | BTC MA min_periods=1 inflates early signals |
+| 18 | orders.py | **DONE** | No snapshot after manual rebalance — equity curves lag |
+| 19 | orders.py | **DONE** | Strategy-level halts not checked in execute |
+| 20 | rebalance.py | **DONE** | abs(weight) silently flips negatives to positive |
+| 21 | backtests.py | **DONE** | Returns 200 with error body, not proper HTTP error |
+| 22 | risk_manager.py | **DONE** | Duplicate `import os` |
+| 23 | RiskStatusPanel.tsx | **DONE** | Polls at 60s, not documented 30s |
+| 24 | RebalanceHistory.tsx | **DONE** | Global fetch with limit=50, client-side filter |
+| 25 | CorrelationPanel.tsx | **DONE** | Never refreshes after initial load |
+| 26 | RebalanceHistory.tsx | **DONE** | React Fragment missing key prop |
+| 27 | FilterStatusBanner.tsx | **DONE** | Silently hides on API error |
+| 28 | RiskStatusPanel.tsx | **DONE** | Silently swallows fetch errors |
+| 29 | crypto_momentum.py | **DONE** | BTC MA min_periods=1 inflates early signals |
 
-**Most impactful for next rebalance:** #18 (snapshot), #23 (risk polling), #24 (history visibility). These three are quick fixes that directly improve the rebalance workflow.
+**All 11 issues fixed and pushed.** Test count: 26 (all passing).
 
 ---
 
@@ -481,10 +481,10 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 | 10 | Add transaction cost model to backtests | 1 hour | More realistic Sharpe estimates |
 | 11 | Push alerting (Slack webhook) for circuit breakers | 1 hour | Don't rely on checking dashboard |
 | 12 | Market hours awareness for equity rebalances | 30 min | Warn when submitting after hours |
-| 18 | Take equity snapshot after manual rebalance | 10 min | Equity curves lag until next poll after manual execute |
-| 21 | Backtest endpoint: return proper HTTP errors | 10 min | Frontend gets 200 with error body, treats as success |
-| 23 | RiskStatusPanel: fix poll interval to 30s | 5 min | Circuit breaker alerts delayed 60s vs documented 30s |
-| 24 | RebalanceHistory: add account filter or raise limit | 20 min | Daily crypto rebalances will crowd out other accounts |
+| 18 | Take equity snapshot after manual rebalance | **DONE** | Equity curves lag until next poll after manual execute |
+| 21 | Backtest endpoint: return proper HTTP errors | **DONE** | Frontend gets 200 with error body, treats as success |
+| 23 | RiskStatusPanel: fix poll interval to 30s | **DONE** | Circuit breaker alerts delayed 60s vs documented 30s |
+| 24 | RebalanceHistory: add account filter or raise limit | **DONE** | Daily crypto rebalances will crowd out other accounts |
 
 ### Nice to Have (Polish)
 
@@ -495,14 +495,14 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 | 15 | FilterStatusBanner auto-refresh | **DONE** | Refetches on account switch + 5-min polling |
 | 16 | .env.example file | 10 min | Document required Alpaca keys |
 | 17 | Correct survivorship bias (point-in-time S&P 500) | 4+ hours | More accurate backtests, hard to source data |
-| 19 | Check strategy-level halts in execute endpoint | 15 min | Blended portfolios can bypass component strategy halts |
-| 20 | Reject negative weights explicitly | 10 min | abs(weight) silently flips negatives to longs |
-| 22 | Remove duplicate `import os` in risk_manager | 1 min | Cleanup |
-| 25 | CorrelationPanel periodic polling | 10 min | Data goes stale after initial load |
-| 26 | Fix React Fragment key in RebalanceHistory | 5 min | Missing key prop causes React warnings |
-| 27 | FilterStatusBanner: show warning on API error | 10 min | Silently hides when filter data unavailable |
-| 28 | RiskStatusPanel: show warning on fetch error | 10 min | Shows "OK" with stale data when API is down |
-| 29 | BTC filter: remove min_periods=1 | 5 min | Inflates early backtest signals, match SPY filter pattern |
+| 19 | Check strategy-level halts in execute endpoint | **DONE** | Blended portfolios can bypass component strategy halts |
+| 20 | Reject negative weights explicitly | **DONE** | abs(weight) silently flips negatives to longs |
+| 22 | Remove duplicate `import os` in risk_manager | **DONE** | Cleanup |
+| 25 | CorrelationPanel periodic polling | **DONE** | Data goes stale after initial load |
+| 26 | Fix React Fragment key in RebalanceHistory | **DONE** | Missing key prop causes React warnings |
+| 27 | FilterStatusBanner: show warning on API error | **DONE** | Silently hides when filter data unavailable |
+| 28 | RiskStatusPanel: show warning on fetch error | **DONE** | Shows "OK" with stale data when API is down |
+| 29 | BTC filter: remove min_periods=1 | **DONE** | Inflates early backtest signals, match SPY filter pattern |
 
 ---
 
