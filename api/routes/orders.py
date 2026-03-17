@@ -3,12 +3,17 @@
 Supports 4 paper trading accounts via ?account=1|2|3|4 query param.
 """
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
 from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
 from execution.rebalance_log import log_rebalance, get_recent_rebalances
 from execution.risk_manager import RiskManager
+from data.snapshots import take_snapshot
 from api.locks import get_rebalance_lock
+
+log = logging.getLogger("fire.orders")
 
 router = APIRouter()
 
@@ -143,11 +148,18 @@ async def execute_rebalance_endpoint(
                 detail=f"Missing prices for: {', '.join(result.missing_prices)}. Cannot execute.",
             )
 
-        # Don't execute if circuit breaker tripped
+        # Don't execute if circuit breaker tripped (portfolio or strategy level)
         if result.risk_check.get("portfolio_halted"):
             raise HTTPException(
                 status_code=403,
                 detail="Portfolio circuit breaker active — trading halted",
+            )
+        strategies_halted = result.risk_check.get("strategies_halted", {})
+        halted_names = [name for name, halted in strategies_halted.items() if halted]
+        if halted_names:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Strategy circuit breaker active for: {', '.join(halted_names)} — trading halted",
             )
 
         # Price staleness guard — re-fetch and compare
@@ -188,6 +200,12 @@ async def execute_rebalance_endpoint(
             source="manual",
         )
 
+        # Take equity snapshot so dashboard updates immediately
+        try:
+            take_snapshot(account)
+        except Exception as e:
+            log.warning(f"Post-rebalance snapshot failed for account {account}: {e}")
+
         return {
             "account": account,
             "strategy_id": result.strategy_id,
@@ -205,9 +223,10 @@ async def execute_rebalance_endpoint(
 @router.get("/rebalance/history")
 async def rebalance_history(
     limit: int = Query(default=50, le=200),
+    account: int | None = Query(default=None, ge=1, le=4, description="Filter by account (optional)"),
 ):
     """Get recent rebalance events from the structured log."""
-    return get_recent_rebalances(limit=limit)
+    return get_recent_rebalances(limit=limit, account=account)
 
 
 @router.post("/cancel-all")

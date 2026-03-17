@@ -1,6 +1,6 @@
 """Backtest endpoints — run backtests and return equity curves."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.trend_following import TimeSeriesMomentum, MultiTimeframeMomentum
@@ -79,7 +79,7 @@ async def run_backtest(
 ):
     """Run a backtest and return equity curve + metrics."""
     if strategy_id not in ALL_STRATEGY_IDS:
-        return {"error": f"Unknown strategy: {strategy_id}"}
+        raise HTTPException(status_code=404, detail=f"Unknown strategy: {strategy_id}")
 
     # Combined 3-account, portfolio, or individual strategy
     if strategy_id == "combined_3account":

@@ -14,14 +14,29 @@ export default memo(function FilterStatusBanner({
   account: AccountView;
 }) {
   const [filters, setFilters] = useState<FilterStatusResponse | null>(null);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
-    fetchFilterStatus().then(setFilters).catch(() => {});
-    const interval = setInterval(() => {
-      fetchFilterStatus().then(setFilters).catch(() => {});
-    }, 5 * 60 * 1000);
+    const load = () => {
+      fetchFilterStatus()
+        .then((data) => { setFilters(data); setFetchError(false); })
+        .catch(() => setFetchError(true));
+    };
+    load();
+    const interval = setInterval(load, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [account]);
+
+  if (!filters && !fetchError) return null;
+
+  if (fetchError && !filters) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-[#ffc04d40] bg-[#ffc04d08] px-4 py-2.5">
+        <span className="h-2 w-2 rounded-full bg-[#ffc04d]" />
+        <span className="text-sm text-[#ffc04d]">Filter status unavailable</span>
+      </div>
+    );
+  }
 
   if (!filters) return null;
 

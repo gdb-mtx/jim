@@ -75,8 +75,12 @@ def log_rebalance(
         log.warning(f"Could not write rebalance log: {e}")
 
 
-def get_recent_rebalances(limit: int = 50) -> list[dict]:
+def get_recent_rebalances(limit: int = 50, account: int | None = None) -> list[dict]:
     """Read the most recent rebalance events from the log.
+
+    Args:
+        limit: Maximum number of entries to return
+        account: Optional account filter (1-4). If None, returns all accounts.
 
     Returns newest-first, up to `limit` entries.
     """
@@ -90,7 +94,10 @@ def get_recent_rebalances(limit: int = 50) -> list[dict]:
                 line = line.strip()
                 if line:
                     try:
-                        entries.append(json.loads(line))
+                        entry = json.loads(line)
+                        if account is not None and entry.get("account") != account:
+                            continue
+                        entries.append(entry)
                     except json.JSONDecodeError:
                         continue
     except OSError:

@@ -209,7 +209,7 @@ def compute_btc_trend_filter(
         Series of scalars (1.0 or 0.0) indexed by date
     """
     btc_prices = download_btc_prices(start=start)
-    btc_ma = btc_prices.rolling(ma_period, min_periods=1).mean()
+    btc_ma = btc_prices.rolling(ma_period).mean()
     above_ma = btc_prices > btc_ma
     scalar = pd.Series(np.where(above_ma, 1.0, 0.0), index=btc_prices.index)
     return scalar

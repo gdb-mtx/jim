@@ -120,9 +120,11 @@ export async function executeRebalance(strategyId: string, account: number) {
   );
 }
 
-export async function fetchRebalanceHistory(limit = 50) {
+export async function fetchRebalanceHistory(limit = 50, account?: number) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (account && account > 0) params.set("account", String(account));
   return fetchJSON<import("./types").RebalanceHistoryEntry[]>(
-    `${BASE_URL}/orders/rebalance/history?limit=${limit}`
+    `${BASE_URL}/orders/rebalance/history?${params}`
   );
 }
 
