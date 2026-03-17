@@ -1,13 +1,16 @@
 import { memo, useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   LineSeries,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   LineType,
 } from "lightweight-charts";
-import type { EquityHistoryResponse } from "../types";
-import { fetchEquityHistory } from "../api";
+import type { EquityHistoryResponse, PerformanceEntry, RebalanceHistoryEntry } from "../types";
+import { fetchEquityHistory, fetchRebalanceHistory } from "../api";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
 
@@ -44,10 +47,64 @@ const CHART_OPTS = {
     horzLine: { color: "#4d8eff44" },
     vertLine: { color: "#4d8eff44" },
   },
+  handleScale: { mouseWheel: false },
 } as const;
 
 const priceFormatter = (price: number) =>
   "$" + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+/** Convert rebalance history entries to TradingView chart markers. */
+function toRebalanceMarkers(
+  entries: RebalanceHistoryEntry[],
+  accountView: AccountView,
+): SeriesMarker<string>[] {
+  // Group by date — multiple rebalances on same day become one marker
+  const byDate = new Map<
+    string,
+    { totalOrders: number; hasFails: boolean; accounts: Set<number> }
+  >();
+  for (const e of entries) {
+    const date = e.timestamp.slice(0, 10);
+    const existing = byDate.get(date) ?? {
+      totalOrders: 0,
+      hasFails: false,
+      accounts: new Set(),
+    };
+    existing.totalOrders += e.orders_submitted;
+    if (e.orders_failed > 0) existing.hasFails = true;
+    existing.accounts.add(e.account);
+    byDate.set(date, existing);
+  }
+
+  const markers: SeriesMarker<string>[] = [];
+  for (const [date, info] of byDate) {
+    // Pick color: red for failures, account color for single account, purple for combined
+    let color: string;
+    if (info.hasFails) {
+      color = "#ff6b6b";
+    } else if (accountView > 0) {
+      color = ACCT_COLOR[accountView] ?? "#00d4aa";
+    } else if (info.accounts.size === 1) {
+      const acct = [...info.accounts][0];
+      color = ACCT_COLOR[acct] ?? "#7c4dff";
+    } else {
+      color = "#7c4dff";
+    }
+
+    markers.push({
+      time: date,
+      shape: "arrowUp",
+      position: "belowBar",
+      color,
+      text: `R·${info.totalOrders}`,
+      size: 1,
+    });
+  }
+
+  // TradingView requires markers sorted by time
+  markers.sort((a, b) => a.time.localeCompare(b.time));
+  return markers;
+}
 
 interface Props {
   account: AccountView;
@@ -62,9 +119,13 @@ export default memo(function EquityHistoryChart({ account }: Props) {
   const breakdownSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(
     new Map(),
   );
+  const markerPluginRefs = useRef<Map<string, ISeriesMarkersPluginApi<string>>>(
+    new Map(),
+  );
   const perAccountData = useRef<Record<string, unknown[]> | null>(null);
   const [days, setDays] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [performance, setPerformance] = useState<PerformanceEntry[]>([]);
 
   // Create main chart and pre-create all series once
   useEffect(() => {
@@ -88,7 +149,23 @@ export default memo(function EquityHistoryChart({ account }: Props) {
         visible: false,
       });
       seriesRefs.current.set(cfg.key, series);
+      if (cfg.key === "combined") {
+        markerPluginRefs.current.set(
+          "combined",
+          createSeriesMarkers(series, []),
+        );
+      }
     }
+
+    // Pre-create SPY benchmark series (red, thin), initially hidden
+    const spySeries = chart.addSeries(LineSeries, {
+      color: "#ff4444",
+      lineWidth: 1,
+      lineType: LineType.Curved,
+      priceFormat: { type: "custom", formatter: priceFormatter },
+      visible: false,
+    });
+    seriesRefs.current.set("spy", spySeries);
 
     // Pre-create individual account series (1 line), initially hidden
     const mainSeries = chart.addSeries(LineSeries, {
@@ -99,6 +176,7 @@ export default memo(function EquityHistoryChart({ account }: Props) {
       visible: false,
     });
     seriesRefs.current.set("main", mainSeries);
+    markerPluginRefs.current.set("main", createSeriesMarkers(mainSeries, []));
 
     const handleResize = () => {
       if (containerRef.current) {
@@ -114,6 +192,8 @@ export default memo(function EquityHistoryChart({ account }: Props) {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      markerPluginRefs.current.forEach((p) => p.detach());
+      markerPluginRefs.current.clear();
       chart.remove();
       seriesRefs.current.clear();
       breakdownChartRef.current?.remove();
@@ -154,9 +234,13 @@ export default memo(function EquityHistoryChart({ account }: Props) {
 
     setLoading(true);
 
-    fetchEquityHistory(account)
-      .then((raw) => {
+    Promise.all([
+      fetchEquityHistory(account),
+      fetchRebalanceHistory(200, account === 0 ? undefined : account),
+    ])
+      .then(([raw, rebalanceEntries]) => {
         const resp = raw as EquityHistoryResponse;
+        const entries = rebalanceEntries as RebalanceHistoryEntry[];
         if (!chartRef.current) return;
 
         if (account === 0 && resp.per_account) {
@@ -166,6 +250,7 @@ export default memo(function EquityHistoryChart({ account }: Props) {
             mainSeries.setData([]);
             mainSeries.applyOptions({ visible: false });
           }
+          markerPluginRefs.current.get("main")?.setMarkers([]);
           // Show only the combined line; hide + clear individual account lines
           for (const cfg of SERIES_CONFIG) {
             const series = seriesRefs.current.get(cfg.key);
@@ -179,7 +264,25 @@ export default memo(function EquityHistoryChart({ account }: Props) {
             }
           }
 
-          // Store per-account data for the breakdown chart effect
+          // Show SPY benchmark if available
+          const spySeries = seriesRefs.current.get("spy");
+          if (spySeries) {
+            if (resp.spy_benchmark?.length) {
+              spySeries.setData(resp.spy_benchmark);
+              spySeries.applyOptions({ visible: true });
+            } else {
+              spySeries.setData([]);
+              spySeries.applyOptions({ visible: false });
+            }
+          }
+
+          // Set rebalance markers on combined series
+          markerPluginRefs.current
+            .get("combined")
+            ?.setMarkers(toRebalanceMarkers(entries, 0));
+
+          // Store performance summary + per-account data
+          setPerformance(resp.performance ?? []);
           perAccountData.current = resp.per_account;
         } else {
           // Hide combined series and clear their data
@@ -190,6 +293,13 @@ export default memo(function EquityHistoryChart({ account }: Props) {
               series.applyOptions({ visible: false });
             }
           }
+          markerPluginRefs.current.get("combined")?.setMarkers([]);
+          // Hide SPY benchmark
+          const spySeries = seriesRefs.current.get("spy");
+          if (spySeries) {
+            spySeries.setData([]);
+            spySeries.applyOptions({ visible: false });
+          }
           // Show main series with data
           const mainSeries = seriesRefs.current.get("main");
           if (mainSeries) {
@@ -199,7 +309,14 @@ export default memo(function EquityHistoryChart({ account }: Props) {
               color: ACCT_COLOR[account] ?? "#00d4aa",
             });
           }
-          // Clear breakdown chart
+
+          // Set rebalance markers on main series
+          markerPluginRefs.current
+            .get("main")
+            ?.setMarkers(toRebalanceMarkers(entries, account));
+
+          // Clear breakdown chart + performance
+          setPerformance([]);
           perAccountData.current = null;
           for (const cfg of ACCT_SERIES) {
             const s = breakdownSeriesRefs.current.get(cfg.key);
@@ -241,7 +358,7 @@ export default memo(function EquityHistoryChart({ account }: Props) {
   // Legend items for current view
   const legend =
     account === 0
-      ? [SERIES_CONFIG[0]]
+      ? [SERIES_CONFIG[0], { key: "spy", label: "SPY", color: "#ff4444" }]
       : [{ key: "main", label: `FIRE 0.${account}`, color: ACCT_COLOR[account] ?? "#00d4aa" }];
 
   return (
@@ -274,6 +391,64 @@ export default memo(function EquityHistoryChart({ account }: Props) {
       ) : null}
 
       <div ref={containerRef} className={days < 2 && !loading ? "hidden" : ""} />
+
+      {performance.length > 0 && (
+        <div className="mt-4 border-t border-[#2a2a3e] pt-4">
+          <h2 className="mb-3 text-sm font-medium tracking-wide text-[#8888a0] uppercase">
+            Performance vs SPY
+          </h2>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[#5a5a70]">
+                <th className="pb-2 text-left font-medium">Account</th>
+                <th className="pb-2 text-right font-medium">Return</th>
+                <th className="pb-2 text-right font-medium">SPY</th>
+                <th className="pb-2 text-right font-medium">Alpha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {performance.map((p) => {
+                const isCombined = p.account === 0;
+                const color = isCombined ? "#7c4dff" : ACCT_COLOR[p.account] ?? "#8888a0";
+                return (
+                  <tr
+                    key={p.account}
+                    className={isCombined ? "border-t border-[#2a2a3e] font-semibold" : ""}
+                  >
+                    <td className="py-1.5 text-left">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-[#c0c0d0]">{p.label}</span>
+                      </span>
+                    </td>
+                    <td
+                      className="py-1.5 text-right"
+                      style={{ color: p.return_pct >= 0 ? "#00d4aa" : "#ff6b6b" }}
+                    >
+                      {p.return_pct >= 0 ? "+" : ""}{p.return_pct.toFixed(2)}%
+                    </td>
+                    <td
+                      className="py-1.5 text-right"
+                      style={{ color: p.spy_return_pct >= 0 ? "#00d4aa" : "#ff6b6b" }}
+                    >
+                      {p.spy_return_pct >= 0 ? "+" : ""}{p.spy_return_pct.toFixed(2)}%
+                    </td>
+                    <td
+                      className="py-1.5 text-right"
+                      style={{ color: p.alpha_pct >= 0 ? "#00d4aa" : "#ff6b6b" }}
+                    >
+                      {p.alpha_pct >= 0 ? "+" : ""}{p.alpha_pct.toFixed(2)}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div
         className={

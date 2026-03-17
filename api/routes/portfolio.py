@@ -17,6 +17,8 @@ from data.snapshots import (
     get_equity_history,
     get_combined_equity_history,
     get_all_equity_histories,
+    get_spy_benchmark,
+    get_performance_summary,
 )
 from data.correlation import get_correlation_report
 
@@ -156,9 +158,17 @@ async def equity_history(
     if account == 0:
         histories = get_all_equity_histories()
         combined = get_combined_equity_history()
+        # Normalized SPY benchmark — starts at same value as combined portfolio
+        spy_benchmark = []
+        if combined:
+            dates = [p["time"] for p in combined]
+            start_value = combined[0]["value"]
+            spy_benchmark = get_spy_benchmark(dates, start_value)
         return {
             "equity_curve": combined,
             "per_account": histories,
+            "spy_benchmark": spy_benchmark,
+            "performance": get_performance_summary(),
             "days": len(combined),
         }
     else:

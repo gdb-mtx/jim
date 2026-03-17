@@ -184,6 +184,114 @@ def get_all_equity_histories() -> dict[str, list[dict]]:
     return result
 
 
+def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
+    """Return SPY normalized to start_value over the given dates.
+
+    Downloads SPY prices, aligns to the provided dates, and scales so the
+    first data point equals start_value. Returns [{time, value}] format.
+    """
+    if not dates or start_value <= 0:
+        return []
+
+    try:
+        from data.pipeline import download_and_cache
+
+        spy = download_and_cache(["SPY"], start="2025-01-01", cache_name="spy_filter").squeeze()
+        # Align to snapshot dates
+        snap_dates = pd.DatetimeIndex([pd.Timestamp(d) for d in dates])
+        spy = spy.reindex(snap_dates).ffill().dropna()
+        if spy.empty:
+            return []
+
+        # Normalize: first SPY value maps to start_value
+        spy_normalized = spy / spy.iloc[0] * start_value
+        return [
+            {"time": idx.strftime("%Y-%m-%d"), "value": round(float(val), 2)}
+            for idx, val in spy_normalized.items()
+        ]
+    except Exception:
+        return []
+
+
+def get_performance_summary() -> list[dict]:
+    """Compute per-account and combined returns vs SPY since tracking started.
+
+    Returns a list of {account, label, return_pct, spy_return_pct, alpha_pct}
+    for each account plus a "Combined" row.
+    """
+    from execution.alpaca_broker import ACCOUNT_INFO
+
+    results = []
+    all_start = 0.0
+    all_current = 0.0
+    spy_return_pct = 0.0
+
+    # Compute SPY return over the combined date range
+    try:
+        from data.pipeline import download_and_cache
+
+        spy = download_and_cache(
+            ["SPY"], start="2025-01-01", cache_name="spy_filter"
+        ).squeeze()
+    except Exception:
+        spy = pd.Series(dtype=float)
+
+    # Find the earliest common start date across all accounts
+    earliest_date = None
+    for acct in (1, 2, 3, 4):
+        df = load_snapshots(acct)
+        if not df.empty:
+            first = df.index[0]
+            if earliest_date is None or first < earliest_date:
+                earliest_date = first
+
+    if not spy.empty and earliest_date is not None:
+        spy_aligned = spy[spy.index >= earliest_date]
+        if len(spy_aligned) >= 2:
+            spy_return_pct = round(
+                (float(spy_aligned.iloc[-1]) / float(spy_aligned.iloc[0]) - 1) * 100, 2
+            )
+
+    for acct in (1, 2, 3, 4):
+        df = load_snapshots(acct)
+        if df.empty or len(df) < 2:
+            results.append({
+                "account": acct,
+                "label": ACCOUNT_INFO[acct]["label"],
+                "return_pct": 0.0,
+                "spy_return_pct": spy_return_pct,
+                "alpha_pct": 0.0,
+            })
+            continue
+
+        start_val = float(df["equity"].iloc[0])
+        current_val = float(df["equity"].iloc[-1])
+        ret = round((current_val / start_val - 1) * 100, 2) if start_val > 0 else 0.0
+
+        results.append({
+            "account": acct,
+            "label": ACCOUNT_INFO[acct]["label"],
+            "return_pct": ret,
+            "spy_return_pct": spy_return_pct,
+            "alpha_pct": round(ret - spy_return_pct, 2),
+        })
+
+        all_start += start_val
+        all_current += current_val
+
+    # Combined row
+    combined_ret = round((all_current / all_start - 1) * 100, 2) if all_start > 0 else 0.0
+    results.append({
+        "account": 0,
+        "label": "Combined",
+        "return_pct": combined_ret,
+        "spy_return_pct": spy_return_pct,
+        "alpha_pct": round(combined_ret - spy_return_pct, 2),
+    })
+
+    return results
+
+
 def get_daily_returns(account: int) -> pd.Series:
     """Compute daily returns from equity series."""
     df = load_snapshots(account)

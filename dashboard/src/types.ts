@@ -83,9 +83,19 @@ export interface Order {
   filled_avg_price: number | null;
 }
 
+export interface PerformanceEntry {
+  account: number;
+  label: string;
+  return_pct: number;
+  spy_return_pct: number;
+  alpha_pct: number;
+}
+
 export interface EquityHistoryResponse {
   equity_curve: EquityPoint[];
   per_account?: Record<string, EquityPoint[]>;
+  spy_benchmark?: EquityPoint[];
+  performance?: PerformanceEntry[];
   days: number;
 }
 
