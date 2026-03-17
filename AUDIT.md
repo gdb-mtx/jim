@@ -4,6 +4,8 @@ Independent audit of the FIRE quantitative trading system. This audit replaces t
 
 **Update (2026-03-11):** Items #1, #2, #3, #5, #9, #15 completed and pushed. RebalanceHistory account-change bug also fixed. Test count: 26 (24 + 2 new). See Section 9 for updated checklist.
 
+**Update (2026-03-17):** Post-first-rebalance code review. 11 new bugs found across execution, dashboard, and backtest code. See Section 8.5 for full findings and updated Section 9 checklist.
+
 ---
 
 ## Project Context
@@ -35,7 +37,7 @@ Independent audit of the FIRE quantitative trading system. This audit replaces t
 | **Backtest Methodology** | B- | Walk-forward + Monte Carlo + regime testing is excellent; survivorship bias and missing transaction costs are real |
 | **Execution Safety** | B+ | Concurrency locks, circuit breakers (fail-safe), price staleness guard, missing price detection, retry logic, audit trail |
 | **Risk Management** | B+ | Fractional Kelly, 2% rule, drawdown breakers, persistence to disk |
-| **Testing** | C+ | 26 backend tests cover critical paths; no frontend tests, no API tests, no CI/CD |
+| **Testing** | C+ | 26 backend tests cover critical paths; no frontend tests, no API tests, no CI/CD. Post-first-rebalance review found 11 additional bugs (Section 8.5) |
 | **Security** | D | No auth, no rate limiting, permissive CORS — acceptable for localhost paper trading only |
 
 **Overall: B+ for what it is — a personal paper trading system built in 36 hours.**
@@ -272,6 +274,190 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 
 ---
 
+## 8.5 Post-First-Rebalance Code Review (2026-03-17)
+
+Deep code review after the first weekly rebalance of Account 3 (2026-03-16). Reviewed all execution, strategy, API, and dashboard code for bugs that could affect live rebalancing. 11 verified issues found.
+
+### Execution & API Bugs
+
+**18. No equity snapshot after manual rebalance execute (MEDIUM)**
+**File:** `api/routes/orders.py` (execute endpoint, lines 170-202)
+
+The scheduled crypto rebalance in `api/main.py:89` calls `take_snapshot(4)` after execution. The manual execute endpoint does not. After manually rebalancing Accounts 1-3, the equity history dashboard won't update until the next background poll or server restart.
+
+*Fix:* Call `take_snapshot(account)` after successful order execution in the execute endpoint.
+
+---
+
+**19. Execute endpoint only checks portfolio-level halt, not strategy-level (LOW)**
+**File:** `api/routes/orders.py:147-151`
+
+The execute endpoint checks `result.risk_check.get("portfolio_halted")` but does not check `result.risk_check["strategies_halted"]`. If a specific strategy is halted (e.g., stock_momentum hits -10% drawdown) but the portfolio hasn't breached -15%, the rebalance proceeds anyway.
+
+For the current 1-strategy-per-account setup this is low risk, but would matter for blended portfolios like `reversal_blend` (Account 3) where one component strategy could be halted.
+
+*Fix:* Also check `result.risk_check.get("strategies_halted", {})` for the specific strategy being rebalanced.
+
+---
+
+**20. `abs(weight)` silently converts negative weights to positive (LOW)**
+**File:** `execution/rebalance.py:289`
+
+```python
+capped_weight = min(abs(weight), risk_manager.limits.max_position_pct)
+```
+
+The system's design is "no shorting" (CLAUDE.md), so strategies should never produce negative weights. But if a strategy bug produces a negative weight, `abs()` silently converts it to a long position instead of rejecting it. This is a latent safety issue — it should fail loudly rather than silently doing the opposite of what was intended.
+
+*Fix:* Add explicit rejection: `if weight < 0: log.warning(f"Negative weight for {symbol}: {weight}, skipping"); continue`
+
+---
+
+**21. Backtest endpoint returns HTTP 200 with error body (MEDIUM)**
+**File:** `api/routes/backtests.py:81-82`
+
+```python
+if strategy_id not in ALL_STRATEGY_IDS:
+    return {"error": f"Unknown strategy: {strategy_id}"}
+```
+
+Returns a 200 OK response with an error field instead of a proper HTTP error. The frontend receives status 200 and may try to parse the response as valid backtest data, leading to confusing UI errors.
+
+*Fix:* `raise HTTPException(status_code=404, detail=f"Unknown strategy: {strategy_id}")`
+
+---
+
+**22. Duplicate `import os` in risk_manager.py (TRIVIAL)**
+**File:** `execution/risk_manager.py:15,18`
+
+`import os` appears on both line 15 and line 18. Harmless but sloppy.
+
+*Fix:* Remove the duplicate.
+
+---
+
+### Dashboard Bugs
+
+**23. RiskStatusPanel polls at 60s, not 30s as documented (MEDIUM)**
+**File:** `dashboard/src/components/RiskStatusPanel.tsx:17`
+
+```typescript
+const interval = setInterval(load, 60000);
+```
+
+CLAUDE.md documents "polls every 30s" but the actual interval is 60 seconds. During a volatile session, circuit breaker alerts are delayed by up to 60 seconds. This could allow a user to click "Execute" on a rebalance while a circuit breaker is active but not yet displayed.
+
+*Fix:* Change to `setInterval(load, 30000)`.
+
+---
+
+**24. RebalanceHistory fetches globally, filters client-side (MEDIUM)**
+**File:** `dashboard/src/components/RebalanceHistory.tsx:44`
+
+```typescript
+fetchRebalanceHistory(50)  // no account parameter
+```
+
+Fetches 50 most recent rebalance entries across ALL accounts, then filters client-side on line 50-53. As daily crypto rebalances accumulate (Account 4 generates one per day), they'll dominate the 50-entry limit. After ~2 months of daily crypto rebalances, viewing Account 1's history could show zero entries.
+
+*Fix:* Either increase the limit significantly (e.g., 200) or add an `?account=N` filter to the API endpoint so server-side filtering returns relevant entries.
+
+---
+
+**25. CorrelationPanel never refreshes after initial load (LOW)**
+**File:** `dashboard/src/components/CorrelationPanel.tsx:243-248`
+
+```typescript
+useEffect(() => {
+    fetchCorrelation()
+      .then(setReport)
+      .catch(() => setReport(null))
+      .finally(() => setLoading(false));
+  }, []);
+```
+
+Empty dependency array means correlation data is fetched once on mount and never updated. During a volatile trading session, correlation spikes (the exact scenario the panel monitors) won't be visible until page refresh. Other panels poll at 30-60s intervals.
+
+*Fix:* Add periodic polling (e.g., every 5 minutes — correlation data changes slowly).
+
+---
+
+**26. RebalanceHistory React Fragment missing key prop (LOW)**
+**File:** `dashboard/src/components/RebalanceHistory.tsx:85`
+
+```tsx
+{filtered.map((e, i) => (
+    <>
+```
+
+The shorthand `<>` Fragment doesn't support key props. Should be `<React.Fragment key={i}>`. React may produce console warnings and have issues with reconciliation during re-renders.
+
+*Fix:* Replace `<>` with `<React.Fragment key={i}>`.
+
+---
+
+**27. FilterStatusBanner silently hides on API error (LOW)**
+**File:** `dashboard/src/components/FilterStatusBanner.tsx:19,36`
+
+Error from `fetchFilterStatus()` is caught and swallowed (line 19: `.catch(() => {})`). The conditional on line 36 (`!("error" in spy && spy.error)`) hides the banner entirely if the API returns an error. User sees no SPY/BTC filter status with no indication that the data failed to load.
+
+*Fix:* Show a warning state ("Filter status unavailable") instead of hiding completely. This is especially important because the filter directly affects position sizing.
+
+---
+
+**28. RiskStatusPanel silently swallows fetch errors (LOW)**
+**File:** `dashboard/src/components/RiskStatusPanel.tsx:12`
+
+```typescript
+const load = () => {
+    fetchRiskStatus().then(setRisk).catch(() => {});
+};
+```
+
+If the API is down, risk status shows "All circuit breakers OK" based on stale data. No error indication to the user. Combined with the 60s polling interval (#23), this means a user could operate for a full minute with no awareness that risk monitoring is offline.
+
+*Fix:* Show a warning state or toast when risk status fetch fails.
+
+---
+
+### Backtest Accuracy (Not Affecting Live Trading)
+
+**29. BTC trend filter uses `min_periods=1` — unreliable early MA (LOW for live, MEDIUM for backtest)**
+**Files:** `strategies/crypto_momentum.py:76`, `strategies/portfolio.py:212`
+
+```python
+btc_ma = btc_aligned.rolling(self.btc_ma_period, min_periods=1).mean()
+```
+
+With `min_periods=1`, the 200-day MA is computed from day 1 with just 1 data point. The first ~200 days have a biased MA (e.g., day 10's "200-day MA" is really a 10-day MA). This doesn't affect live trading (years of BTC history available), but slightly inflates backtest metrics for the crypto strategy.
+
+The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).mean()` (default min_periods=ma_period). The BTC filter should match.
+
+*Fix:* Change to `btc_aligned.rolling(self.btc_ma_period).mean()` (drops min_periods=1). Warmup trimming already handles the resulting NaN period.
+
+---
+
+### Summary of New Findings
+
+| # | File | Severity | Issue |
+|---|------|----------|-------|
+| 18 | orders.py | **MEDIUM** | No snapshot after manual rebalance — equity curves lag |
+| 19 | orders.py | LOW | Strategy-level halts not checked in execute |
+| 20 | rebalance.py | LOW | abs(weight) silently flips negatives to positive |
+| 21 | backtests.py | **MEDIUM** | Returns 200 with error body, not proper HTTP error |
+| 22 | risk_manager.py | TRIVIAL | Duplicate `import os` |
+| 23 | RiskStatusPanel.tsx | **MEDIUM** | Polls at 60s, not documented 30s |
+| 24 | RebalanceHistory.tsx | **MEDIUM** | Global fetch with limit=50, client-side filter |
+| 25 | CorrelationPanel.tsx | LOW | Never refreshes after initial load |
+| 26 | RebalanceHistory.tsx | LOW | React Fragment missing key prop |
+| 27 | FilterStatusBanner.tsx | LOW | Silently hides on API error |
+| 28 | RiskStatusPanel.tsx | LOW | Silently swallows fetch errors |
+| 29 | crypto_momentum.py | LOW (live) / MEDIUM (backtest) | BTC MA min_periods=1 inflates early signals |
+
+**Most impactful for next rebalance:** #18 (snapshot), #23 (risk polling), #24 (history visibility). These three are quick fixes that directly improve the rebalance workflow.
+
+---
+
 ## 9. Prioritized Recommendations
 
 ### Before Live Money (Required)
@@ -295,6 +481,10 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 | 10 | Add transaction cost model to backtests | 1 hour | More realistic Sharpe estimates |
 | 11 | Push alerting (Slack webhook) for circuit breakers | 1 hour | Don't rely on checking dashboard |
 | 12 | Market hours awareness for equity rebalances | 30 min | Warn when submitting after hours |
+| 18 | Take equity snapshot after manual rebalance | 10 min | Equity curves lag until next poll after manual execute |
+| 21 | Backtest endpoint: return proper HTTP errors | 10 min | Frontend gets 200 with error body, treats as success |
+| 23 | RiskStatusPanel: fix poll interval to 30s | 5 min | Circuit breaker alerts delayed 60s vs documented 30s |
+| 24 | RebalanceHistory: add account filter or raise limit | 20 min | Daily crypto rebalances will crowd out other accounts |
 
 ### Nice to Have (Polish)
 
@@ -305,6 +495,14 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 | 15 | FilterStatusBanner auto-refresh | **DONE** | Refetches on account switch + 5-min polling |
 | 16 | .env.example file | 10 min | Document required Alpaca keys |
 | 17 | Correct survivorship bias (point-in-time S&P 500) | 4+ hours | More accurate backtests, hard to source data |
+| 19 | Check strategy-level halts in execute endpoint | 15 min | Blended portfolios can bypass component strategy halts |
+| 20 | Reject negative weights explicitly | 10 min | abs(weight) silently flips negatives to longs |
+| 22 | Remove duplicate `import os` in risk_manager | 1 min | Cleanup |
+| 25 | CorrelationPanel periodic polling | 10 min | Data goes stale after initial load |
+| 26 | Fix React Fragment key in RebalanceHistory | 5 min | Missing key prop causes React warnings |
+| 27 | FilterStatusBanner: show warning on API error | 10 min | Silently hides when filter data unavailable |
+| 28 | RiskStatusPanel: show warning on fetch error | 10 min | Shows "OK" with stale data when API is down |
+| 29 | BTC filter: remove min_periods=1 | 5 min | Inflates early backtest signals, match SPY filter pattern |
 
 ---
 
@@ -315,6 +513,8 @@ The 3+ month paper trading period is the most important phase. Here's what to wa
 The system correctly implements the core principles from the 2020 proposal: systematic rules-based trading, factor diversification, the 2% max loss rule, and trend-following with proper risk management. It went from a concept document to 4 live paper trading accounts with a professional-grade validation framework.
 
 The speed of development is both its strength and its risk. The architecture is clean and the code is readable. Of the original 6 "Before Live Money" items, 4 are now complete (price staleness guard, fail-safe circuit breakers, missing price detection, error boundary). The remaining 2 items — post-execution reconciliation and API authentication — are the gap between a paper trading prototype and something you'd trust with $10k-$50k.
+
+The post-first-rebalance code review (Section 8.5) found 11 additional bugs — none critical, but several affect the daily rebalance workflow. The most impactful: missing equity snapshots after manual rebalances (#18), delayed circuit breaker alerts (#23), and rebalance history being crowded out by daily crypto entries (#24). All are quick fixes.
 
 The realistic expectation for live performance:
 - **Combined equity**: ~1.2-1.4 Sharpe, ~12-15% annual return, -12 to -15% max drawdown
