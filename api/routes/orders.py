@@ -226,10 +226,7 @@ async def rebalance_history(
     account: int | None = Query(default=None, ge=1, le=4, description="Filter by account (optional)"),
 ):
     """Get recent rebalance events from the structured log."""
-    entries = get_recent_rebalances(limit=limit)
-    if account is not None:
-        entries = [e for e in entries if e.get("account") == account]
-    return entries
+    return get_recent_rebalances(limit=limit, account=account)
 
 
 @router.post("/cancel-all")

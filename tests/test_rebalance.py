@@ -119,7 +119,12 @@ def test_no_orders_when_at_target(mock_signals):
 
 @patch("execution.rebalance.get_current_signals")
 def test_missing_prices_flagged(mock_signals):
-    """Missing prices are detected and flagged in the result."""
+    """Missing target prices are warned but don't block execution.
+
+    Missing prices for target-only symbols (not in current positions)
+    are flagged in missing_prices for UI warnings, but price_error
+    stays False — the rest of the portfolio trades correctly.
+    """
     mock_signals.return_value = {"AAPL": 0.10, "MISSING": 0.10}
 
     # Broker only returns price for AAPL, not MISSING
@@ -135,7 +140,37 @@ def test_missing_prices_flagged(mock_signals):
         risk_manager=RiskManager(persist=False),
     )
 
-    assert result.price_error is True
+    # Missing target prices are flagged for UI warnings
     assert "MISSING" in result.missing_prices
+    # But don't block execution (price_error only for current positions)
+    assert result.price_error is False
     # AAPL should still have an order (partial computation works)
     assert any(o.symbol == "AAPL" for o in result.orders)
+
+
+@patch("execution.rebalance.get_current_signals")
+def test_missing_current_position_prices_block_execution(mock_signals):
+    """Missing prices for currently-held positions MUST block execution.
+
+    If we hold a symbol but can't price it, sell sizing would be wrong.
+    """
+    mock_signals.return_value = {"AAPL": 0.10}
+
+    # We hold MYSTERY but can't get its price
+    broker = _mock_broker(
+        positions={"AAPL": 50, "MYSTERY": 100},
+        value=100_000,
+        prices={"AAPL": 100.0},
+    )
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="test_strategy",
+        risk_manager=RiskManager(persist=False),
+    )
+
+    assert result.price_error is True
+    assert "MYSTERY" in result.missing_prices or len([
+        s for s in result.current_positions
+        if s not in result.prices or result.prices.get(s, 0) <= 0
+    ]) > 0

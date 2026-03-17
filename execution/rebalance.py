@@ -271,9 +271,11 @@ def compute_rebalance(
         s for s in current_positions
         if s not in prices or prices.get(s, 0) <= 0
     ]
-    # Block execution if ANY symbols can't be priced — missing targets mean
-    # under-allocation, missing current positions mean incorrect sell sizing
-    price_error = len(missing_prices) > 0 or len(missing_current) > 0
+    # Block execution only if we can't price current holdings (sell sizing
+    # would be wrong). Missing target prices are warned but not blocking —
+    # those symbols are excluded from target_positions and the rest trades
+    # correctly. Preview always shows missing_prices for user visibility.
+    price_error = len(missing_current) > 0
 
     # 5. Convert weights to target quantities
     # Detect if this is a crypto strategy (needs fractional quantities)
