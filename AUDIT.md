@@ -298,6 +298,8 @@ For the current 1-strategy-per-account setup this is low risk, but would matter 
 
 *Fix:* Also check `result.risk_check.get("strategies_halted", {})` for the specific strategy being rebalanced.
 
+*Implementation note:* Fix is in place but currently **inert** — `compute_rebalance()` calls `check_circuit_breakers(portfolio_value)` without passing `strategy_values`, so `strategies_halted` is always `{}`. The check is defensive code that will activate when per-strategy value tracking is wired up. No behavioral change today.
+
 ---
 
 **20. `abs(weight)` silently converts negative weights to positive (LOW)**
@@ -360,7 +362,9 @@ fetchRebalanceHistory(50)  // no account parameter
 
 Fetches 50 most recent rebalance entries across ALL accounts, then filters client-side on line 50-53. As daily crypto rebalances accumulate (Account 4 generates one per day), they'll dominate the 50-entry limit. After ~2 months of daily crypto rebalances, viewing Account 1's history could show zero entries.
 
-*Fix:* Either increase the limit significantly (e.g., 200) or add an `?account=N` filter to the API endpoint so server-side filtering returns relevant entries.
+*Fix:* Add `?account=N` filter to the API endpoint with server-side filtering.
+
+*Implementation note:* Filtering is done inside `get_recent_rebalances()` in `rebalance_log.py` during the file read, **before** the limit slice. This ensures you get up to 50 entries for the requested account, not 50 global entries filtered down. The dashboard passes `account` to the API when viewing a specific account tab, and omits it for the Combined view.
 
 ---
 
@@ -431,9 +435,9 @@ btc_ma = btc_aligned.rolling(self.btc_ma_period, min_periods=1).mean()
 
 With `min_periods=1`, the 200-day MA is computed from day 1 with just 1 data point. The first ~200 days have a biased MA (e.g., day 10's "200-day MA" is really a 10-day MA). This doesn't affect live trading (years of BTC history available), but slightly inflates backtest metrics for the crypto strategy.
 
-The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).mean()` (default min_periods=ma_period). The BTC filter should match.
+*Fix:* Removed `min_periods=1` in `portfolio.py:compute_btc_trend_filter()` only. This function fetches BTC data independently from 2018, so the 200-day warmup completes well before any strategy dates (crypto data starts ~2020). Verified: zero differences in the backtest date range — no impact on Sharpe, returns, or drawdown numbers.
 
-*Fix:* Change to `btc_aligned.rolling(self.btc_ma_period).mean()` (drops min_periods=1). Warmup trimming already handles the resulting NaN period.
+**Not fixed** in `crypto_momentum.py:_get_btc_trend_scalar()` — that method uses `reindex(dates)` which truncates BTC history to the strategy's own date range. Removing `min_periods=1` there would produce NaN for the first 200 trading days (scalar=0.0, forced cash), killing ~10 months of a daily strategy's backtest. The `min_periods=1` is intentional there to bootstrap the MA during warmup.
 
 ---
 
@@ -442,7 +446,7 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 | # | File | Severity | Issue |
 |---|------|----------|-------|
 | 18 | orders.py | **DONE** | No snapshot after manual rebalance — equity curves lag |
-| 19 | orders.py | **DONE** | Strategy-level halts not checked in execute |
+| 19 | orders.py | **DONE** (inert) | Strategy-level halts not checked in execute |
 | 20 | rebalance.py | **DONE** | abs(weight) silently flips negatives to positive |
 | 21 | backtests.py | **DONE** | Returns 200 with error body, not proper HTTP error |
 | 22 | risk_manager.py | **DONE** | Duplicate `import os` |
@@ -452,9 +456,19 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 | 26 | RebalanceHistory.tsx | **DONE** | React Fragment missing key prop |
 | 27 | FilterStatusBanner.tsx | **DONE** | Silently hides on API error |
 | 28 | RiskStatusPanel.tsx | **DONE** | Silently swallows fetch errors |
-| 29 | crypto_momentum.py | **DONE** | BTC MA min_periods=1 inflates early signals |
+| 29 | portfolio.py | **PARTIAL** | BTC MA min_periods=1 — fixed in portfolio.py only |
 
-**All 11 issues fixed and pushed.** Test count: 26 (all passing).
+**All 11 issues fixed and pushed.** Test count: 27 (25 original + 2 new).
+
+### Sanity Check Notes
+
+During post-fix verification, three corrections were made:
+
+1. **`price_error` was initially made too strict.** The first fix changed `price_error` to block execution when *any* target symbol was unpriceable. This would block a 52-stock rebalance if one symbol failed to price, and would stall the daily automated crypto rebalance if any of 9 coins were down. Reverted to original behavior: only block when **current positions** can't be priced (sell sizing would be wrong). Missing target prices are warned in preview but don't block — the rest of the portfolio trades correctly. Added `test_missing_current_position_prices_block_execution` to cover the blocking case.
+
+2. **#24 rebalance history filtering was initially post-fetch.** First fix filtered in `orders.py` after fetching 50 global entries — same crowding problem, just on server instead of client. Moved filtering into `get_recent_rebalances()` in `rebalance_log.py` so it filters during file read, before the limit slice.
+
+3. **#29 BTC filter fix was initially too broad.** First fix removed `min_periods=1` from both `portfolio.py` and `crypto_momentum.py`. The `crypto_momentum.py` change would kill ~10 months of the daily strategy's backtest (NaN MA → forced cash). Reverted `crypto_momentum.py`; kept `portfolio.py` fix only (verified zero backtest impact).
 
 ---
 
@@ -466,7 +480,7 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 |---|------|--------|-----|
 | 1 | Price staleness check before execution | **DONE** | Server-side >2% drift guard on both manual and automated paths |
 | 2 | Fail-safe circuit breaker loading | **DONE** | Atomic writes + defaults to halted=True on corruption |
-| 3 | Error on missing prices (don't silently skip) | **DONE** | HTTP 422 blocks execution, preview shows warnings |
+| 3 | Error on missing prices (don't silently skip) | **DONE** | Preview warns on missing target prices; HTTP 422 blocks execution only for unpriceable current positions (sell sizing) |
 | 4 | Post-execution position reconciliation | 2 hours | Verify actual matches target, log discrepancies |
 | 5 | React Error Boundary | **DONE** | Wraps tab content, prevents white-screen crashes |
 | 6 | API authentication (Bearer token) | 1 hour | Required before real money or network exposure |
@@ -502,7 +516,7 @@ The SPY trend filter in `portfolio.py:187` correctly uses `rolling(ma_period).me
 | 26 | Fix React Fragment key in RebalanceHistory | **DONE** | Missing key prop causes React warnings |
 | 27 | FilterStatusBanner: show warning on API error | **DONE** | Silently hides when filter data unavailable |
 | 28 | RiskStatusPanel: show warning on fetch error | **DONE** | Shows "OK" with stale data when API is down |
-| 29 | BTC filter: remove min_periods=1 | **DONE** | Inflates early backtest signals, match SPY filter pattern |
+| 29 | BTC filter: remove min_periods=1 | **PARTIAL** | Fixed in portfolio.py only; crypto_momentum.py keeps min_periods=1 (needed for daily strategy warmup) |
 
 ---
 
