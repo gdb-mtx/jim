@@ -150,6 +150,20 @@ async def create_snapshot(
         return take_all_snapshots()
 
 
+def _patch_today(curve: list[dict], live_equity: float) -> list[dict]:
+    """Replace or append today's data point with live equity from Alpaca."""
+    from datetime import date
+
+    today = date.today().isoformat()
+    if not curve:
+        return [{"time": today, "value": round(live_equity, 2)}]
+    if curve[-1]["time"] == today:
+        curve[-1] = {"time": today, "value": round(live_equity, 2)}
+    else:
+        curve.append({"time": today, "value": round(live_equity, 2)})
+    return curve
+
+
 @router.get("/history")
 async def equity_history(
     account: int = Query(default=0, ge=0, le=4, description="0=combined, 1-4=individual"),
@@ -158,6 +172,24 @@ async def equity_history(
     if account == 0:
         histories = get_all_equity_histories()
         combined = get_combined_equity_history()
+
+        # Patch today's values with live Alpaca equity
+        total_live = 0.0
+        live_equity: dict[int, float] = {}
+        for acct_num in ACCOUNT_INFO:
+            try:
+                broker = _get_broker(acct_num)
+                live_eq = broker.get_account()["equity"]
+                total_live += live_eq
+                live_equity[acct_num] = live_eq
+                key = f"acct_{acct_num}"
+                if key in histories:
+                    histories[key] = _patch_today(histories[key], live_eq)
+            except Exception:
+                pass
+        if total_live > 0:
+            combined = _patch_today(combined, total_live)
+
         # Normalized SPY benchmark — starts at same value as combined portfolio
         spy_benchmark = []
         if combined:
@@ -168,11 +200,17 @@ async def equity_history(
             "equity_curve": combined,
             "per_account": histories,
             "spy_benchmark": spy_benchmark,
-            "performance": get_performance_summary(),
+            "performance": get_performance_summary(live_equity or None),
             "days": len(combined),
         }
     else:
         curve = get_equity_history(account)
+        try:
+            broker = _get_broker(account)
+            live_eq = broker.get_account()["equity"]
+            curve = _patch_today(curve, live_eq)
+        except Exception:
+            pass
         return {
             "equity_curve": curve,
             "days": len(curve),

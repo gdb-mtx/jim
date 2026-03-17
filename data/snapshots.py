@@ -213,8 +213,14 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
         return []
 
 
-def get_performance_summary() -> list[dict]:
+def get_performance_summary(
+    live_equity: dict[int, float] | None = None,
+) -> list[dict]:
     """Compute per-account and combined returns vs SPY since tracking started.
+
+    Args:
+        live_equity: Optional {account: equity} with live Alpaca values.
+                     If provided, overrides snapshot for current value.
 
     Returns a list of {account, label, return_pct, spy_return_pct, alpha_pct}
     for each account plus a "Combined" row.
@@ -265,7 +271,11 @@ def get_performance_summary() -> list[dict]:
             continue
 
         start_val = float(df["equity"].iloc[0])
-        current_val = float(df["equity"].iloc[-1])
+        current_val = (
+            live_equity[acct]
+            if live_equity and acct in live_equity
+            else float(df["equity"].iloc[-1])
+        )
         ret = round((current_val / start_val - 1) * 100, 2) if start_val > 0 else 0.0
 
         results.append({
