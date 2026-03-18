@@ -194,9 +194,9 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
         return []
 
     try:
-        from data.pipeline import download_and_cache
+        from data.pipeline import download_prices
 
-        spy = download_and_cache(["SPY"], start="2025-01-01", cache_name="spy_filter").squeeze()
+        spy = download_prices(["SPY"], start="2025-01-01").squeeze()
         # Align to snapshot dates
         snap_dates = pd.DatetimeIndex([pd.Timestamp(d) for d in dates])
         spy = spy.reindex(snap_dates).ffill().dropna()
@@ -218,9 +218,12 @@ def get_performance_summary(
 ) -> list[dict]:
     """Compute per-account and combined returns vs SPY since tracking started.
 
-    Args:
-        live_equity: Optional {account: equity} with live Alpaca values.
-                     If provided, overrides snapshot for current value.
+    Each account's SPY return is computed from that account's own start date.
+    Combined SPY return uses the combined equity curve start date (latest of
+    all account first dates, matching the chart's SPY benchmark).
+
+    When live_equity is provided, fetches fresh SPY price for an apples-to-apples
+    comparison with live portfolio values.
 
     Returns a list of {account, label, return_pct, spy_return_pct, alpha_pct}
     for each account plus a "Combined" row.
@@ -230,34 +233,33 @@ def get_performance_summary(
     results = []
     all_start = 0.0
     all_current = 0.0
-    spy_return_pct = 0.0
 
-    # Compute SPY return over the combined date range
+    # Load SPY prices — fetch fresh data when comparing to live portfolio values
     try:
-        from data.pipeline import download_and_cache
-
-        spy = download_and_cache(
-            ["SPY"], start="2025-01-01", cache_name="spy_filter"
-        ).squeeze()
+        if live_equity:
+            from data.pipeline import download_prices
+            spy = download_prices(["SPY"], start="2025-01-01").squeeze()
+        else:
+            from data.pipeline import download_and_cache
+            spy = download_and_cache(
+                ["SPY"], start="2025-01-01", cache_name="spy_filter"
+            ).squeeze()
     except Exception:
         spy = pd.Series(dtype=float)
 
-    # Find the earliest common start date across all accounts
-    earliest_date = None
-    for acct in (1, 2, 3, 4):
-        df = load_snapshots(acct)
-        if not df.empty:
-            first = df.index[0]
-            if earliest_date is None or first < earliest_date:
-                earliest_date = first
-
-    if not spy.empty and earliest_date is not None:
-        spy_aligned = spy[spy.index >= earliest_date]
+    def _spy_return_from(start_date: pd.Timestamp) -> float:
+        """Compute SPY return from a given start date to latest available."""
+        if spy.empty or start_date is None:
+            return 0.0
+        spy_aligned = spy[spy.index >= start_date]
         if len(spy_aligned) >= 2:
-            spy_return_pct = round(
+            return round(
                 (float(spy_aligned.iloc[-1]) / float(spy_aligned.iloc[0]) - 1) * 100, 2
             )
+        return 0.0
 
+    # Load per-account snapshots and compute returns
+    combined_start_date = None  # latest first date (when all accounts are live)
     for acct in (1, 2, 3, 4):
         df = load_snapshots(acct)
         if df.empty or len(df) < 2:
@@ -265,7 +267,7 @@ def get_performance_summary(
                 "account": acct,
                 "label": ACCOUNT_INFO[acct]["label"],
                 "return_pct": 0.0,
-                "spy_return_pct": spy_return_pct,
+                "spy_return_pct": 0.0,
                 "alpha_pct": 0.0,
             })
             continue
@@ -278,25 +280,34 @@ def get_performance_summary(
         )
         ret = round((current_val / start_val - 1) * 100, 2) if start_val > 0 else 0.0
 
+        # SPY return from this account's own start date
+        acct_spy_ret = _spy_return_from(df.index[0])
+
         results.append({
             "account": acct,
             "label": ACCOUNT_INFO[acct]["label"],
             "return_pct": ret,
-            "spy_return_pct": spy_return_pct,
-            "alpha_pct": round(ret - spy_return_pct, 2),
+            "spy_return_pct": acct_spy_ret,
+            "alpha_pct": round(ret - acct_spy_ret, 2),
         })
 
         all_start += start_val
         all_current += current_val
 
-    # Combined row
+        # Track combined start date (latest first date across accounts)
+        first = df.index[0]
+        if combined_start_date is None or first > combined_start_date:
+            combined_start_date = first
+
+    # Combined row — SPY from combined start date (matches chart benchmark)
     combined_ret = round((all_current / all_start - 1) * 100, 2) if all_start > 0 else 0.0
+    combined_spy_ret = _spy_return_from(combined_start_date)
     results.append({
         "account": 0,
         "label": "Combined",
         "return_pct": combined_ret,
-        "spy_return_pct": spy_return_pct,
-        "alpha_pct": round(combined_ret - spy_return_pct, 2),
+        "spy_return_pct": combined_spy_ret,
+        "alpha_pct": round(combined_ret - combined_spy_ret, 2),
     })
 
     return results
