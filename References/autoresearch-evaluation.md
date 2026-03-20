@@ -180,8 +180,13 @@ while True:
 
 ## Recommendation
 
-**Try it.** Start with Account 1 (Stock Momentum, 1.38 Sharpe) — most room for improvement, largest parameter space. The FIRE project already has all the building blocks. The main engineering work is the experiment loop (~200 lines) and crafting good `program.md` directives.
+**Try it.** Two promising starting points:
 
-Finding one more uncorrelated strategy with Sharpe > 1.3 would meaningfully improve the combined portfolio. The Deflated Sharpe Ratio and walk-forward requirements should keep overfitting in check.
+1. **Account 2 (Trend + Low-Vol, 1.36 Sharpe)** — lowest Sharpe among equity accounts, most room for parameter optimization (vol-scaling targets, trend lookbacks, low-vol/trend blend ratio).
+2. **New factor discovery** — use the framework to explore entirely new uncorrelated factors that could become a 5th account. Finding one more strategy with Sharpe > 1.3 and low correlation to existing accounts would meaningfully improve the combined portfolio.
+
+Account 1 (1.38 Sharpe, 17.6% return) and Account 3 (1.54 Sharpe) are already strong performers. Account 4 (Crypto, 1.62 Sharpe) has the best backtest but operates on a different cycle — currently in cash due to BTC being below its 200d MA trend filter, which is the strategy working as designed.
+
+The FIRE project already has all the building blocks. The main engineering work is the experiment loop (~200 lines) and crafting good `program.md` directives. The Deflated Sharpe Ratio and walk-forward requirements should keep overfitting in check.
 
 Priority: After the current 3-month paper trading validation completes. This is a Phase 7+ activity.
