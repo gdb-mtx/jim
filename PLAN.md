@@ -594,11 +594,156 @@ First equity trades executed **2026-03-10**. Rebalance dates (approximate, adjus
 
 **Account 4 credentials configured** — `ALPACA_API_KEY_4` + `ALPACA_SECRET_KEY_4` in `.env`, connection verified ($100k paper account).
 
-### Phase 7: AI-Assisted Research (Future)
-- [ ] Claude API for strategy ideation, code generation, analysis acceleration
-- [ ] Analyze less-trafficked data: small-cap SEC filings (EDGAR), niche RSS feeds
-- [ ] ML-based feature engineering (what features predict returns beyond momentum?)
-- [ ] HMM regime detection overlay — 2-3 state Hidden Markov Model as a probabilistic replacement for binary VIX/trend filters. Must use walk-forward training. (Reviewed 2026-03-15, not viable as standalone strategy but promising as portfolio-level regime filter.)
+### Phase 7: Autoresearch — Autonomous Factor Discovery for Account 5
+
+*Adapting [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) pattern to autonomous trading strategy discovery. The goal: find a genuinely uncorrelated 5th factor to exploit our 2 remaining paper trading slots. Full design and risk analysis in [`References/autoresearch-evaluation.md`](References/autoresearch-evaluation.md).*
+
+**Why a 5th factor?** Our 4 accounts all exploit variations of momentum/trend. A truly uncorrelated factor (value, quality, BAB) would push the combined portfolio Sharpe disproportionately higher — that's the math of diversification. Even a mediocre standalone Sharpe (0.90) with low correlation (<0.30) to existing accounts improves the combined portfolio more than optimizing any single account from 1.36 to 1.46.
+
+#### The Karpathy Loop, adapted
+
+Karpathy's autoresearch: one file the agent edits, one metric to optimize, one fixed time budget per experiment, loop forever. Agent commits improvements, reverts failures, tracks everything in `results.tsv`. Human "programs the research org" via `program.md`.
+
+**Original (LLM training):**
+| File | Who edits | Purpose |
+|------|-----------|---------|
+| `prepare.py` | Nobody | Fixed: data prep, tokenizer, evaluation |
+| `train.py` | Agent | Model architecture, optimizer, hyperparams |
+| `program.md` | Human | Research instructions, constraints, goals |
+
+**Our adaptation (factor discovery):**
+| File | Who edits | Purpose |
+|------|-----------|---------|
+| `research/evaluate.py` | Nobody | Fixed: data loading, backtest engine, composite scoring, correlation to Accounts 1-4 |
+| `research/strategy.py` | Agent | Signal generation, universe selection, filters, rebalance frequency, weighting |
+| `research/program.md` | Human | Factor exploration guidance, hard gates, acceptance criteria |
+
+**Supporting infrastructure (also fixed):**
+| File | Purpose |
+|------|---------|
+| `data/fundamentals.py` | **NEW** — Fundamental data pipeline (P/B, ROE, D/E, beta, dividend yield, earnings yield) with parquet caching. Analogous to `data/sp500.py` for prices. |
+| `research/baselines/` | Pre-computed daily returns for Accounts 1-4 (generated once from existing strategies, used by `evaluate.py` for correlation measurement) |
+
+#### Composite scoring metric
+
+Karpathy uses `val_bpb` (lower = better). We need a composite that captures both standalone quality AND diversification value:
+
+```
+score = sharpe * (1 - max_correlation_to_existing_accounts)
+```
+
+**Hard gates (auto-reject regardless of score):**
+- Sharpe < 0.80 → reject
+- Max correlation to any existing Account 1-4 > 0.40 → reject
+- Max drawdown worse than -30% → reject
+- Walk-forward median OOS Sharpe < 0.50 → reject
+
+**Why this scoring function:** A strategy with 1.20 Sharpe but 0.60 correlation scores `1.20 × 0.40 = 0.48`. A strategy with 0.95 Sharpe but 0.20 correlation scores `0.95 × 0.80 = 0.76`. The lower-Sharpe strategy wins because it adds more to the combined portfolio. This is exactly the right incentive for the agent.
+
+#### Time budget per experiment
+
+Karpathy uses 5 minutes (GPU training). Our backtests run in ~30-60 seconds (vectorized pandas on S&P 500). This means:
+- **~60-120 experiments per hour** (vs Karpathy's ~12/hour)
+- **Overnight (8 hours) = 500-1000 experiments** (vs Karpathy's ~100)
+- More experiments = deeper exploration across factor families
+
+#### The experiment loop
+
+```
+LOOP FOREVER:
+1. Read results.tsv — what's been tried, what worked
+2. Choose next experiment (new factor, parameter tweak, or combination)
+3. Edit research/strategy.py — modify generate_signals()
+4. git commit -m "experiment: <description>"
+5. Run: uv run research/evaluate.py > run.log 2>&1
+6. Read: grep "^score:\|^sharpe:\|^max_corr:\|^max_dd:" run.log
+7. Log to results.tsv (commit, score, sharpe, max_corr, max_dd, status, description)
+8. If score improved → keep commit (advance branch)
+9. If score equal or worse → git reset to previous best
+10. NEVER STOP. Run until human interrupts.
+```
+
+#### Expected overnight discovery arc
+
+The agent would naturally progress through these phases:
+1. **Experiments 1-15**: Pure value variants (P/B, P/E, earnings yield, EBITDA/EV). Establish baseline.
+2. **Experiments 16-30**: Add quality filters (ROE, D/E). Find that value+quality outperforms pure value.
+3. **Experiments 31-40**: Try pure quality, pure BAB (Betting Against Beta). Measure correlations.
+4. **Experiments 41-60**: Optimize the winning factor family — lookback periods, top-N selection, rebalance frequency.
+5. **Experiments 61-80**: Try combinations (value+quality+BAB blends, different weightings).
+6. **Experiments 80-100+**: Fine-tune the winner — regime filters (VIX integration), vol-scaling, sector neutralization.
+
+#### What `research/program.md` contains
+
+The human-authored instructions that "program the research org":
+
+- **Setup**: Branch creation, file reading, data verification, baseline run
+- **Goal**: Maximize composite score (Sharpe × diversification)
+- **Hard constraints**: Sharpe > 0.80, correlation < 0.40, MaxDD > -30%, walk-forward pass
+- **Exploration guidance**: Ranked list of highest-prior factors to try first:
+  1. **Value** (earnings yield, P/B) — expected -0.30 to -0.50 correlation to momentum (best diversifier)
+  2. **Quality** (ROE + low leverage + earnings stability) — defensive, low momentum correlation
+  3. **Betting Against Beta** — long low-beta stocks, independent alpha source
+  4. **Dividend carry** — yield ranking, ~zero momentum correlation
+  5. **Combinations** — value+quality, value+BAB, multi-factor blends
+- **Move-on rule**: If a factor family shows max_corr > 0.40 after 5+ attempts, move to next family
+- **Simplicity criterion** (from Karpathy): All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it.
+- **NEVER STOP**: Run autonomously until manually interrupted
+
+#### Candidate factors — ranked by diversification potential
+
+| Factor | Expected Correlation to Momentum | Academic Support | Data Source | Priority |
+|--------|----------------------------------|-----------------|-------------|----------|
+| **Value (HML)** | **-0.17 to -0.57** (negative!) | Fama-French 1993, 30+ years | yfinance P/B, earnings | **#1 — Best diversifier** |
+| **Quality (ROE + D/E)** | Low to negative (post-2020) | Asness et al. 2013, Novy-Marx 2013 | yfinance financials | **#2 — Defensive** |
+| **BAB (low beta)** | Low positive (~0.15) | Frazzini & Pedersen 2014 | yfinance beta | **#3 — Independent alpha** |
+| **Dividend carry** | ~0.00 (uncorrelated) | Koijen, Moskowitz, Pedersen 2013 | yfinance dividends | **#4 — Easy data** |
+| **Size (SMB)** | Low (~0.10-0.20) | Fama-French 1993 (weakening) | yfinance market cap | Lower — effect fading |
+| **Seasonality** | Independent | Well-documented but shrinking | Calendar logic | Lower — small effect |
+| **Sentiment (VIX)** | Already used as filter | Mixed | FRED, CBOE | Avoid — overlaps existing |
+
+**Key academic references for factor exploration:**
+- Fama & French (1993) — "Common risk factors in the returns on stocks and bonds" (value + size)
+- Asness, Moskowitz & Pedersen (2013) — "Value and Momentum Everywhere" (negative value-momentum correlation)
+- Novy-Marx (2013) — "The other side of value: The gross profitability premium" (quality)
+- Frazzini & Pedersen (2014) — "Betting against beta" (BAB)
+- Koijen, Moskowitz & Pedersen (2013) — "Carry" (dividend/yield factors)
+- Kenneth French Data Library — monthly factor returns for backtesting comparison
+
+#### What needs building (4 files)
+
+| File | Lines (est.) | Purpose |
+|------|-------------|---------|
+| `data/fundamentals.py` | ~150 | Fundamental data pipeline: yfinance batch download of P/B, ROE, D/E, beta, dividend yield for S&P 500. Parquet cache with quarterly refresh. |
+| `research/evaluate.py` | ~200 | Fixed evaluation harness: loads price + fundamental data, imports `strategy.py`, runs backtest, computes Sharpe/MaxDD/walk-forward, measures correlation to pre-computed Account 1-4 returns, prints grep-able composite score. |
+| `research/strategy.py` | ~30 | Seed strategy (naive value: rank by earnings yield, top 50). Agent modifies this. |
+| `research/program.md` | ~80 | Agent instructions (setup, loop, constraints, exploration guidance, never stop). |
+
+Plus one-time generation of `research/baselines/` — daily returns series for Accounts 1-4, computed from existing strategies and cached as parquet.
+
+#### Deployment path
+
+1. **Autoresearch overnight** → Best `strategy.py` with highest composite score
+2. **Human review** → Read `results.tsv`, inspect winning strategy code, sanity-check
+3. **Full validation** → Run through existing 3-tier validation pipeline (walk-forward + Monte Carlo + regime testing in `backtesting/validation.py`)
+4. **Integration** → Promote `research/strategy.py` to `strategies/value.py` (or whatever factor won), add to `portfolio.py` registry, configure Account 5 portfolio preset
+5. **Paper trade** → Deploy to one of the 2 remaining Alpaca paper slots (second Alpaca account)
+6. **Monitor** → 3+ months paper trading alongside existing 4 accounts, measure live correlation
+
+#### Infrastructure notes
+
+- **2 remaining paper trading slots** available on second Alpaca account (3 slots per account, 2 accounts, 4 used)
+- New Account 5 credentials would follow existing pattern: `ALPACA_API_KEY_5` / `ALPACA_SECRET_KEY_5` in `.env`
+- `AlpacaBroker(account=5)` — extend credential lookup in `execution/alpaca_broker.py`
+- Monthly rebalance likely (value/quality factors change slowly)
+- All existing overlays (SPY trend filter, vol-scaling, VIX regime filter) available for the winning strategy
+
+#### Future extensions of the autoresearch pattern
+
+- [ ] Multi-agent: Run 2-3 agents in parallel on different factor families (one on value, one on quality, one on BAB) with separate branches
+- [ ] Cross-domain: Apply the same loop to crypto factor discovery (DeFi yield, on-chain metrics)
+- [ ] Meta-optimization: Use autoresearch to tune the existing Account 2 blend (Trend + Low-Vol weights, vol-scaling params)
+- [ ] HMM regime detection overlay — probabilistic replacement for binary VIX/trend filters (reviewed 2026-03-15, not viable standalone but promising as portfolio-level filter)
 - [ ] *Note: Institutional NLP pipelines (Bloomberg, RavenPack) are faster on breaking news — our AI edge is in research depth and speed, not latency*
 
 ### Phase 8: Go Live (After 3+ months of paper trading)
