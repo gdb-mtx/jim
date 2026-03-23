@@ -68,6 +68,30 @@ Rebalance schedule:
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period
 - Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/crypto_momentum.py`, `strategies/portfolio.py`
 
+### Risk Controls — Operational Behavior
+
+**When are filters and circuit breakers checked?**
+All risk controls are evaluated as part of the rebalance — not continuously. The rebalance cadence *is* the monitoring cadence:
+- **Account 4** (daily automated): Checked every 24 hours at 00:05 UTC
+- **Account 3** (weekly): Checked every Monday at rebalance time
+- **Accounts 1 & 2** (monthly): Checked on first Monday of the month
+
+There is no between-rebalance monitoring that triggers automatic action. The dashboard's RiskStatusPanel and FilterStatusBanner show current status for visibility, but they are read-only — they don't trigger trades.
+
+**What happens when a circuit breaker trips?**
+- The system **freezes positions** — it does not liquidate. Hold what you've got, don't dig deeper.
+- `POST /api/orders/rebalance/execute` returns **403** and refuses to trade on that account/strategy.
+- The dashboard shows a red alert banner with the breaker details.
+- Breaker state **persists to disk** (`data/risk_state/circuit_breaker_acct{N}.json`), so a server restart doesn't silently clear it.
+
+**How to resume after a halt:**
+- Manual reset only — dashboard reset button or `POST /api/portfolio/risk/reset?account=N`.
+- Reset sets the equity peak to the current value and unhalts.
+- This is intentional: forces you to review before resuming, not blindly restart.
+
+**Why hold instead of sell?**
+A -15% drawdown means something unusual is happening. Rebalancing into more risk is dangerous, but panic-selling at the bottom is also bad. Freezing forces a human decision.
+
 ### Architecture
 ```
 data/pipeline.py          — yfinance ETF data download & caching

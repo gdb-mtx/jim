@@ -145,10 +145,18 @@ In practice: Kelly calculates the ideal position size, then the 2% rule acts as 
 
 Beyond per-trade risk limits, we need portfolio-level kill switches:
 
-- **Portfolio level:** Halt all trading if portfolio drops **-15% from equity peak**. Review all strategies before resuming.
-- **Strategy level:** Disable any individual strategy that hits **-10% drawdown** independently. Investigate before re-enabling.
+- **Portfolio level:** Halt all trading if portfolio drops **-15% from equity peak**.
+- **Strategy level:** Disable any individual strategy that hits **-10% drawdown** independently.
 
 These are non-negotiable. Larry Hite was emphatic about this — and it's the #1 thing that separates survivors from blowups.
+
+**How they work operationally:**
+- Circuit breakers are **evaluated during rebalance**, not continuously. The rebalance cadence is the monitoring cadence (daily for crypto, weekly for Account 3, monthly for Accounts 1 & 2).
+- When tripped, the system **freezes positions** — it does not liquidate. The rebalance endpoint returns 403 and refuses to trade. This is a "stop digging" mechanism, not an "eject" mechanism.
+- Breaker state persists to disk (`data/risk_state/`) so server restarts don't silently clear a halt.
+- **Resuming requires manual reset** (`POST /api/portfolio/risk/reset` or dashboard button). This forces a human to review before trading resumes — you must consciously decide to re-enter, not have the system silently recover.
+
+The same applies to regime filters (SPY 200d MA, BTC 200d MA, VIX) — they are computed fresh at rebalance time and applied to target weights. No between-rebalance action is taken.
 
 ---
 
