@@ -1,5 +1,7 @@
 """Backtest endpoints — run backtests and return equity curves."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
@@ -81,50 +83,53 @@ async def run_backtest(
     if strategy_id not in ALL_STRATEGY_IDS:
         raise HTTPException(status_code=404, detail=f"Unknown strategy: {strategy_id}")
 
-    # Combined 3-account, portfolio, or individual strategy
-    if strategy_id == "combined_3account":
-        strategy_name, returns = run_combined_portfolio(start, end)
-    elif strategy_id in PORTFOLIOS:
-        strategy_name, returns = run_portfolio(strategy_id, start, end)
-    else:
-        strategy, returns = _run_strategy(strategy_id, start, end)
-        strategy_name = strategy.name
+    def _compute():
+        # Combined 3-account, portfolio, or individual strategy
+        if strategy_id == "combined_3account":
+            strategy_name, returns = run_combined_portfolio(start, end)
+        elif strategy_id in PORTFOLIOS:
+            strategy_name, returns = run_portfolio(strategy_id, start, end)
+        else:
+            strategy, returns = _run_strategy(strategy_id, start, end)
+            strategy_name = strategy.name
 
-        # Trim warmup period: find first date with non-zero returns
-        non_zero = returns[returns != 0]
-        if len(non_zero) > 0:
-            returns = returns.loc[non_zero.index[0]:]
+            # Trim warmup period: find first date with non-zero returns
+            non_zero = returns[returns != 0]
+            if len(non_zero) > 0:
+                returns = returns.loc[non_zero.index[0]:]
 
-    # Build equity curve (rebased to $10k from active start)
-    equity = (1 + returns).cumprod() * 10000
-    equity_data = [
-        {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
-        for d, v in zip(equity.index, equity.values)
-    ]
+        # Build equity curve (rebased to $10k from active start)
+        equity = (1 + returns).cumprod() * 10000
+        equity_data = [
+            {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
+            for d, v in zip(equity.index, equity.values)
+        ]
 
-    # Use 365 periods/year for crypto (24/7 markets), 252 for stocks
-    is_crypto = strategy_id in CRYPTO_STRATEGIES or strategy_id == "crypto_momentum_filtered"
-    periods = 365 if is_crypto else 252
-    report = full_report(returns, name=strategy_name, periods_per_year=periods)
+        # Use 365 periods/year for crypto (24/7 markets), 252 for stocks
+        is_crypto = strategy_id in CRYPTO_STRATEGIES or strategy_id == "crypto_momentum_filtered"
+        periods = 365 if is_crypto else 252
+        report = full_report(returns, name=strategy_name, periods_per_year=periods)
 
-    # SPY buy-and-hold benchmark for the same active period
-    spy_prices = download_and_cache(["SPY"], start=start, end=end, cache_name="spy_filter")
-    spy_returns = spy_prices.pct_change().dropna().squeeze()
-    first_date = returns.index[0]
-    last_date = returns.index[-1]
-    spy_aligned = spy_returns.loc[first_date:last_date]
-    spy_equity = (1 + spy_aligned).cumprod() * 10000
-    spy_data = [
-        {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
-        for d, v in zip(spy_equity.index, spy_equity.values)
-    ]
+        # SPY buy-and-hold benchmark for the same active period
+        spy_prices = download_and_cache(["SPY"], start=start, end=end, cache_name="spy_filter")
+        spy_returns = spy_prices.pct_change().dropna().squeeze()
+        first_date = returns.index[0]
+        last_date = returns.index[-1]
+        spy_aligned = spy_returns.loc[first_date:last_date]
+        spy_equity = (1 + spy_aligned).cumprod() * 10000
+        spy_data = [
+            {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
+            for d, v in zip(spy_equity.index, spy_equity.values)
+        ]
 
-    return {
-        "strategy": strategy_name,
-        "equity_curve": equity_data,
-        "spy_curve": spy_data,
-        "metrics": report,
-    }
+        return {
+            "strategy": strategy_name,
+            "equity_curve": equity_data,
+            "spy_curve": spy_data,
+            "metrics": report,
+        }
+
+    return await asyncio.to_thread(_compute)
 
 
 @router.get("/equity/{strategy_id}")
@@ -136,16 +141,19 @@ async def get_equity_curve(
     if strategy_id not in STRATEGIES:
         return {"error": f"Unknown strategy: {strategy_id}"}
 
-    strategy, returns = _run_strategy(strategy_id, start)
+    def _compute():
+        strategy, returns = _run_strategy(strategy_id, start)
 
-    # Trim warmup period
-    non_zero = returns[returns != 0]
-    if len(non_zero) > 0:
-        returns = returns.loc[non_zero.index[0]:]
+        # Trim warmup period
+        non_zero = returns[returns != 0]
+        if len(non_zero) > 0:
+            returns = returns.loc[non_zero.index[0]:]
 
-    equity = (1 + returns).cumprod() * 10000
+        equity = (1 + returns).cumprod() * 10000
 
-    return [
-        {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
-        for d, v in zip(equity.index, equity.values)
-    ]
+        return [
+            {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
+            for d, v in zip(equity.index, equity.values)
+        ]
+
+    return await asyncio.to_thread(_compute)

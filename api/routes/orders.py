@@ -3,6 +3,7 @@
 Supports 4 paper trading accounts via ?account=1|2|3|4 query param.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
@@ -45,7 +46,7 @@ async def order_history(
 ):
     """Get recent order history from Alpaca."""
     broker = _get_broker(account)
-    return broker.get_orders(status=status, limit=limit)
+    return await asyncio.to_thread(broker.get_orders, status=status, limit=limit)
 
 
 @router.post("/rebalance/preview")
@@ -61,7 +62,8 @@ async def preview_rebalance(
     risk_mgr = _get_risk_manager(account)
 
     try:
-        result = compute_rebalance(
+        result = await asyncio.to_thread(
+            compute_rebalance,
             broker=broker,
             strategy_id=strategy_id,
             risk_manager=risk_mgr,
@@ -131,7 +133,8 @@ async def execute_rebalance_endpoint(
         risk_mgr = _get_risk_manager(account)
 
         try:
-            result = compute_rebalance(
+            result = await asyncio.to_thread(
+                compute_rebalance,
                 broker=broker,
                 strategy_id=strategy_id,
                 risk_manager=risk_mgr,
@@ -164,7 +167,7 @@ async def execute_rebalance_endpoint(
 
         # Price staleness guard — re-fetch and compare
         if result.prices:
-            drifted = check_price_staleness(broker, result.prices)
+            drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
             if drifted:
                 symbols = ", ".join(f"{d['symbol']} ({d['drift_pct']}%)" for d in drifted)
                 raise HTTPException(
@@ -180,7 +183,7 @@ async def execute_rebalance_endpoint(
             }
 
         # Execute
-        order_results = execute_rebalance(broker, result)
+        order_results = await asyncio.to_thread(execute_rebalance, broker, result)
 
         # Report partial fills / failures
         failed = [o for o in order_results if o.get("status") == "error"]
@@ -202,7 +205,7 @@ async def execute_rebalance_endpoint(
 
         # Take equity snapshot so dashboard updates immediately
         try:
-            take_snapshot(account)
+            await asyncio.to_thread(take_snapshot, account)
         except Exception as e:
             log.warning(f"Post-rebalance snapshot failed for account {account}: {e}")
 
@@ -226,7 +229,7 @@ async def rebalance_history(
     account: int | None = Query(default=None, ge=1, le=4, description="Filter by account (optional)"),
 ):
     """Get recent rebalance events from the structured log."""
-    return get_recent_rebalances(limit=limit, account=account)
+    return await asyncio.to_thread(get_recent_rebalances, limit=limit, account=account)
 
 
 @router.post("/cancel-all")
@@ -235,5 +238,4 @@ async def cancel_all_orders(
 ):
     """Cancel all open orders."""
     broker = _get_broker(account)
-    count = broker.cancel_all_orders()
-    return {"account": account, "cancelled": count}
+    return {"account": account, "cancelled": await asyncio.to_thread(broker.cancel_all_orders)}

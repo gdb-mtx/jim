@@ -118,6 +118,51 @@ Prefer the first approach for data that's always visible. Reserve independent po
 
 **Keep polling endpoints lightweight.** If the frontend polls every 30s, the endpoint must respond well under 1s. Precompute or cache expensive calculations; never run full strategy backtests in a polling handler.
 
+### Async Endpoints with Blocking Dependencies
+
+**Never call blocking functions directly from `async def` endpoints.** FastAPI runs `async def` handlers on the main event loop. If a handler calls a synchronous function that does network I/O (Alpaca API, yfinance), file I/O (parquet, JSON), or heavy computation (pandas, numpy), the entire server blocks — no other request can be served until it returns.
+
+This is invisible during development because each endpoint works fine in isolation. It only surfaces under concurrent load (e.g., the dashboard polling 5 endpoints simultaneously while a rebalance downloads 451 stock prices). The symptom: the server appears hung, CPU spins, and the frontend shows "API not connected."
+
+```python
+# BAD: blocks event loop for 2-10 seconds
+@router.post("/rebalance/preview")
+async def preview(account: int):
+    broker = get_broker(account)
+    result = compute_rebalance(broker, strategy)  # downloads prices, runs strategy
+    return result
+
+# GOOD: offloads to thread pool, event loop stays free
+@router.post("/rebalance/preview")
+async def preview(account: int):
+    broker = get_broker(account)
+    result = await asyncio.to_thread(
+        compute_rebalance, broker, strategy
+    )
+    return result
+```
+
+This applies to **all** blocking calls: Alpaca REST API (`get_account()`, `get_positions()`, `get_orders()`), data downloads (`download_prices()`, `download_and_cache()`), file reads (`pd.read_parquet()`, `json.loads(path.read_text())`), and heavy computation (`get_correlation_report()`). It also applies to scheduled jobs — APScheduler's `AsyncIOScheduler` runs jobs on the event loop, so a blocking `compute_rebalance()` inside a scheduled job has the same effect.
+
+For simple one-call endpoints, `await asyncio.to_thread(broker.get_positions)` is clean enough. For endpoints with multiple blocking calls, wrap them in a `_compute()` closure:
+
+```python
+@router.get("/combined")
+async def combined_summary():
+    def _compute():
+        # All blocking calls happen in thread pool
+        for acct in accounts:
+            broker = get_broker(acct)
+            data = broker.get_account()      # Alpaca API
+            positions = broker.get_positions() # Alpaca API
+            ...
+        return result
+
+    return await asyncio.to_thread(_compute)
+```
+
+**Alternative**: You can also declare handlers as plain `def` (not `async def`), and FastAPI will automatically run them in a thread pool. But `async def` + explicit `to_thread` is preferred when the handler mixes async operations (like `async with lock`) with blocking calls.
+
 ### Concurrent Execution Safety
 
 **Use per-resource async locks for mutating operations.** When the same operation can be triggered by both a scheduler and a user (e.g., rebalance), protect it with an async lock keyed to the resource (e.g., account ID). Return 409 Conflict if the lock is already held rather than queuing or silently dropping.

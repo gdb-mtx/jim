@@ -42,7 +42,8 @@ async def _daily_crypto_rebalance():
 
             async with lock:
                 broker = AlpacaBroker(account=4)
-                result = compute_rebalance(
+                result = await asyncio.to_thread(
+                    compute_rebalance,
                     broker=broker,
                     strategy_id="crypto_momentum_filtered",
                     risk_manager=RiskManager(account=4),
@@ -58,12 +59,12 @@ async def _daily_crypto_rebalance():
 
                 # Price staleness guard — re-fetch and block on >2% drift
                 if result.prices:
-                    drifted = check_price_staleness(broker, result.prices)
+                    drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
                     if drifted:
                         raise RuntimeError(f"Price drift detected: {drifted}")
 
                 if result.orders:
-                    order_results = execute_rebalance(broker, result)
+                    order_results = await asyncio.to_thread(execute_rebalance, broker, result)
                     failed = [o for o in order_results if o.get("status") == "error"]
                     log.info(
                         f"Crypto rebalance: {len(order_results)} orders submitted"
@@ -86,7 +87,7 @@ async def _daily_crypto_rebalance():
                 else:
                     log.info("Crypto rebalance: no trades needed")
 
-                take_snapshot(4)
+                await asyncio.to_thread(take_snapshot, 4)
                 log.info("Daily crypto rebalance complete")
                 return  # Success — exit retry loop
 

@@ -144,6 +144,7 @@ dashboard/               — React + Vite + TradingView Charts
 - **Python version**: 3.12 via uv
 - **Virtual env**: `.venv/` managed by uv (already set up)
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
+- **Async endpoints**: All FastAPI `async def` endpoints MUST use `asyncio.to_thread()` for blocking calls (Alpaca API, yfinance downloads, parquet I/O, pandas computations). Calling blocking functions directly freezes the event loop and makes the entire server unresponsive to concurrent requests. This applies to route handlers and scheduled jobs alike.
 
 ### Current Phase & Next Steps
 - Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor research + 3-account infra), Phase 6 (crypto momentum)
