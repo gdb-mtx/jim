@@ -320,7 +320,7 @@ async def filter_status():
         result = {}
 
         try:
-            spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze()
+            spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze().dropna()
             spy_ma = spy_prices.rolling(200).mean()
             spy_price = float(spy_prices.iloc[-1])
             spy_ma_val = float(spy_ma.iloc[-1])

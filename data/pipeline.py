@@ -73,7 +73,7 @@ def download_and_cache(
             cached = pd.read_parquet(cache_path)
             if all(s in cached.columns for s in symbols):
                 print(f"Loaded {len(cached)} rows from cache: {cache_path}")
-                return cached
+                return cached[symbols]
 
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)
