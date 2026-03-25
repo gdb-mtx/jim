@@ -183,7 +183,7 @@ def compute_spy_trend_filter(
     """
     # Download extra history for MA warmup
     spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter")
-    spy_close = spy_prices.squeeze()
+    spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
     spy_ma = spy_close.rolling(ma_period).mean()
 
     above_ma = spy_close > spy_ma
