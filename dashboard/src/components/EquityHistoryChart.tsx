@@ -108,9 +108,10 @@ function toRebalanceMarkers(
 
 interface Props {
   account: AccountView;
+  refreshKey?: number;
 }
 
-export default memo(function EquityHistoryChart({ account }: Props) {
+export default memo(function EquityHistoryChart({ account, refreshKey }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
@@ -333,7 +334,7 @@ export default memo(function EquityHistoryChart({ account }: Props) {
       })
       .catch(() => setDays(0))
       .finally(() => setLoading(false));
-  }, [account]);
+  }, [account, refreshKey]);
 
   // Create/populate breakdown chart once container is visible (after DOM commit)
   const showBreakdown = account === 0 && days >= 2 && !loading;

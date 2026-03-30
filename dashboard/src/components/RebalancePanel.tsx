@@ -126,9 +126,11 @@ function OrdersTable({
 export default memo(function RebalancePanel({
   account,
   strategyId,
+  onExecuted,
 }: {
   account: number;
   strategyId: string;
+  onExecuted?: () => void;
 }) {
   const [state, setState] = useState<State>("idle");
   const [preview, setPreview] = useState<RebalancePreview | null>(null);
@@ -187,6 +189,7 @@ export default memo(function RebalancePanel({
           "info"
         );
       }
+      onExecuted?.();
       setTimeout(() => {
         setState("idle");
         setPreview(null);

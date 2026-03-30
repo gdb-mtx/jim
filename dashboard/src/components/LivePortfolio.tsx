@@ -65,6 +65,7 @@ export default function LivePortfolio() {
   >([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState(false);
+  const [chartRefreshKey, setChartRefreshKey] = useState(0);
 
   const refreshSingle = (acct: number) => {
     Promise.all([
@@ -251,11 +252,12 @@ export default function LivePortfolio() {
         <RebalancePanel
           account={account as 1 | 2 | 3 | 4}
           strategyId={summary.default_strategy}
+          onExecuted={() => setChartRefreshKey((k) => k + 1)}
         />
       )}
 
       {/* Live equity chart */}
-      <EquityHistoryChart account={account} />
+      <EquityHistoryChart account={account} refreshKey={chartRefreshKey} />
 
       {/* Correlation monitor (combined view only) */}
       {isCombined && <CorrelationPanel />}
