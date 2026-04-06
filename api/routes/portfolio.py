@@ -311,7 +311,11 @@ async def reset_circuit_breaker(
 
 @router.get("/filters")
 async def filter_status():
-    """Get current regime filter status (SPY 200d MA + BTC 200d MA)."""
+    """Get current regime filter status (SPY 200d MA + BTC 200d MA).
+
+    Uses Alpaca real-time quotes for the current price comparison,
+    yfinance cached data for the 200d MA (changes negligibly day-to-day).
+    """
 
     def _compute():
         from data.pipeline import download_and_cache
@@ -322,8 +326,15 @@ async def filter_status():
         try:
             spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze().dropna()
             spy_ma = spy_prices.rolling(200).mean()
-            spy_price = float(spy_prices.iloc[-1])
             spy_ma_val = float(spy_ma.iloc[-1])
+
+            # Use Alpaca real-time price instead of cached yfinance close
+            try:
+                broker = _get_broker(1)
+                spy_price = broker.get_latest_price("SPY")
+            except Exception:
+                spy_price = float(spy_prices.iloc[-1])
+
             result["spy"] = {
                 "price": round(spy_price, 2),
                 "ma_200": round(spy_ma_val, 2),
@@ -336,8 +347,15 @@ async def filter_status():
         try:
             btc_prices = download_btc_prices()
             btc_ma = btc_prices.rolling(200, min_periods=1).mean()
-            btc_price = float(btc_prices.iloc[-1])
             btc_ma_val = float(btc_ma.iloc[-1])
+
+            # Use Alpaca real-time price instead of cached yfinance close
+            try:
+                broker = _get_broker(4)
+                btc_price = broker.get_latest_price("BTC/USD")
+            except Exception:
+                btc_price = float(btc_prices.iloc[-1])
+
             result["btc"] = {
                 "price": round(btc_price, 2),
                 "ma_200": round(btc_ma_val, 2),

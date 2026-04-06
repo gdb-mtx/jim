@@ -250,7 +250,14 @@ class AlpacaBroker:
         return len(cancelled) if cancelled else 0
 
     def get_latest_price(self, symbol: str) -> float:
-        """Get latest trade price for a symbol."""
+        """Get latest trade price for a symbol.
+
+        Uses the crypto-specific endpoint for symbols containing '/'
+        (e.g. BTC/USD), standard equity endpoint for everything else.
+        """
+        if "/" in symbol:
+            trades = self.api.get_latest_crypto_trades(symbol)
+            return float(trades[symbol].price)
         trade = self.api.get_latest_trade(symbol)
         return float(trade.price)
 

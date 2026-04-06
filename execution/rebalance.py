@@ -64,18 +64,20 @@ class RebalanceResult:
 def get_current_signals(
     strategy_id: str,
     lookback_start: str = "2023-01-01",
+    broker: "AlpacaBroker | None" = None,
 ) -> dict[str, float]:
     """Run a strategy on recent data and return the latest target weights.
 
     Args:
         strategy_id: Strategy or portfolio ID
         lookback_start: How far back to fetch prices (strategies need history for signals)
+        broker: Optional broker for real-time price quotes (used by trend filters)
 
     Returns:
         Dict of {symbol: weight} for the most recent signal date.
     """
     if strategy_id in PORTFOLIOS:
-        return _get_portfolio_signals(strategy_id, lookback_start)
+        return _get_portfolio_signals(strategy_id, lookback_start, broker=broker)
 
     if strategy_id in CRYPTO_STRATEGIES:
         return _get_crypto_strategy_signals(strategy_id, lookback_start)
@@ -140,7 +142,9 @@ def _get_crypto_strategy_signals(
 
 
 def _get_portfolio_signals(
-    portfolio_id: str, lookback_start: str
+    portfolio_id: str,
+    lookback_start: str,
+    broker: "AlpacaBroker | None" = None,
 ) -> dict[str, float]:
     """Get latest signals from a portfolio blend.
 
@@ -203,13 +207,25 @@ def _get_portfolio_signals(
 
     # Apply SPY trend filter
     if use_spy_filter:
-        spy_filter = compute_spy_trend_filter(start=lookback_start)
+        live_spy = None
+        if broker:
+            try:
+                live_spy = broker.get_latest_price("SPY")
+            except Exception:
+                log.warning("Could not fetch live SPY price from Alpaca, using cached")
+        spy_filter = compute_spy_trend_filter(start=lookback_start, live_price=live_spy)
         scalar = spy_filter.iloc[-1]  # Latest filter value (1.0 or 0.5)
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
 
     # Apply BTC trend filter (binary: 1.0 or 0.0)
     if use_btc_filter:
-        btc_filter = compute_btc_trend_filter(start=lookback_start)
+        live_btc = None
+        if broker:
+            try:
+                live_btc = broker.get_latest_price("BTC/USD")
+            except Exception:
+                log.warning("Could not fetch live BTC price from Alpaca, using cached")
+        btc_filter = compute_btc_trend_filter(start=lookback_start, live_price=live_btc)
         scalar = btc_filter.iloc[-1]
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
 
@@ -253,8 +269,8 @@ def compute_rebalance(
             risk_check=risk_check,
         )
 
-    # 3. Get target weights from strategy
-    target_weights = get_current_signals(strategy_id)
+    # 3. Get target weights from strategy (broker provides real-time prices for filters)
+    target_weights = get_current_signals(strategy_id, broker=broker)
 
     # 4. Get prices for all relevant symbols
     all_symbols = set(list(target_weights.keys()) + list(current_positions.keys()))
@@ -333,11 +349,16 @@ def compute_rebalance(
                 limit_price=prices.get(symbol) if order_type == "limit" else None,
             ))
 
-    # Check SPY filter status
+    # Check SPY filter status (use live prices consistent with signal generation)
     spy_filter_active = False
     spy_filter_scalar = 1.0
     if strategy_id in PORTFOLIOS and PORTFOLIOS[strategy_id].get("spy_filter"):
-        spy_filter = compute_spy_trend_filter()
+        live_spy = None
+        try:
+            live_spy = broker.get_latest_price("SPY")
+        except Exception:
+            pass
+        spy_filter = compute_spy_trend_filter(live_price=live_spy)
         spy_filter_scalar = float(spy_filter.iloc[-1])
         spy_filter_active = spy_filter_scalar < 1.0
 
@@ -345,7 +366,12 @@ def compute_rebalance(
     btc_filter_active = False
     btc_filter_scalar = 1.0
     if strategy_id in PORTFOLIOS and PORTFOLIOS[strategy_id].get("btc_filter"):
-        btc_filter = compute_btc_trend_filter()
+        live_btc = None
+        try:
+            live_btc = broker.get_latest_price("BTC/USD")
+        except Exception:
+            pass
+        btc_filter = compute_btc_trend_filter(live_price=live_btc)
         btc_filter_scalar = float(btc_filter.iloc[-1])
         btc_filter_active = btc_filter_scalar < 1.0
 

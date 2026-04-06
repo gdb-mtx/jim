@@ -170,6 +170,7 @@ def compute_spy_trend_filter(
     start: str = "2010-01-01",
     ma_period: int = 200,
     reduction: float = 0.5,
+    live_price: float | None = None,
 ) -> pd.Series:
     """Compute SPY trend filter: 1.0 when above MA, `reduction` when below.
 
@@ -177,6 +178,9 @@ def compute_spy_trend_filter(
         start: Start date for SPY data (needs extra history for MA warmup)
         ma_period: Moving average period (default 200 days)
         reduction: Position scalar when below MA (0.5 = half exposure)
+        live_price: Real-time SPY price (e.g. from Alpaca) to override
+            the last cached yfinance close. The 200d MA is unaffected
+            (1/200th shift is negligible).
 
     Returns:
         Series of scalars (1.0 or reduction) indexed by date
@@ -184,6 +188,12 @@ def compute_spy_trend_filter(
     # Download extra history for MA warmup
     spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter")
     spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
+
+    # Override last close with real-time price for live trading decisions
+    if live_price is not None:
+        spy_close = spy_close.copy()
+        spy_close.iloc[-1] = live_price
+
     spy_ma = spy_close.rolling(ma_period).mean()
 
     above_ma = spy_close > spy_ma
@@ -195,6 +205,7 @@ def compute_spy_trend_filter(
 def compute_btc_trend_filter(
     start: str = "2018-01-01",
     ma_period: int = 200,
+    live_price: float | None = None,
 ) -> pd.Series:
     """Compute BTC trend filter: 1.0 when above MA, 0.0 when below.
 
@@ -204,11 +215,18 @@ def compute_btc_trend_filter(
     Args:
         start: Start date for BTC data (needs history for MA warmup)
         ma_period: Moving average period (default 200 days)
+        live_price: Real-time BTC price (e.g. from Alpaca) to override
+            the last cached yfinance close.
 
     Returns:
         Series of scalars (1.0 or 0.0) indexed by date
     """
     btc_prices = download_btc_prices(start=start)
+
+    if live_price is not None:
+        btc_prices = btc_prices.copy()
+        btc_prices.iloc[-1] = live_price
+
     btc_ma = btc_prices.rolling(ma_period).mean()
     above_ma = btc_prices > btc_ma
     scalar = pd.Series(np.where(above_ma, 1.0, 0.0), index=btc_prices.index)
