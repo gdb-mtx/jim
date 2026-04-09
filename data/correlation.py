@@ -42,7 +42,8 @@ def compute_correlation_matrix(min_days: int = 20) -> dict[str, float] | None:
     result = {}
     for a, b in ACCOUNT_PAIRS:
         if a in corr.columns and b in corr.columns:
-            result[_pair_key(a, b)] = round(float(corr.loc[a, b]), 4)
+            val = float(corr.loc[a, b])
+            result[_pair_key(a, b)] = round(val, 4) if pd.notna(val) else None
     return result
 
 
@@ -61,10 +62,11 @@ def compute_rolling_correlation(window: int = 21) -> dict[str, list[dict]]:
             result[_pair_key(a, b)] = []
             continue
 
-        rolling = returns[a].rolling(window).corr(returns[b]).dropna()
+        rolling = returns[a].rolling(window).corr(returns[b])
         result[_pair_key(a, b)] = [
             {"time": idx.strftime("%Y-%m-%d"), "value": round(float(val), 4)}
             for idx, val in rolling.items()
+            if pd.notna(val)
         ]
     return result
 
@@ -94,7 +96,7 @@ def get_correlation_report(alert_threshold: float = 0.80) -> dict:
     alert_pairs = []
     if matrix:
         for pair, value in matrix.items():
-            if value >= alert_threshold:
+            if value is not None and value >= alert_threshold:
                 alert_pairs.append(pair)
 
     return {
