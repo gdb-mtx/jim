@@ -133,3 +133,9 @@ export async function fetchFilterStatus() {
     `${BASE_URL}/portfolio/filters`
   );
 }
+
+export async function fetchFilterMonitorState() {
+  return fetchJSON<import("./types").FilterMonitorState | null>(
+    `${BASE_URL}/portfolio/filter-state`
+  );
+}

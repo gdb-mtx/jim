@@ -324,7 +324,11 @@ class AlpacaBroker:
         return float(trade.price)
 
     def get_latest_prices(self, symbols: list[str]) -> dict[str, float]:
-        """Get latest prices for multiple symbols."""
+        """Get latest prices for multiple symbols.
+
+        Skips untradeable assets (delisted, acquired, inactive) so the
+        rebalance code won't generate orders for them.
+        """
         prices = {}
         for symbol in symbols:
             try:
@@ -332,6 +336,22 @@ class AlpacaBroker:
             except Exception:
                 pass  # Skip symbols that fail (delisted, etc.)
         return prices
+
+    def check_tradeable(self, symbols: list[str]) -> set[str]:
+        """Return the subset of symbols that are tradeable on Alpaca.
+
+        Used to filter out delisted/acquired assets before generating orders.
+        """
+        untradeable = set()
+        for symbol in symbols:
+            try:
+                asset = self.api.get_asset(symbol)
+                if not asset.tradable:
+                    log.warning(f"Untradeable asset: {symbol} (status={asset.status})")
+                    untradeable.add(symbol)
+            except Exception:
+                untradeable.add(symbol)
+        return set(symbols) - untradeable
 
     def is_market_open(self) -> bool:
         """Check if the market is currently open."""

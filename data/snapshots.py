@@ -126,9 +126,9 @@ def backfill_from_alpaca(account: int) -> int:
         new_rows.append({
             "date": dt,
             "equity": float(equity),
-            "cash": 0.0,  # Not available from history API
+            "cash": np.nan,  # Not available from history API
             "daily_pnl": float(pl) if pl is not None else 0.0,
-            "positions_count": 0,  # Not available from history API
+            "positions_count": np.nan,  # Not available from history API
         })
 
     if not new_rows:

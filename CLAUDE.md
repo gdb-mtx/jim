@@ -32,10 +32,11 @@ Crypto standalone: **1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** (0.18 SPY correlati
 
 Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials.
 
-Rebalance schedule:
-- **Daily at 00:05 UTC**: Account 4 (crypto) — automated via APScheduler
-- Every Monday: Account 3 (reversal)
-- First Monday of month: All 3 equity accounts
+Rebalance schedule (two layers — exposure management + signal rotation):
+- **Daily at 4:30 PM ET**: Filter monitor checks all accounts — auto-rebalances if SPY/BTC filter flips (launchd, no server needed)
+- **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via APScheduler (requires server)
+- **Every Monday**: Account 3 reversal signal rotation (manual)
+- **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual)
 
 ### Strategies (8 momentum + 3 factor + 1 crypto + portfolio combos)
 | Strategy | Sharpe | Return | MaxDD | Notes |
@@ -71,12 +72,18 @@ Rebalance schedule:
 ### Risk Controls — Operational Behavior
 
 **When are filters and circuit breakers checked?**
-All risk controls are evaluated as part of the rebalance — not continuously. The rebalance cadence *is* the monitoring cadence:
-- **Account 4** (daily automated): Checked every 24 hours at 00:05 UTC
-- **Account 3** (weekly): Checked every Monday at rebalance time
-- **Accounts 1 & 2** (monthly): Checked on first Monday of the month
+Risk controls are checked at two levels:
 
-There is no between-rebalance monitoring that triggers automatic action. The dashboard's RiskStatusPanel and FilterStatusBanner show current status for visibility, but they are read-only — they don't trigger trades.
+1. **Filter monitor (daily, automated)**: `scripts/filter_check.py` runs via macOS launchd at **4:30 PM ET daily** — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails (circuit breakers, price staleness, file locks). Sends macOS notification. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
+
+2. **Scheduled rebalance (signal rotation)**: Rotates *which* stocks/assets to hold at the strategy's native cadence:
+   - **Account 4** (daily): APScheduler at 00:05 UTC (crypto signal + BTC filter)
+   - **Account 3** (weekly): Manual trigger every Monday
+   - **Accounts 1 & 2** (monthly): Manual trigger first Monday of month
+
+**Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter).
+
+The dashboard's RiskStatusPanel and FilterStatusBanner show current status. FilterStatusBanner also shows the filter monitor's last check time and any recent auto-rebalances.
 
 **What happens when a circuit breaker trips?**
 - The system **freezes positions** — it does not liquidate. Hold what you've got, don't dig deeper.
@@ -115,7 +122,7 @@ execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
 execution/rebalance_log.py — Structured JSONL rebalance audit trail
 api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
-api/locks.py             — Per-account async rebalance locks (prevents concurrent execution)
+api/locks.py             — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
 api/routes/portfolio.py  — Account summary, positions, equity history, correlation, risk status, filter status
 api/routes/orders.py     — Rebalance preview/execute, order history, rebalance journal (?account=1|2|3|4)
 api/routes/backtests.py  — Backtest runner (individual + combined + crypto)
@@ -131,12 +138,21 @@ dashboard/src/components/FilterStatusBanner.tsx — SPY/BTC trend filter status 
 dashboard/src/components/RebalancePanel.tsx — Preview/execute rebalance with action-classified order table (new/increase/decrease/exit)
 dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with expandable order details
 dashboard/               — React + Vite + TradingView Charts
+scripts/start.sh         — Start backend + frontend (recommended)
+scripts/filter_check.py  — Daily filter monitor — auto-rebalances on SPY/BTC filter change
+scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
 ```
 
 ### Running the Project
 - **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
 - **Backend only**: `uv run uvicorn api.main:app --reload` (from project root)
 - **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5173
+- **Filter monitor**: Runs automatically via launchd at 4:30 PM ET daily (no server needed)
+  - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
+  - Check status: `launchctl list | grep fire`
+  - View logs: `cat data/filter_check.log` or `cat data/risk_state/filter_state.json`
+  - Install: `cp scripts/com.fire.filter-check.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.fire.filter-check.plist`
+  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist`
 - **Validation**: `uv run python3 -c "from backtesting.validation import full_validation; ..."`
 
 ### Development Rules
@@ -166,6 +182,8 @@ dashboard/               — React + Vite + TradingView Charts
 - **Rebalance UI**: RebalancePanel with preview → confirm → execute flow, action-classified order table (new/increase/decrease/exit with color-coded badges, current→target quantities, dollar impact), missing price warnings, inline execution errors, SPY/BTC filter warnings, handles 409 (concurrent) and 403 (circuit breaker) errors
 - **Ticker mapping**: yfinance uses hyphens (BF-B, BRK-B), Alpaca uses dots (BF.B, BRK.B) — `to_alpaca_equity_symbol()` in `execution/rebalance.py` converts at signal generation time
 - **Rebalance history**: RebalanceHistory shows past rebalance events with expandable per-order details, source badges, filter badges
-- **Execution safety**: Per-account async locks (409 on concurrent rebalance), circuit breaker persistence to disk, structured JSONL rebalance audit trail, retry logic on scheduled jobs
+- **Execution safety**: Per-account async locks (409 on concurrent rebalance) + cross-process file locks (`fcntl.flock`) for filter monitor coordination, circuit breaker persistence to disk, structured JSONL rebalance audit trail, retry logic on scheduled jobs
+- **Filter monitor**: `scripts/filter_check.py` runs daily at 4:30 PM ET via macOS launchd (no server needed). Auto-rebalances when SPY/BTC filter flips. State in `data/risk_state/filter_state.json`, logs with `source="filter_monitor"`. Dashboard shows monitor status in FilterStatusBanner.
 - Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- Next: Rebalance markers on equity charts, automated equity rebalance scheduler, reconciliation, walk-forward validation, track paper trading 3+ months before live money
+- **Snapshot data quality**: Alpaca backfill writes `NaN` for cash/positions (not available from history API). Live snapshots have real values. Don't treat NaN as zero.
+- Next: Rebalance markers on equity charts, reconciliation, walk-forward validation, research roadmap (graduated exposure, VIX confirmation, tactical overlays, concentration), track paper trading 3+ months before live money

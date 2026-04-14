@@ -368,3 +368,29 @@ async def filter_status():
         return result
 
     return await asyncio.to_thread(_compute)
+
+
+@router.get("/filter-state")
+async def filter_monitor_state():
+    """Get the filter monitor's last-known state and any recent auto-rebalances.
+
+    Reads the state file written by scripts/filter_check.py (cron job).
+    Returns null if the monitor has never run.
+    """
+    from pathlib import Path
+    from execution.rebalance_log import get_recent_rebalances
+
+    state_file = Path(__file__).parent.parent.parent / "data" / "risk_state" / "filter_state.json"
+    if not state_file.exists():
+        return None
+
+    with open(state_file) as f:
+        state = json.load(f)
+
+    # Enrich with recent filter_monitor rebalances from the log
+    recent = get_recent_rebalances(limit=20)
+    monitor_rebalances = [
+        r for r in recent if r.get("source") == "filter_monitor"
+    ]
+    state["recent_auto_rebalances"] = monitor_rebalances[:5]
+    return state

@@ -272,6 +272,16 @@ def compute_rebalance(
     # 3. Get target weights from strategy (broker provides real-time prices for filters)
     target_weights = get_current_signals(strategy_id, broker=broker)
 
+    # 3b. Check tradeability for NEW target symbols (not currently held)
+    # This catches delisted/acquired stocks before we try to buy them
+    new_symbols = [s for s in target_weights if s not in current_positions]
+    if new_symbols:
+        tradeable = broker.check_tradeable(new_symbols)
+        for s in new_symbols:
+            if s not in tradeable:
+                log.warning(f"Removing untradeable target: {s} (weight={target_weights[s]:.4f})")
+                del target_weights[s]
+
     # 4. Get prices for all relevant symbols
     all_symbols = set(list(target_weights.keys()) + list(current_positions.keys()))
     prices = broker.get_latest_prices(list(all_symbols))

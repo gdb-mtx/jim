@@ -105,6 +105,7 @@ def _startup_backfill_and_snapshot():
     """Backfill equity history and take today's snapshots for all accounts.
 
     Runs in a background thread so the server can start accepting requests immediately.
+    Also logs the current filter monitor state if available.
     """
     try:
         from data.snapshots import take_all_snapshots, backfill_from_alpaca
@@ -121,6 +122,27 @@ def _startup_backfill_and_snapshot():
         log.info(f"Startup backfill + snapshots done in {time.time() - t0:.1f}s")
     except Exception as e:
         log.error(f"Startup backfill/snapshot failed: {e}", exc_info=True)
+
+    # Log filter monitor state
+    try:
+        import json
+        from pathlib import Path
+
+        state_file = Path(__file__).parent.parent / "data" / "risk_state" / "filter_state.json"
+        if state_file.exists():
+            with open(state_file) as f:
+                state = json.load(f)
+            spy_label = "BULLISH" if state.get("spy_scalar") == 1.0 else "DEFENSIVE"
+            btc_label = "BULLISH" if state.get("btc_scalar") == 1.0 else "CASH"
+            log.info(
+                f"Filter monitor state: SPY={spy_label} ({state.get('spy_scalar')}), "
+                f"BTC={btc_label} ({state.get('btc_scalar')}), "
+                f"last checked {state.get('last_checked', 'never')}"
+            )
+        else:
+            log.info("Filter monitor: no state file (run scripts/filter_check.py to initialize)")
+    except Exception:
+        pass
 
 
 @asynccontextmanager

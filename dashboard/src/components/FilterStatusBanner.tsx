@@ -1,11 +1,20 @@
 import { memo, useEffect, useState } from "react";
-import { fetchFilterStatus } from "../api";
-import type { FilterStatusResponse } from "../types";
+import { fetchFilterStatus, fetchFilterMonitorState } from "../api";
+import type { FilterStatusResponse, FilterMonitorState } from "../types";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
 
 function formatPrice(n: number, prefix = "$") {
   return `${prefix}${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 1) return "just now";
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 export default memo(function FilterStatusBanner({
@@ -14,6 +23,7 @@ export default memo(function FilterStatusBanner({
   account: AccountView;
 }) {
   const [filters, setFilters] = useState<FilterStatusResponse | null>(null);
+  const [monitorState, setMonitorState] = useState<FilterMonitorState | null>(null);
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
@@ -21,6 +31,9 @@ export default memo(function FilterStatusBanner({
       fetchFilterStatus()
         .then((data) => { setFilters(data); setFetchError(false); })
         .catch(() => setFetchError(true));
+      fetchFilterMonitorState()
+        .then(setMonitorState)
+        .catch(() => {});
     };
     load();
     const interval = setInterval(load, 5 * 60 * 1000);
@@ -103,6 +116,26 @@ export default memo(function FilterStatusBanner({
               <span className="text-[#00d4aa]">— strategy active</span>
             ) : (
               <span className="text-[#ff4d6a]">— strategy in cash</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Filter monitor status */}
+      {monitorState?.last_checked && (
+        <div className="flex items-center gap-2 rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] px-4 py-2.5">
+          <span className="h-2 w-2 rounded-full bg-[#4d8eff]" />
+          <span className="text-sm text-[#8888a0]">
+            Monitor checked {timeAgo(monitorState.last_checked)}
+            {monitorState.recent_auto_rebalances.length > 0 && (
+              <span className="text-[#4d8eff]">
+                {" — "}auto-rebalanced{" "}
+                {[...new Set(monitorState.recent_auto_rebalances.map((r) => r.account))]
+                  .sort()
+                  .map((a) => `Acct ${a}`)
+                  .join(", ")}{" "}
+                ({timeAgo(monitorState.recent_auto_rebalances[0].timestamp)})
+              </span>
             )}
           </span>
         </div>

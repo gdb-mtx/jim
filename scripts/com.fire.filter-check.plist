@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fire.filter-check</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/george/.local/bin/uv</string>
+        <string>run</string>
+        <string>python3</string>
+        <string>/Users/george/Desktop/Projects/FIRE/scripts/filter_check.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/george/Desktop/Projects/FIRE</string>
+
+    <!-- Run daily at 4:30 PM local time (after market close) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- Log output for debugging -->
+    <key>StandardOutPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stderr.log</string>
+
+    <!-- Environment: ensure dotenv can find .env -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/george</string>
+    </dict>
+</dict>
+</plist>

@@ -206,3 +206,22 @@ export interface FilterStatusResponse {
   spy: FilterInfo;
   btc: FilterInfo;
 }
+
+export interface FilterMonitorState {
+  spy_scalar: number;
+  btc_scalar: number;
+  spy_price: number;
+  spy_ma200: number;
+  btc_price: number;
+  btc_ma200: number;
+  last_checked: string;
+  last_spy_change: string | null;
+  last_btc_change: string | null;
+  recent_auto_rebalances: Array<{
+    timestamp: string;
+    account: number;
+    strategy_id: string;
+    orders_submitted: number;
+    source: string;
+  }>;
+}
