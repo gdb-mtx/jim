@@ -18,12 +18,35 @@ suitable for our API endpoints.
 """
 
 import os
+import re
+import logging
 from dataclasses import dataclass
 from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 
+log = logging.getLogger("fire.broker")
+
 # Load .env from project root
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+# Patterns for non-tradeable symbols deposited via corporate actions
+# (CVRs, warrants, rights, spinoff stubs). These have no market price
+# and cannot be bought or sold through normal order flow.
+_NON_TRADEABLE_RE = re.compile(
+    r"CVR|WS$|WS[A-Z]$|\.WS|\.RT|WHEN$|\d{3,}[A-Z]{2,}\d{2,}",
+    re.IGNORECASE,
+)
+
+
+def is_non_tradeable(symbol: str) -> bool:
+    """Detect symbols deposited via corporate actions (CVRs, warrants, etc.).
+
+    These positions appear in Alpaca accounts after mergers/acquisitions
+    but have no market data and cannot be traded normally.
+    Also catches any position where Alpaca returns None for all pricing fields.
+    """
+    return bool(_NON_TRADEABLE_RE.search(symbol))
+
 
 # Account metadata: maps account number to name and default strategy
 ACCOUNT_INFO = {
@@ -102,28 +125,67 @@ class AlpacaBroker:
         }
 
     def get_positions(self) -> list[dict]:
-        """Get all open positions with P&L details."""
+        """Get all open positions with P&L details.
+
+        Positions from corporate actions (CVRs, warrants, etc.) are included
+        but flagged with `non_tradeable=True` so callers can filter them.
+        """
         positions = self.api.list_positions()
-        return [
-            {
+        result = []
+        for p in positions:
+            avg_entry = float(p.avg_entry_price) if p.avg_entry_price is not None else 0.0
+            qty = float(p.qty) if p.qty is not None else 0.0
+            current_price = float(p.current_price) if p.current_price is not None else avg_entry
+            cost_basis = float(p.cost_basis) if p.cost_basis is not None else avg_entry * qty
+            market_value = float(p.market_value) if p.market_value is not None else current_price * qty
+            unrealized_pl = float(p.unrealized_pl) if p.unrealized_pl is not None else market_value - cost_basis
+            unrealized_plpc = float(p.unrealized_plpc) if p.unrealized_plpc is not None else 0.0
+            change_today = float(p.change_today) if p.change_today is not None else 0.0
+
+            # Detect non-tradeable: explicit pattern match OR all pricing fields are None
+            all_prices_none = (
+                p.market_value is None
+                and p.current_price is None
+                and p.unrealized_pl is None
+            )
+            non_tradeable = is_non_tradeable(p.symbol) or all_prices_none
+            if non_tradeable:
+                log.info(f"Non-tradeable position detected: {p.symbol} (qty={qty})")
+
+            result.append({
                 "symbol": p.symbol,
-                "qty": float(p.qty),
+                "qty": qty,
                 "side": p.side,
-                "market_value": float(p.market_value),
-                "cost_basis": float(p.cost_basis),
-                "avg_entry_price": float(p.avg_entry_price),
-                "current_price": float(p.current_price),
-                "unrealized_pl": float(p.unrealized_pl),
-                "unrealized_plpc": float(p.unrealized_plpc),
-                "change_today": float(p.change_today),
-            }
-            for p in positions
-        ]
+                "market_value": market_value,
+                "cost_basis": cost_basis,
+                "avg_entry_price": avg_entry,
+                "current_price": current_price,
+                "unrealized_pl": unrealized_pl,
+                "unrealized_plpc": unrealized_plpc,
+                "change_today": change_today,
+                "non_tradeable": non_tradeable,
+            })
+        return result
 
     def get_position_map(self) -> dict[str, float]:
-        """Get simple {symbol: qty} map of current holdings."""
+        """Get simple {symbol: qty} map of current tradeable holdings.
+
+        Excludes non-tradeable positions (CVRs, warrants, etc.) so that
+        rebalance logic doesn't try to sell them.
+        """
         positions = self.api.list_positions()
-        return {p.symbol: float(p.qty) for p in positions}
+        result = {}
+        for p in positions:
+            all_prices_none = (
+                p.market_value is None
+                and p.current_price is None
+                and p.unrealized_pl is None
+            )
+            if is_non_tradeable(p.symbol) or all_prices_none:
+                log.info(f"Excluding non-tradeable from position map: {p.symbol}")
+                continue
+            result[p.symbol] = float(p.qty)
+        return result
 
     def get_portfolio_value(self) -> float:
         """Get current total portfolio value."""

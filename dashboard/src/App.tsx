@@ -20,12 +20,28 @@ function App() {
   const [apiError, setApiError] = useState(false);
 
   useEffect(() => {
-    fetchStrategies()
-      .then(setStrategies)
-      .catch((e) => {
-        setApiError(true);
-        showToast(`Backend unreachable: ${e.message}`, "warning");
-      });
+    let cancelled = false;
+    const tryConnect = async (retries = 5, delay = 1000) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const data = await fetchStrategies();
+          if (!cancelled) {
+            setStrategies(data);
+            setApiError(false);
+          }
+          return;
+        } catch (e) {
+          if (i < retries - 1) {
+            await new Promise((r) => setTimeout(r, delay));
+          } else if (!cancelled) {
+            setApiError(true);
+            showToast(`Backend unreachable: ${(e as Error).message}`, "warning");
+          }
+        }
+      }
+    };
+    tryConnect();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

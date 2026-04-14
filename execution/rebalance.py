@@ -305,6 +305,7 @@ def compute_rebalance(
     target_positions: dict[str, float] = {}
     for symbol, weight in target_weights.items():
         if symbol not in prices or prices[symbol] <= 0:
+            log.warning(f"Skipping {symbol} (weight={weight:.4f}): no live price — may be delisted or suspended")
             continue
         # Reject negative weights — system is long-only (no shorting)
         if weight < 0:
