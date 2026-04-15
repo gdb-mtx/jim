@@ -39,7 +39,8 @@ export default function PortfolioChart({ data, spyData, title = "Equity Curve" }
         horzLine: { color: "#4d8eff44" },
         vertLine: { color: "#4d8eff44" },
       },
-      handleScale: { mouseWheel: false },
+      handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: true },
     });
 
     // Strategy equity line (green)

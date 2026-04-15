@@ -155,6 +155,8 @@ function RollingChart({ rolling }: { rolling: Record<string, EquityPoint[]> }) {
         horzLine: { color: "#4d8eff44" },
         vertLine: { color: "#4d8eff44" },
       },
+      handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: true },
     });
     chartRef.current = chart;
 

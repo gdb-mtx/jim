@@ -47,7 +47,8 @@ const CHART_OPTS = {
     horzLine: { color: "#4d8eff44" },
     vertLine: { color: "#4d8eff44" },
   },
-  handleScale: { mouseWheel: false },
+  handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
+  handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: true },
 } as const;
 
 const priceFormatter = (price: number) =>
