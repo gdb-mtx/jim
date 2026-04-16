@@ -1,0 +1,329 @@
+# FIRE Trading System: Two-Mode Architecture
+
+## Reframing
+
+This isn't a hobby project and it isn't desperation either. It's a calculated bet: George has 76 months until 59½, a bridge plan that works (SEPP + RRIF + rental = ~$9.8K/mo), and ~$50K of investable capital. The bridge covers survival. The trading system's job is to compound that $50K at materially better than SPY over 6 years — turning it into $100-150K by 59½ when the retirement accounts unlock.
+
+$50K at 10% for 6 years = $88K. At 15% = $116K. At 20% = $149K. The difference between 10% (slightly above SPY) and 20% (real alpha) is $61K — meaningful money during the bridge. But a -30% drawdown at the wrong time = $15K gone from an already tight cash position. Risk management isn't optional — it's the difference between "this was smart" and "this was reckless."
+
+**The honest constraint:** We cannot afford to lose principal in the first 12 months while the bridge is tightest. After planned asset sales land through late 2026, cash stabilizes. So the trading system should be conservative in months 1-6, then can take more risk as the cash cushion builds.
+
+---
+
+## The Two Modes
+
+### Mode 1: Structural Alpha (5-10yr horizon) — THE FOUNDATION
+
+What we built: 4-account factor diversification (momentum, trend+low-vol, reversal, crypto). Fully automated. Running on Alpaca paper.
+
+**Honest assessment after 5 weeks:**
+- Mechanically excellent. Filters fire, orders execute, circuit breakers work.
+- Alpha is thin. Factor premiums are published and crowded (McLean & Pontiff 2016: 58% decay).
+- The system's value may be less about alpha and more about **disciplined, diversified exposure** — it won't blow up, it rebalances automatically, it manages risk.
+- Accounts 1 & 3 are too correlated (0.87 live vs 0.56 backtest). Needs investigation.
+
+**Role going forward:** Steady base that compounds at roughly market rate with lower drawdowns. The SPY filter + circuit breakers protect capital during crashes. This is the "money working while you sleep" layer.
+
+**What's still promising:**
+- Account 4 (crypto) sitting in cash with BTC at $70K vs $95K 200d MA. When BTC crosses back above, this strategy captured 356% (2023-2024 bull). Patient capital waiting for the right moment.
+- The filter monitor (just built) means we'll react same-day to regime changes going forward.
+
+### Mode 2: Informational Alpha (1-3yr strategy horizon) — THE EDGE
+
+**What makes this different from Mode 1:**
+- Mode 1 exploits price patterns that are decades old and well-published
+- Mode 2 exploits Claude's ability to REASON about new information — this capability is 2 years old, there's no McLean & Pontiff paper on it, it's not crowded
+- Mode 1 is backtestable. Mode 2 largely isn't (the tool didn't exist historically). That's a weakness for validation but a STRENGTH for alpha — you can't arbitrage away an edge you can't backtest for.
+
+**The core thesis:** In a world where every quant has the same price data and the same factor models, the edge is in INTERPRETATION of new information. 500 S&P stocks report earnings every quarter. No human reads all 500 transcripts. No traditional quant model understands management tone, guidance quality, or the difference between a revenue-driven beat and a cost-cutting beat. Claude can. That's the edge — breadth of coverage at depth of analysis.
+
+---
+
+## Mode 2: Design
+
+### Signal Source 1: PEAD (Post-Earnings Announcement Drift) — PRIMARY
+
+The most robust short-term anomaly in finance. Ball & Brown (1968), still profitable 58 years later. After an earnings surprise, stocks drift 3-8% over 60-90 days in the surprise direction. The drift is strongest when:
+- The surprise is QUALITY (revenue-driven, not one-time items)
+- The guidance changes but analysts haven't fully updated models
+- The market misclassifies the surprise (e.g., "earnings miss" that was actually a strategic investment quarter)
+
+**Traditional approach:** Standardized Unexpected Earnings (SUE) = simple number comparison.
+
+**Our edge — what Claude adds:**
+- Read the full earnings call transcript (not just headline EPS)
+- Score surprise QUALITY: revenue growth vs cost-cutting vs one-time items
+- Detect guidance shifts that analysts haven't priced
+- Identify management tone changes: confidence vs hedging vs deflection
+- Cross-reference with sector peers: is this company-specific or industry-wide?
+- Flag the 5-10 best opportunities out of 80+ earnings per week
+
+**Position mechanics:**
+- Entry: day after earnings (avoid overnight earnings gap risk)
+- Hold: 20-60 days (the drift window)
+- Exit: time-based (auto-close at 60 days) or target hit (take profit at 8%)
+- Stop: -5% from entry (hard stop, no exceptions)
+- Size: 3-5% of portfolio per position ($1.5-2.5K at $50K)
+- Max concurrent: 10-12 positions (30-60% of capital deployed at peak)
+
+### Signal Source 2: Macro Regime Overlay
+
+Weekly macro assessment that influences BOTH modes:
+
+**What Claude analyzes:**
+- Fed communications and rate path expectations
+- Credit spreads (HY OAS) — historically leads equity by 2-4 weeks
+- VIX term structure: contango (calm) vs backwardation (stress incoming)
+- Yield curve dynamics (steepening = growth, flattening = caution)
+- Sector rotation patterns (defensive leadership = late cycle)
+
+**Output → Actions:**
+- EXPANSION: Mode 1 full exposure, Mode 2 aggressive (more positions, larger sizes)
+- LATE CYCLE: Mode 1 full, Mode 2 defensive (fewer positions, smaller sizes, quality bias)
+- CONTRACTION: Mode 1 filters should trigger automatically, Mode 2 goes to cash or short-bias
+- CRISIS: Both modes defensive, preserve capital
+
+### Signal Source 3: Event-Driven (Selective, 2-5 trades per quarter)
+
+High-conviction special situations:
+- **Spin-offs:** Parent companies forced-selling child companies. Historically +15-20% year 1.
+- **Insider buying clusters:** 3+ insiders buying in same month. Strong 6-month predictive power.
+- **Index rebalance:** Stocks added to S&P 500 get a predictable demand boost.
+- **Activist situations:** 13D filings where the activist has a strong track record.
+
+These are SELECTIVE — maybe 10-15 trades per year. But each one is high-conviction with an identifiable catalyst and timeline.
+
+---
+
+## The Weekly Cycle
+
+```
+EVERY WEEKEND (George + Claude):
+
+1. DATA GATHERING (30 min, scriptable):
+   - This week's earnings (calendar API)
+   - Transcripts for companies that reported (SEC EDGAR or API)
+   - Macro data releases (FRED)
+   - Portfolio current state (Alpaca API)
+
+2. CLAUDE ANALYSIS (the core work):
+   For each earnings report:
+   → Score: surprise quality (1-5), guidance direction, management tone
+   → Flag: PEAD candidates with thesis, direction, conviction, hold period
+   
+   Macro update:
+   → Regime assessment with supporting data
+   → Any regime CHANGE since last week?
+   → Implications for Mode 1 factor weights and Mode 2 position sizing
+   
+   Portfolio review:
+   → Which existing positions should be closed? (time limit, thesis invalidated)
+   → Which are working and should be held?
+   → Overall exposure check
+
+3. STRUCTURED OUTPUT:
+   → Weekly Research Report (readable, stored, trackable)
+   → Specific recommendations: {ticker, direction, entry zone, stop, target,
+     conviction 1-5, thesis, hold period, position size}
+   → Updated macro regime + confidence level
+
+4. GEORGE REVIEWS & EXECUTES:
+   → Read the report
+   → Challenge assumptions, ask follow-up questions
+   → Approve/reject/modify each recommendation
+   → Execute via dashboard or broker
+```
+
+**Time commitment:** ~2-3 hours per weekend. The analysis is the valuable part — the execution is trivial once the thesis is clear.
+
+---
+
+## Risk Framework for $50K
+
+### Hard Rules (Non-Negotiable)
+
+| Rule | Rationale |
+|------|-----------|
+| Max 5% per position ($2.5K) | No single idea can hurt |
+| Hard stop at -5% per position | Cut losers fast, let winners run |
+| Max 60% deployed at any time | Always 40% cash reserve |
+| No leverage, no options, no shorting | Complexity kills in small accounts |
+| No trading during first month | Paper-test Mode 2 recommendations first |
+
+### Phased Deployment
+
+**Month 1 (May 2026): Paper only.** Run the weekly cycle, generate recommendations, track outcomes on paper. Build confidence (or learn that it doesn't work).
+
+**Months 2-3 (Jun-Jul 2026): Small live.** If paper results show >50% hit rate on PEAD trades, deploy $10K real money. Max 3 positions at a time. The planned property sale hasn't happened yet — preserve capital.
+
+**Months 4-6 (Aug-Oct 2026): Scale if working.** a planned property sale closes. If Mode 2 is generating alpha, scale to $25-30K deployed. If not, stay at $10K or pause.
+
+**Months 7+ (Nov 2026+): Full deployment.** Cash cushion is built. Mode 2 can operate at full $50K allocation. Mode 1 can go live too if paper trading results justify it.
+
+### Capital Allocation (Target State)
+
+| Mode | Capital | Role |
+|------|---------|------|
+| Mode 1 (Structural) | $30K | Steady compounding, automated, lower touch |
+| Mode 2 (Informational) | $20K | Active alpha, weekly analysis, higher touch |
+| Cash reserve | varies | Dry powder for event-driven, never below 40% of Mode 2 |
+
+---
+
+## What We Need to Build
+
+### Phase A: Research Infrastructure (build first, before any real money)
+
+1. **Earnings calendar + transcript pipeline** ✅ BUILT 2026-04-15
+   - Source: Finnhub API (free, EPS surprise + news) + Insider Monkey (free, transcript scraping)
+   - NOT FMP or SEC EDGAR — tested 9 sources, these two are best free combo. See `References/mode2-data-sources-research.md`.
+   - Finnhub: EPS actual vs estimate, surprise %, company news. Free tier: 60 calls/min.
+   - Insider Monkey: Full verbatim transcripts (prepared remarks + Q&A with speaker IDs). Scraped via curl, `<article>` tag parsing, no JS needed.
+   - Alpha Vantage transcript endpoint returns empty arrays on free tier — dead end.
+   - Code: `mode2/earnings.py` — `get_earnings_surprise()`, `scrape_transcript()`, `get_company_news()`
+   - Storage: JSON files in `data/mode2/transcripts/{SYMBOL}_Q{N}_{YEAR}.json`
+   - Transcript URL discovery: web search for Insider Monkey URL, add to `TRANSCRIPT_URLS` dict in `run_analysis.py`
+   - CLI: `uv run python3 -m mode2.run_analysis fetch --symbols JPM,GS,C --quarter 1 --year 2026`
+
+2. **Claude analysis prompts** ✅ BUILT 2026-04-15
+   - PEAD scoring prompt: structured, produces JSON with surprise quality (1-5), guidance direction, management tone, revenue quality, sector context, full trade recommendation. Code: `mode2/pead.py`
+   - Quick analysis prompt: shorter version for in-conversation use
+   - Macro regime prompt: NOT YET BUILT (Research Thread 4)
+   - Portfolio review prompt: NOT YET BUILT (needs open positions first)
+
+3. **Recommendation tracker** ✅ BUILT 2026-04-15
+   - JSONL log: `data/mode2/recommendations.jsonl`
+   - Every recommendation: timestamp, ticker, direction, conviction, entry, stop, target, thesis, key risks
+   - Outcome tracking: actual entry/exit, P&L, hold days, exit reason, thesis validation
+   - Summary stats: hit rate, avg winner/loser, P&L by conviction level
+   - Code: `mode2/tracker.py` — `log_recommendation()`, `close_recommendation()`, `summary_stats()`
+   - CLI: `uv run python3 -m mode2.run_analysis status`
+
+4. **Weekly report generator** — NOT YET BUILT
+   - Produces a readable research report from Claude's analysis
+   - Stored as markdown, versioned, searchable
+   - Tracks conviction accuracy over time (hit rate by conviction level)
+
+### Phase B: Integration
+
+5. **Mode 2 dashboard tab or page**
+   - Current recommendations and their status (open/closed/expired)
+   - Macro regime indicator
+   - Recommendation history with P&L tracking
+   - Hit rate and conviction calibration charts
+
+6. **Alpaca integration for Mode 2**
+   - Separate account or sub-portfolio tracking
+   - Mode 2 positions tagged separately from Mode 1
+   - Risk monitoring (exposure, max loss, position count)
+
+### Phase C: Refinement (after 3+ months of data)
+
+7. **Conviction calibration** — Are 5/5 conviction trades actually better than 3/5? Tune position sizing based on calibration data.
+8. **Sector analysis prompts** — Deeper sector-specific analysis templates for industries George knows well.
+9. **Autoresearch for Mode 2** — Can we automate parts of the weekly analysis? Test whether running Claude on ALL earnings (not just manual picks) finds opportunities humans miss.
+
+---
+
+## The Crypto Angle (Account 4)
+
+Don't sleep on this. Account 4 has been sitting in cash because BTC is below its 200d MA ($95K vs $70K current). But historically:
+- BTC crossed ABOVE 200d MA in Jan 2023 at ~$16K → rose to $73K by Mar 2024 (356%)
+- The strategy sat out ALL of 2022 (100% cash while BTC fell from $47K to $16K)
+- When the filter flips back on, the strategy captures the bulk of the bull run
+
+At $50K real capital, even allocating $5K to crypto momentum could generate significant returns during the next crypto bull cycle. The filter keeps you safe — you're only in when the trend confirms.
+
+**Research question:** Is the BTC 200d MA the right threshold, or should we test other entries (150d MA, 50d cross above 200d, etc.) for earlier entry? Worth backtesting.
+
+---
+
+## What "Dig Dig Dig" Looks Like
+
+This is the research agenda. Each of these needs to be PROVEN before real money:
+
+### Research Thread 1: PEAD Baseline
+- Pull last 4 quarters of earnings (S&P 500)
+- For each: get actual vs estimate, 60-day subsequent return
+- Establish: what does naive PEAD look like? What's the base rate?
+- Then: feed transcripts to Claude, score quality, see if high-quality scores predict stronger drift
+- This is the proof-of-concept before anything else
+
+### Research Thread 2: Claude's Analytical Edge
+- Take 20 earnings from last quarter
+- Have Claude score them blind (no knowledge of subsequent price action)
+- Compare Claude's conviction scores to actual 60-day returns
+- Is there signal? If Claude's 5/5 convictions average +6% and 1/5 average +1%, we have something
+
+### Research Thread 3: Optimal Position Mechanics
+- Entry timing: day-after vs wait-for-pullback vs immediate
+- Stop placement: -3% vs -5% vs -8% (tighter = more stopped out, looser = bigger losers)
+- Exit timing: 30 vs 45 vs 60 vs 90 days
+- Backtest these on historical PEAD data
+
+### Research Thread 4: Macro Regime Validation
+- Can Claude's weekly macro assessment predict sector returns?
+- Take last 12 months of macro data, have Claude assess each week
+- Compare regime calls to actual market behavior
+- Not expecting perfection — just better than random
+
+### Research Thread 5: Crypto Filter Optimization
+- Test BTC 150d, 200d, 250d MA as entry signals
+- Test dual MA (50d crossing above 200d) for confirmation
+- Measure: does earlier entry improve risk-adjusted returns?
+- The 200d is Faber standard but crypto moves faster than equities
+
+---
+
+## Success Criteria
+
+**Paper trading (Month 1):**
+- Generate 15+ PEAD recommendations
+- Track all outcomes
+- Hit rate > 50% (better than coin flip)
+- Average winner > average loser (positive expectancy)
+
+**Small live (Months 2-3):**
+- Real execution matches paper expectations (slippage check)
+- No position loses more than 5%
+- Portfolio positive after 8 weeks
+
+**Full deployment (Months 4+):**
+- Annualized return > 12% (beating SPY is the minimum bar)
+- Max drawdown < -15% (hard ceiling)
+- Sharpe > 1.0 on Mode 2 positions
+- Weekly time commitment sustainable (~2-3 hours)
+
+---
+
+## First Concrete Step
+
+**This week:** Claude analyzes 5-10 earnings from companies that reported this week. Full PEAD analysis — transcript reading, quality scoring, thesis, entry/stop/target. George reviews. We track outcomes for 60 days. No money at risk. Just proving the concept works or learning that it doesn't.
+
+---
+
+## Progress Log
+
+### 2026-04-15: Week 1 — Pipeline built, first analysis complete
+
+**Infrastructure:**
+- Built entire Mode 2 data pipeline in one session: `mode2/earnings.py`, `mode2/pead.py`, `mode2/tracker.py`, `mode2/run_analysis.py`
+- Evaluated 9 data sources (Finnhub, Alpha Vantage, FMP, SEC EDGAR, Insider Monkey, Motley Fool, EarningsCall.biz, API Ninjas, Quartr). Settled on Finnhub + Insider Monkey — $0/month.
+- Full research documented in `References/mode2-data-sources-research.md`
+
+**First PEAD Analysis — Q1 2026 Banks (6 companies):**
+
+| Symbol | Surprise | Direction | Conv | Rationale |
+|---|---|---|---|---|
+| **C** | **+13.3%** | **Long** | **4/5** | Revenue-driven beat across all 5 businesses, sandbagged guidance (13.1% ROTCE vs 10-11% target), Investor Day May catalyst |
+| JPM | +8.0% | Skip | — | G-SIB capital headwind is JPM-specific (+$20B by 2028), negative operating leverage, no guidance raise |
+| BLK | +7.5% | Skip | — | Beat partly acquisition-inflated (HPS/Preqin), mega-cap priced efficiently |
+| GS | +3.3% | Skip | — | Below PEAD threshold, trading-driven seasonality |
+| WFC | +0.1% | Skip | — | In-line, no surprise |
+| JNJ | +0.3% | Skip | — | In-line, no surprise |
+
+**C recommendation:** Entry $131.69, stop $125, target $138 (adjusted from $142 — large-cap drift is 1-3%, not 5-8%). Hold 40 days. Paper only.
+
+**Key learning:** Large-cap PEAD drift is much smaller than the academic literature implies (which skews small-cap). The real hunting ground for PEAD is mid-cap companies with less analyst coverage reporting in weeks 2-4 of earnings season. Mega-cap bank results are a good pipeline test but not the best alpha source.
+
+**Pending:** BAC (+8.6%), MS (+10.9%), PNC (+5.5%) reported same day — transcripts not yet on Insider Monkey. PNC is the most interesting (smallest market cap = less efficient pricing).

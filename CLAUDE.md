@@ -7,6 +7,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 
 ### Key Documents
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
+- `PLAN_MODE2.md` — Two-mode architecture: Mode 1 (structural alpha, existing) + Mode 2 (informational alpha, PEAD + event-driven + macro regime). The strategic plan for compounding $50K over the bridge to 59½.
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `References/` — Original 2020 proposal and Ernie Chan books
 
@@ -101,6 +102,7 @@ A -15% drawdown means something unusual is happening. Rebalancing into more risk
 
 ### Architecture
 ```
+# Mode 1: Factor Trading System
 data/pipeline.py          — yfinance ETF data download & caching
 data/sp500.py             — S&P 500 stock universe + VIX data
 data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping)
@@ -141,7 +143,27 @@ dashboard/               — React + Vite + TradingView Charts
 scripts/start.sh         — Start backend + frontend (recommended)
 scripts/filter_check.py  — Daily filter monitor — auto-rebalances on SPY/BTC filter change
 scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
+
+# Mode 2: PEAD / Informational Alpha
+mode2/earnings.py         — Finnhub EPS data + Insider Monkey transcript scraper + SEC EDGAR
+mode2/pead.py             — PEAD scoring prompt templates (structured JSON + quick analysis)
+mode2/tracker.py          — Recommendation JSONL tracker with outcome logging
+mode2/run_analysis.py     — CLI runner: fetch, summary, analyze, status commands
+data/mode2/transcripts/   — Cached transcript JSON files ({SYMBOL}_Q{N}_{YEAR}.json)
+data/mode2/recommendations.jsonl — Recommendation log with entry/exit/P&L tracking
+data/mode2/reports/       — Weekly markdown research reports
+References/mode2-data-sources-research.md — Full data source evaluation (9 sources tested)
 ```
+
+### Mode 2 Usage
+- **Fetch earnings + transcripts**: `uv run python3 -m mode2.run_analysis fetch --symbols JPM,GS,C --quarter 1 --year 2026`
+- **Show summary**: `uv run python3 -m mode2.run_analysis summary --quarter 1 --year 2026`
+- **Generate analysis prompt**: `uv run python3 -m mode2.run_analysis analyze --symbol JPM`
+- **Tracker status**: `uv run python3 -m mode2.run_analysis status`
+- **Data sources**: Finnhub (free, EPS surprise + news), Insider Monkey (free, transcript scraping), yfinance (prices). See `References/mode2-data-sources-research.md`.
+- **API keys**: `FINNHUB_API_KEY` and `ALPHA_VANTAGE_API_KEY` in `.env`
+- **Transcript URL discovery**: Search `site:insidermonkey.com "{COMPANY}" "Q1 2026 earnings call transcript"`, add URL to `TRANSCRIPT_URLS` dict in `run_analysis.py`
+- **PEAD drift expectations by market cap**: Large-cap 1-3%, mid-cap 3-5%, small-cap 5-8%. Don't set small-cap targets on mega-cap banks.
 
 ### Running the Project
 - **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
@@ -163,27 +185,35 @@ scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
 - **Async endpoints**: All FastAPI `async def` endpoints MUST use `asyncio.to_thread()` for blocking calls (Alpaca API, yfinance downloads, parquet I/O, pandas computations). Calling blocking functions directly freezes the event loop and makes the entire server unresponsive to concurrent requests. This applies to route handlers and scheduled jobs alike.
 
 ### Current Phase & Next Steps
-- Completed: Phase 1-4 (core engine, strategies, dashboard, Alpaca execution), Phase 5 (multi-factor research + 3-account infra), Phase 6 (crypto momentum)
-- **All 4 accounts live on paper**: $400k total deployed across 4 uncorrelated strategies
+
+**Mode 1 (Structural Alpha):** Completed Phases 1-6. All 4 accounts live on Alpaca paper ($400k total), all rebalanced to full exposure 2026-04-14.
   - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
-  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10, first weekly rebalance 2026-03-16 (minor qty adjustments, BF.B pending)
+  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10, weekly rebalance
   - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC
-- **Combined 3-account (equity): 1.59 Sharpe, 16.8% return, -10.2% MaxDD** (vs SPY 0.87 Sharpe, -33.7% MaxDD)
-- **Account 4 (crypto): 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD** — 0.18 SPY correlation, excellent diversifier
-- Dashboard: 5-tab account switcher (Combined / FIRE 0.1 / 0.2 / 0.3 / 0.4), live equity charts, correlation monitor (Combined view), Backtests with grouped strategy panel
-- **Dashboard performance**: All components wrapped with `React.memo`, `useMemo`/`useCallback` throughout, no loading gates on background polls, EquityHistoryChart pre-creates all TradingView series and toggles visibility (no destroy/recreate). See `SDD.md` for patterns.
-- **Data caching**: ETF prices cached to `data/raw/etf_prices.parquet`, SPY to `spy_filter.parquet` — `download_and_cache()` with 16h staleness check. S&P 500, VIX, crypto have their own caches. `execution/rebalance.py` uses uncached `download_prices()` for fresh live data.
-- **Performance tracking**: Daily equity snapshots in parquet, Alpaca backfill on startup (background thread, batch I/O), live equity curves in dashboard
-- **Correlation monitoring**: Rolling 21-day pairwise correlation (6 pairs), matrix + rolling chart, alert at 0.80 threshold, confidence badges
-- **Automated trading**: APScheduler runs daily crypto rebalance at 00:05 UTC inside FastAPI lifespan
-- **Circuit breaker monitoring**: RiskStatusPanel polls `/api/portfolio/risk` every 30s, shows green bar when healthy, red alert with reset buttons when halted
-- **Regime filter status**: FilterStatusBanner shows SPY price vs 200d MA (accounts 1-3) and BTC price vs 200d MA (account 4), color-coded green/amber/red
-- **Rebalance UI**: RebalancePanel with preview → confirm → execute flow, action-classified order table (new/increase/decrease/exit with color-coded badges, current→target quantities, dollar impact), missing price warnings, inline execution errors, SPY/BTC filter warnings, handles 409 (concurrent) and 403 (circuit breaker) errors
-- **Ticker mapping**: yfinance uses hyphens (BF-B, BRK-B), Alpaca uses dots (BF.B, BRK.B) — `to_alpaca_equity_symbol()` in `execution/rebalance.py` converts at signal generation time
-- **Rebalance history**: RebalanceHistory shows past rebalance events with expandable per-order details, source badges, filter badges
-- **Execution safety**: Per-account async locks (409 on concurrent rebalance) + cross-process file locks (`fcntl.flock`) for filter monitor coordination, circuit breaker persistence to disk, structured JSONL rebalance audit trail, retry logic on scheduled jobs
-- **Filter monitor**: `scripts/filter_check.py` runs daily at 4:30 PM ET via macOS launchd (no server needed). Auto-rebalances when SPY/BTC filter flips. State in `data/risk_state/filter_state.json`, logs with `source="filter_monitor"`. Dashboard shows monitor status in FilterStatusBanner.
-- Rebalance flow: `POST /api/orders/rebalance/preview?account=N&strategy_id=X` → review → `POST /api/orders/rebalance/execute?account=N&strategy_id=X`
-- **Snapshot data quality**: Alpaca backfill writes `NaN` for cash/positions (not available from history API). Live snapshots have real values. Don't treat NaN as zero.
-- Next: Rebalance markers on equity charts, reconciliation, walk-forward validation, research roadmap (graduated exposure, VIX confirmation, tactical overlays, concentration), track paper trading 3+ months before live money
+  - Combined 3-account (equity): 1.59 Sharpe, 16.8% return, -10.2% MaxDD
+  - Account 4 (crypto): 1.62 Sharpe, 33.2% CAGR, -23.5% MaxDD, 0.18 SPY correlation
+
+**Mode 2 (Informational Alpha):** Phase A in progress — research infrastructure built, first weekly analysis running.
+  - **Built 2026-04-15**: PEAD data pipeline (`mode2/`), transcript scraper, scoring prompts, recommendation tracker
+  - **Data sources**: Finnhub (EPS surprise, free), Insider Monkey (transcripts, free scraping), yfinance (prices)
+  - **Week 1 analysis (2026-04-15)**: 6 companies analyzed (JPM, GS, C, WFC, BLK, JNJ), 1 long recommendation (C, conviction 4/5), 5 skips. BAC (+8.6%), MS (+10.9%), PNC (+5.5%) reported same day — transcripts pending.
+  - **Paper tracking**: C long at $131.69, stop $125, target $138, 40-day hold. All paper — no real money until Month 2 (June) per PLAN_MODE2.md.
+  - **Key learning**: Large-cap PEAD drift is 1-3% (not 5-8% as in academic literature which skews small-cap). Best PEAD opportunities will be mid-caps with less analyst coverage in weeks 2-4 of earnings season.
+
+**Dashboard infrastructure** (unchanged from Mode 1 build):
+- 5-tab account switcher, live equity charts, correlation monitor, Backtests with grouped strategy panel
+- All components `React.memo` optimized, no loading gates on background polls
+- Data caching: ETF/SPY/S&P500/VIX/crypto parquets with staleness checks
+- Daily equity snapshots, Alpaca backfill, circuit breaker monitoring, filter status
+- Rebalance UI: preview → confirm → execute, action-classified orders, per-account locks
+- Filter monitor: `scripts/filter_check.py` via launchd at 4:30 PM ET daily
+- Ticker mapping: yfinance hyphens → Alpaca dots via `to_alpaca_equity_symbol()`
+- Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
+
+**Next steps:**
+- Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season
+- Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`)
+- Mode 2: Track C recommendation for 40 days (check price by 2026-05-25)
+- Mode 1: Investigate Account 1 & 3 correlation (0.87 live vs 0.56 backtest)
+- Mode 1: Rebalance markers on equity charts, reconciliation, walk-forward validation
