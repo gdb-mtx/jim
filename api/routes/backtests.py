@@ -99,7 +99,10 @@ async def run_backtest(
                 returns = returns.loc[non_zero.index[0]:]
 
         # Build equity curve (rebased to $10k from active start)
-        equity = (1 + returns).cumprod() * 10000
+        # Prepend a 0 return so the curve starts at exactly $10,000
+        base_return = pd.Series([0.0], index=[returns.index[0] - pd.Timedelta(days=1)])
+        equity_returns = pd.concat([base_return, returns])
+        equity = (1 + equity_returns).cumprod() * 10000
         equity_data = [
             {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
             for d, v in zip(equity.index, equity.values)
@@ -116,7 +119,10 @@ async def run_backtest(
         first_date = returns.index[0]
         last_date = returns.index[-1]
         spy_aligned = spy_returns.loc[first_date:last_date]
-        spy_equity = (1 + spy_aligned).cumprod() * 10000
+        # Prepend 0 return so SPY also starts at exactly $10,000
+        spy_base = pd.Series([0.0], index=[spy_aligned.index[0] - pd.Timedelta(days=1)])
+        spy_all = pd.concat([spy_base, spy_aligned])
+        spy_equity = (1 + spy_all).cumprod() * 10000
         spy_data = [
             {"time": d.strftime("%Y-%m-%d"), "value": round(v, 2)}
             for d, v in zip(spy_equity.index, spy_equity.values)
