@@ -25,7 +25,7 @@ Uncorrelated factor diversification across 4 Alpaca paper accounts ($100k each):
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 3 of 9 coins by 21-day momentum, BTC 200d MA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 150d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. (Optimized from top-3/200d on 2026-04-15 via `mode2/crypto_autoresearch.py`: Sharpe 1.56→2.01, MaxDD -23.5%→-14.1%)
 
 Cross-account correlations: 0.56-0.66 equity pairs, 0.12-0.18 crypto-equity pairs
 Combined 3-account (equity): **1.59 Sharpe, 16.8% return, -10.2% MaxDD**
@@ -64,7 +64,7 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 - **Crypto Universe**: 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP)
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007)
-- **BTC 200-day MA trend filter**: Binary 100% cash when BTC < 200d MA (sat out all of 2022)
+- **BTC 150-day SMA trend filter**: Binary 100% cash when BTC < 150d SMA (sat out all of 2022). Optimized from 200d — crypto cycles faster than equities.
 - **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 + Account 4, +0.1-0.3 Sharpe improvement
 - **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period

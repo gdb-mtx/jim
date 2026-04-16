@@ -196,7 +196,8 @@ export interface RebalanceHistoryEntry {
 // Regime filter status
 export interface FilterInfo {
   price: number;
-  ma_200: number;
+  ma_200?: number; // SPY uses 200d MA
+  ma_150?: number; // BTC uses 150d MA (optimized from 200d)
   above_ma: boolean;
   filter_scalar: number;
   error?: string;
@@ -213,7 +214,7 @@ export interface FilterMonitorState {
   spy_price: number;
   spy_ma200: number;
   btc_price: number;
-  btc_ma200: number;
+  btc_ma150: number;
   last_checked: string;
   last_spy_change: string | null;
   last_btc_change: string | null;

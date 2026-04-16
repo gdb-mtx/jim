@@ -346,7 +346,7 @@ async def filter_status():
 
         try:
             btc_prices = download_btc_prices()
-            btc_ma = btc_prices.rolling(200, min_periods=1).mean()
+            btc_ma = btc_prices.rolling(150, min_periods=1).mean()
             btc_ma_val = float(btc_ma.iloc[-1])
 
             # Use Alpaca real-time price instead of cached yfinance close
@@ -358,7 +358,7 @@ async def filter_status():
 
             result["btc"] = {
                 "price": round(btc_price, 2),
-                "ma_200": round(btc_ma_val, 2),
+                "ma_150": round(btc_ma_val, 2),
                 "above_ma": btc_price > btc_ma_val,
                 "filter_scalar": 1.0 if btc_price > btc_ma_val else 0.0,
             }

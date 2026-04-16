@@ -101,11 +101,13 @@ PORTFOLIOS = {
         "spy_filter": True,
     },
     # --- Account 4: Crypto Momentum ---
+    # BTC filter is built into CryptoMomentum strategy (150d SMA, optimized 2026-04-15).
+    # Don't apply a second filter at the portfolio level.
     "crypto_momentum_filtered": {
         "name": "Crypto Momentum + BTC Filter",
         "weights": {"crypto_momentum": 1.0},
         "spy_filter": False,
-        "btc_filter": True,
+        "btc_filter": False,
         "vol_scaling": True,
         "vol_scaling_params": {
             "vol_target": 0.15,
@@ -204,11 +206,12 @@ def compute_spy_trend_filter(
 
 def compute_btc_trend_filter(
     start: str = "2018-01-01",
-    ma_period: int = 200,
+    ma_period: int = 150,
     live_price: float | None = None,
 ) -> pd.Series:
     """Compute BTC trend filter: 1.0 when above MA, 0.0 when below.
 
+    Uses 150d SMA (optimized from 200d — crypto cycles faster than equities).
     Unlike the SPY filter (which reduces to 0.5), crypto bear markets are
     severe enough to warrant full exit — binary 1.0 or 0.0.
 

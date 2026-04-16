@@ -110,7 +110,7 @@ export default memo(function FilterStatusBanner({
               {formatPrice(btc.price)}
             </span>
             {" / "}
-            <span className="tabular-nums">{formatPrice(btc.ma_200)}</span>
+            <span className="tabular-nums">{formatPrice(btc.ma_150 ?? btc.ma_200)}</span>
             {" MA "}
             {btc.above_ma ? (
               <span className="text-[#00d4aa]">— strategy active</span>
