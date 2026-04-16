@@ -31,6 +31,7 @@ export default function PortfolioChart({ data, spyData, title = "Equity Curve" }
       height: 400,
       timeScale: {
         borderColor: "#2a2a3e",
+        minBarSpacing: 0.1,
       },
       rightPriceScale: {
         borderColor: "#2a2a3e",
@@ -39,7 +40,7 @@ export default function PortfolioChart({ data, spyData, title = "Equity Curve" }
         horzLine: { color: "#4d8eff44" },
         vertLine: { color: "#4d8eff44" },
       },
-      handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: true },
     });
 
