@@ -225,16 +225,26 @@ EVERY WEEKEND (George + Claude):
 
 ---
 
-## The Crypto Angle (Account 4)
+## The Crypto Angle (Account 4) — OPTIMIZED 2026-04-15
 
-Don't sleep on this. Account 4 has been sitting in cash because BTC is below its 200d MA ($95K vs $70K current). But historically:
-- BTC crossed ABOVE 200d MA in Jan 2023 at ~$16K → rose to $73K by Mar 2024 (356%)
+Account 4 is sitting in cash because BTC is below its 150d SMA. But historically:
+- BTC crossed ABOVE 150d SMA in Jan 2023 at ~$16K → rose to $73K by Mar 2024 (356%)
 - The strategy sat out ALL of 2022 (100% cash while BTC fell from $47K to $16K)
 - When the filter flips back on, the strategy captures the bulk of the bull run
 
-At $50K real capital, even allocating $5K to crypto momentum could generate significant returns during the next crypto bull cycle. The filter keeps you safe — you're only in when the trend confirms.
+**Research Thread 5 completed:** Comprehensive parameter sweep across 22 filter configurations + 6 strategy dimensions. Results:
 
-**Research question:** Is the BTC 200d MA the right threshold, or should we test other entries (150d MA, 50d cross above 200d, etc.) for earlier entry? Worth backtesting.
+| Parameter | Old | New | Impact |
+|---|---|---|---|
+| BTC trend filter | 200d SMA | **150d SMA** | +0.20 Sharpe (crypto cycles faster than equities) |
+| Top N coins | 3 | **2** | +0.25 Sharpe (more concentrated momentum) |
+| Lookback | 21d | 21d | Already optimal |
+| Rebalance | Daily | Daily | Already optimal (3d marginal improvement not worth complexity) |
+| Vol target | 15% | 15% | Best risk-adjusted (no vol-scaling has higher Sharpe but -51% MaxDD) |
+
+**Combined result: Sharpe 1.56 → 2.01, CAGR 34.5% → 45.6%, MaxDD -23.5% → -14.1%, Calmar 1.47 → 3.24**
+
+Strategy updated in code and deployed. See `mode2/crypto_filter_backtest.py` and `mode2/crypto_autoresearch.py` for full results.
 
 ---
 
@@ -242,36 +252,43 @@ At $50K real capital, even allocating $5K to crypto momentum could generate sign
 
 This is the research agenda. Each of these needs to be PROVEN before real money:
 
-### Research Thread 1: PEAD Baseline
-- Pull last 4 quarters of earnings (S&P 500)
-- For each: get actual vs estimate, 60-day subsequent return
-- Establish: what does naive PEAD look like? What's the base rate?
-- Then: feed transcripts to Claude, score quality, see if high-quality scores predict stronger drift
-- This is the proof-of-concept before anything else
+### Research Thread 1: PEAD Baseline ✅ COMPLETED 2026-04-15
+- Backtested 14,366 earnings events across S&P 500, S&P 400 MidCap, S&P 600 SmallCap
+- Code: `mode2/pead_backtest.py`, results in `data/mode2/pead_backtest_report.json`
+- **Finding: Naive PEAD is too thin to be a standalone strategy.** Q5-Q1 spread exists (+1.73% at 60d market-adjusted for S&P 500) but absolute returns for top-quintile beats barely exceed SPY (+0.36%).
+- Mid-cap and small-cap PEAD is WORSE, not better — structural underperformance vs SPY in 2024-2026 mega-cap regime dominates.
+- "Confirmed quality" beats (big surprise + positive gap) in large-cap is the only viable segment (+1.60% excess).
+- EPS surprise magnitude alone is NOT predictive — biggest surprises actually lose money. Quality scoring matters more than size of beat.
+- **Implication for Mode 2:** PEAD should be a secondary filter, not the primary alpha source. Event-driven + macro regime should carry more weight. Claude's value is in quality discrimination, not systematic PEAD harvesting.
 
 ### Research Thread 2: Claude's Analytical Edge
 - Take 20 earnings from last quarter
 - Have Claude score them blind (no knowledge of subsequent price action)
 - Compare Claude's conviction scores to actual 60-day returns
 - Is there signal? If Claude's 5/5 convictions average +6% and 1/5 average +1%, we have something
+- **Status:** Deprioritized — base PEAD signal too thin on S&P 500. More valuable to test on mid-caps or in combination with event-driven signals.
 
 ### Research Thread 3: Optimal Position Mechanics
 - Entry timing: day-after vs wait-for-pullback vs immediate
 - Stop placement: -3% vs -5% vs -8% (tighter = more stopped out, looser = bigger losers)
 - Exit timing: 30 vs 45 vs 60 vs 90 days
 - Backtest these on historical PEAD data
+- **Status:** Deprioritized — depends on finding a viable PEAD universe first.
 
 ### Research Thread 4: Macro Regime Validation
 - Can Claude's weekly macro assessment predict sector returns?
 - Take last 12 months of macro data, have Claude assess each week
 - Compare regime calls to actual market behavior
 - Not expecting perfection — just better than random
+- **Status:** Next priority for Mode 2 research. Independent of PEAD, informs both modes.
 
-### Research Thread 5: Crypto Filter Optimization
-- Test BTC 150d, 200d, 250d MA as entry signals
-- Test dual MA (50d crossing above 200d) for confirmation
-- Measure: does earlier entry improve risk-adjusted returns?
-- The 200d is Faber standard but crypto moves faster than equities
+### Research Thread 5: Crypto Filter Optimization ✅ COMPLETED 2026-04-15
+- Tested 22 filter configs (SMA/EMA periods, dual MA crossover, hysteresis bands) + full 6-dimension parameter sweep (lookback, top_n, rebalance freq, vol target, momentum type)
+- Code: `mode2/crypto_filter_backtest.py`, `mode2/crypto_autoresearch.py`
+- **Finding: 150d SMA + top 2 coins is optimal.** Sharpe 1.56 → 2.01, CAGR +11%, MaxDD improved by 9.4%.
+- Crypto cycles are faster than equities — 200d (Faber standard) is too slow.
+- Longer filters (250d, 300d) are worse than no filter at all.
+- Strategy updated and deployed to Account 4.
 
 ---
 
@@ -327,3 +344,21 @@ This is the research agenda. Each of these needs to be PROVEN before real money:
 **Key learning:** Large-cap PEAD drift is much smaller than the academic literature implies (which skews small-cap). The real hunting ground for PEAD is mid-cap companies with less analyst coverage reporting in weeks 2-4 of earnings season. Mega-cap bank results are a good pipeline test but not the best alpha source.
 
 **Pending:** BAC (+8.6%), MS (+10.9%), PNC (+5.5%) reported same day — transcripts not yet on Insider Monkey. PNC is the most interesting (smallest market cap = less efficient pricing).
+
+### 2026-04-15: Research Threads 1 & 5 — PEAD is thin, Crypto is gold
+
+**Research Thread 1 — PEAD Baseline (completed):**
+- Backtested 14,366 earnings events across S&P 500 / 400 MidCap / 600 SmallCap
+- Naive PEAD is not a viable standalone strategy on any universe in 2024-2026
+- Only "confirmed quality beats" in large-cap shows modest alpha (+1.60% over 60d)
+- Mid/small-cap PEAD is WORSE — mega-cap regime bias means everything outside S&P 500 underperforms
+- Key insight: EPS surprise magnitude alone doesn't predict drift. The biggest surprises lose money. Quality scoring (what Claude would do) matters, but the base signal is too thin to build a strategy on.
+- **Decision: Shift Mode 2 focus toward event-driven + macro regime, keep PEAD as a secondary filter only**
+
+**Research Thread 5 — Crypto Filter Optimization (completed):**
+- Comprehensive sweep: 22 filter configs + 6-dimension autoresearch (lookback, top_n, rebalance, vol-target, momentum type)
+- Winner: SMA-150 + top 2 coins. Sharpe 1.56 → 2.01, CAGR 34.5% → 45.6%, MaxDD -23.5% → -14.1%
+- 150d SMA gets into bull markets earlier. Top 2 concentrates on strongest momentum.
+- Strategy updated and deployed to Account 4 (still in cash — BTC below 150d SMA)
+
+**Dashboard fixes:** Backtest chart fitContent fixed (minBarSpacing for crypto's 7-day/week data), horizontal scroll enabled, warmup trimming applied to all strategies, both equity lines start at $10k.
