@@ -93,10 +93,11 @@ async def run_backtest(
             strategy, returns = _run_strategy(strategy_id, start, end)
             strategy_name = strategy.name
 
-            # Trim warmup period: find first date with non-zero returns
-            non_zero = returns[returns != 0]
-            if len(non_zero) > 0:
-                returns = returns.loc[non_zero.index[0]:]
+        # Trim warmup period: find first date with non-zero returns
+        # (applies to all strategies — removes MA warmup, data gaps, etc.)
+        non_zero = returns[returns != 0]
+        if len(non_zero) > 0:
+            returns = returns.loc[non_zero.index[0]:]
 
         # Build equity curve (rebased to $10k from active start)
         # Prepend a 0 return so the curve starts at exactly $10,000
