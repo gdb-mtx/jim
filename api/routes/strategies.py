@@ -39,6 +39,8 @@ CRYPTO_STRATEGY_CLASSES = [
     ("crypto_momentum", CryptoMomentum),
 ]
 
+CRYPTO_STRATEGY_CLASSES_IDS = {sid for sid, _ in CRYPTO_STRATEGY_CLASSES}
+
 _cached_metrics: list[dict] | None = None
 
 
@@ -129,7 +131,10 @@ async def list_strategies():
         try:
             for portfolio_id, config in PORTFOLIOS.items():
                 name, returns = run_portfolio(portfolio_id, start="2010-01-01")
-                report = full_report(returns, name=name)
+                # Crypto portfolios trade 24/7 (365 periods/year)
+                is_crypto = any(sid in CRYPTO_STRATEGY_CLASSES_IDS for sid in config["weights"])
+                periods = 365 if is_crypto else 252
+                report = full_report(returns, name=name, periods_per_year=periods)
                 results.append({
                     "name": name,
                     "id": portfolio_id,
