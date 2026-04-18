@@ -1,0 +1,98 @@
+{
+  "per_date": [
+    {
+      "date": "2025-12-01",
+      "n_scored": 28,
+      "n_dropped_no_transcript": 2,
+      "port_m_30d": 0.04183562361517335,
+      "port_c_30d": 0.011003698491749647,
+      "excess_c_vs_m": -0.030831925123423705,
+      "spy_30d": 0.005387531501408471,
+      "port_m_vs_spy": 0.03644809211376488,
+      "port_c_vs_spy": 0.005616166990341176,
+      "added_by_claude": [
+        "DELL",
+        "GOOG",
+        "GOOGL",
+        "NRG",
+        "NVDA"
+      ],
+      "dropped_by_claude": [
+        "ANET",
+        "HII",
+        "MPWR",
+        "NEM",
+        "WBD"
+      ]
+    },
+    {
+      "date": "2026-01-05",
+      "n_scored": 26,
+      "n_dropped_no_transcript": 4,
+      "port_m_30d": 0.014369963105263202,
+      "port_c_30d": 0.02124072776559501,
+      "excess_c_vs_m": 0.006870764660331806,
+      "spy_30d": -0.0022247207329840757,
+      "port_m_vs_spy": 0.016594683838247276,
+      "port_c_vs_spy": 0.023465448498579084,
+      "added_by_claude": [
+        "GOOG"
+      ],
+      "dropped_by_claude": [
+        "WBD"
+      ]
+    },
+    {
+      "date": "2026-02-02",
+      "n_scored": 26,
+      "n_dropped_no_transcript": 4,
+      "port_m_30d": -0.002322564815449361,
+      "port_c_30d": -0.03272569324792643,
+      "excess_c_vs_m": -0.03040312843247707,
+      "spy_30d": -0.014782664408725998,
+      "port_m_vs_spy": 0.012460099593276638,
+      "port_c_vs_spy": -0.01794302883920043,
+      "added_by_claude": [
+        "AVGO",
+        "EXPE",
+        "GOOG"
+      ],
+      "dropped_by_claude": [
+        "ALB",
+        "NEM",
+        "WBD"
+      ]
+    },
+    {
+      "date": "2026-03-02",
+      "n_scored": 26,
+      "n_dropped_no_transcript": 4,
+      "port_m_30d": 0.0022275136214493876,
+      "port_c_30d": -0.010771552252028726,
+      "excess_c_vs_m": -0.012999065873478113,
+      "spy_30d": -0.04276139627724318,
+      "port_m_vs_spy": 0.044988909898692565,
+      "port_c_vs_spy": 0.03198984402521445,
+      "added_by_claude": [
+        "APH",
+        "CAT",
+        "HII",
+        "IVZ"
+      ],
+      "dropped_by_claude": [
+        "ALB",
+        "INTC",
+        "NEM",
+        "WBD"
+      ]
+    }
+  ],
+  "summary": {
+    "avg_port_m_30d": 0.014027633881609144,
+    "avg_port_c_30d": -0.002813204810652626,
+    "avg_excess": -0.016840838692261773,
+    "avg_spy_30d": -0.013595312479386196,
+    "score_return_correlation": 0.07013922414162276,
+    "n_months": 4
+  }
+}
