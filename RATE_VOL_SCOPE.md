@@ -2,7 +2,9 @@
 
 **Goal:** Build a new Account 5 candidate that exploits rate volatility dislocations using the Nagel liquidity-provision mechanism. Target: OOS CAGR + Calmar that would materially improve the combined portfolio beyond the current 3-account + crypto blend.
 
-**Why this asset class:** high natural vol, no "going to zero" terminal risk, genuinely less crowded than equity vol, and MOVE is at multi-year highs during the current Fed policy regime. Treasury ETFs have clear mean-reversion on the 5-10 day horizon when rate vol is elevated, especially during Fed pivots and policy surprises.
+**Why this asset class:** high natural vol, no "going to zero" terminal risk, genuinely less crowded than equity vol. Treasury ETFs have clear mean-reversion on the 5-10 day horizon when rate vol is elevated, especially during Fed pivots and policy surprises.
+
+**Current regime caveat (2026-04-18):** MOVE closed at 65.70 — near multi-year *lows*, not highs. The 2022-23 hiking-cycle spike (MOVE > 150 sustained) is behind us; the last 6 months have been the quietest rate environment since 2021. **A reversal strategy conditional on elevated MOVE will sit in cash most of the time in the current regime.** That's fine for backtest (2010-2026 covers enough regimes) but materially affects when live signal could be measured — probably only on the next Fed shock or policy-uncertainty spike. Don't be surprised by zero activity in the first 3-6 months of live paper.
 
 ---
 
@@ -28,12 +30,14 @@
 
 **Parameter axes for testing:**
 - TLT lookback: 3, 5, 7, 10 days
-- TLT drop threshold: -2%, -3%, -4%, -5%
-- MOVE threshold: 100, 120, 140, 160
+- TLT drop threshold: **z-score of trailing-60d-returns, not absolute %** (see gotcha #2 below)
+  - Test z ≤ -1.0, -1.5, -2.0
+- MOVE threshold: **percentile of trailing-252d MOVE, not absolute level** (see gotcha #1)
+  - Test 70th, 80th, 90th percentile
 - Hold period: 5, 10, 15 days
-- MOVE exit: max or normalize under 80
+- MOVE exit: price recovers to prior peak OR MOVE falls below 50th percentile OR max hold period reached
 
-**Expected Sharpe band:** 1.2-2.0 full-cycle (bonds have had big regime shifts; 2022-23 was extraordinary for this mechanism, 2010-2020 was muted).
+**Expected Calmar band:** 0.8-1.5 full-cycle. Lower than Account 3's 2.03 because this is single-instrument timing (no cross-sectional dispersion to exploit — just "when to be long TLT"). Don't anchor expectations on the Account 3 reversal analogy's Calmar; the mechanism is the same but the vehicle is narrower.
 
 **Why this first:** Cleanest direct analog of a working strategy we already validate cleanly (Account 3). Replaces the equity universe with TLT, keeps the same VIX-method mechanism intact. If the Nagel mechanism works on equities, the same arithmetic should work on bonds — the question is magnitude.
 
@@ -110,10 +114,40 @@ That's not "2.5 Sharpe unicorn" territory, but it's a genuinely diversified 4-st
 
 ---
 
-## Open questions to resolve during implementation
+## Strategy-specific gotchas (must-read before implementation)
 
-1. **Does the Nagel mechanism really work on bonds?** It works on equities because of retail forced sellers during margin calls. Bond market structure is different — most flow is institutional. But 2022's Treasury meltdown showed forced unwinds do happen (basis trades, foreign reserve managers, leveraged relative-value funds). Need to check whether the reversal premium is present or whether bonds just trend.
+Generic "follow the Account 3 pattern" gets ~80% of this right. These are the ~20% where rate-vol diverges and where a naive port of the equity reversal template will produce misleading numbers.
 
-2. **Is 2022-23 a one-off or a durable regime signal?** If MOVE > 120 only happened in 2022-23, the strategy has near-zero activity in other regimes. Walk-forward across 2010-2026 should reveal this. If the strategy only works in 2022-23, it's essentially a bet on a specific Fed cycle repeating — not good.
+**1. MOVE threshold must be percentile-based, not absolute.**
+MOVE is a point-in-time index with regime-dependent range. 2015-2020: MOVE typically 50-90. 2022-23: MOVE 110-180. 2026-04: MOVE back at 65. An absolute threshold like "MOVE > 120" activates in one regime and is silent in another — the strategy is effectively only trained on 2022-23 and that's a confounded backtest. Use a rolling percentile threshold (e.g., MOVE > 80th percentile of trailing 252d).
 
-3. **What's the right signal latency?** MOVE data is delayed 1 day on most feeds. Make sure the backtest uses MOVE lagged by 1 day for honest signal timing.
+**2. TLT return threshold must be z-scored, not absolute.**
+Same issue. TLT annualized vol was ~13% in 2015-2020 and ~22% in 2022-23. A -3% daily drop was a tail event in the first regime and routine in the second. Using absolute `-3%` means the strategy mostly triggers in high-vol regimes only. Use z-score of trailing-60d returns instead.
+
+**3. MOVE must be lagged 1 day in the backtest.**
+MOVE is published end-of-day. At time t's open, you only have MOVE.shift(1). Backtest must use `move_aligned = move.shift(1).reindex(tlt.index).ffill()` before filtering. Easy to get this wrong by using same-day MOVE — inflates backtest Sharpe by ~0.2-0.4.
+
+**4. Verify TLT is distribution-adjusted.**
+TLT pays ~4%/yr in distributions. yfinance with `auto_adjust=True` should handle this but verify — if distributions aren't adjusted in, the strategy's TLT returns will look 4%/yr worse than reality.
+
+**5. Single-instrument, not cross-sectional.**
+Account 3 reversal ranks 450 stocks and holds the bottom decile — variance of the strategy is low because it's a diversified basket. Rate-vol is just timed long-TLT. Each trade is idiosyncratic to a single event. Expected Calmar band (0.8-1.5) reflects this; don't anchor on Account 3's 2.03.
+
+**6. Diversification thesis is correlation-of-returns, not correlation-of-vols.**
+MOVE and VIX both spike in crises, so if we measured "correlation of MOVE to VIX" it would be high, suggesting bond and equity vol are correlated. But what matters for portfolio fit is correlation of TLT-strategy returns to equity-strategy returns — and those can be near-zero even when the underlying vol regimes co-move. Verify directly against A1/A2/A3 return streams after day-1 backtest.
+
+**7. Bond market structure differs from equity reversal mechanism.**
+Nagel's liquidity-provision story is retail forced sellers hitting margin. Bond market is ~95% institutional. The mechanism analog: basis-trade unwinds, foreign reserve manager rebalances, ETF outflow waterfalls. All exist but fire less often and on different triggers. Expect fewer trades per year than Account 3 (maybe 5-15 vs Account 3's 40+), and a more concentrated return distribution.
+
+**8. LQD/HYG as fallback universe.**
+If TLT-only is too narrow (too few trades, too much idiosyncratic single-series noise), LQD (investment-grade corporate) and HYG (high-yield) have rate vol + credit vol, more trades, and a related but distinct premium. Not to test first — keep scope focused — but worth knowing exists if the TLT-only version doesn't clear gates.
+
+---
+
+## Open questions that remain (require the backtest to answer)
+
+1. **Does the Nagel mechanism really work on bonds?** 2022 Treasury meltdown showed forced unwinds happen (basis trades, FX reserve managers, levered RV funds). But walk-forward across 2010-2026 is the honest test — if the reversal premium is only visible in 2022-23, the strategy is really a bet on a specific Fed cycle repeating.
+
+2. **Is 2022-23 a one-off or a durable regime signal?** Related to #1. Specifically: with percentile-based MOVE thresholds (gotcha #1), does the strategy still fire meaningfully in 2010-2020? If it fires 2× more in 2022-23 than other regimes but *still profitable* in calmer regimes, that's fine. If it's profitable only in 2022-23, that's a kill.
+
+3. **What's the activity rate across regimes?** Count the number of trigger days per year across 2010-2026. If the strategy trades <5 times/year in "calm" regimes, it's essentially unobservable live — can't distinguish luck from skill on a 12-24 month live record.
