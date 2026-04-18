@@ -10,10 +10,11 @@ Academic basis:
 - Trend following: Moskowitz, Ooi, Pedersen (2012) "Time Series Momentum"
 - BTC as regime indicator: analogous to SPY trend filter (Faber 2007)
 
-Parameters optimized 2026-04-15 via mode2/crypto_autoresearch.py:
-- 150d SMA filter (was 200d) — gets into bull markets earlier, crypto cycles faster than equities
-- Top 2 coins (was 3) — more concentrated momentum bet improves Sharpe by +0.25
-- Backtest (2018-2026): Sharpe 2.01, CAGR 45.6%, MaxDD -14.1%, Calmar 3.24
+Parameters reverted 2026-04-18 to conservative defaults after VALIDATION_PLAN
+Test 3 found the autoresearch-tuned 150d/top2 config was regime-unstable
+(top-5 configs had 0/5 overlap between 2020-22 and 2023-26 halves).
+Current params: 200d SMA filter, top 3, 21d lookback — the null values
+the autoresearch sweep started from.
 """
 
 import numpy as np
@@ -34,16 +35,20 @@ class CryptoMomentum(BaseStrategy):
     def __init__(
         self,
         lookback_days: int = 21,
-        top_n: int = 2,
+        top_n: int = 3,
         holding_period_days: int = 1,
-        btc_ma_period: int = 150,
+        btc_ma_period: int = 200,
     ):
         """
         Args:
-            lookback_days: Momentum ranking period (21 days)
-            top_n: Number of top coins to hold (2 optimal per autoresearch)
+            lookback_days: Momentum ranking period (21 days — standard)
+            top_n: Number of top coins to hold (3 — conservative default;
+                was 2 per autoresearch sweep but that tuning was regime-unstable)
             holding_period_days: Rebalance frequency (1 = daily)
-            btc_ma_period: BTC moving average period for trend filter (150 optimal)
+            btc_ma_period: BTC moving average period for trend filter (200 —
+                conservative default; was 150 per autoresearch but Test 3 showed
+                top-5 config overlap 0/5 across halves, so reverted to the
+                pre-tuning null value)
         """
         self.lookback_days = lookback_days
         self.top_n = top_n

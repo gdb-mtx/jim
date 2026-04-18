@@ -247,7 +247,11 @@ def test_3_parameter_stability(adapter: AccountAdapter) -> dict:
     top_b = [r["name"] for r in half_b[:5]]
     overlap = set(top_a) & set(top_b)
 
-    production_name = "sma-150/lb21/top2"
+    from strategies.crypto_momentum import CryptoMomentum as _CM
+    _cm = _CM()
+    production_name = (
+        f"sma-{_cm.btc_ma_period}/lb{_cm.lookback_days}/top{_cm.top_n}"
+    )
     prod_rank_a = next((i for i, r in enumerate(half_a) if r["name"] == production_name), -1)
     prod_rank_b = next((i for i, r in enumerate(half_b) if r["name"] == production_name), -1)
 
