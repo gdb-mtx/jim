@@ -49,10 +49,11 @@ def test_fail_status_blocks(tmp_path):
     with patch.object(validation_gate, "STATE_PATH", path):
         r = check(4)
         assert r.allowed is False
-        assert "fail" in r.reason
+        assert "FAILED" in r.reason
 
 
-def test_marginal_status_blocks(tmp_path):
+def test_marginal_status_allows(tmp_path):
+    """MARGINAL is valid for paper — only FAIL and unvalidated block."""
     expires = (date.today() + timedelta(days=30)).isoformat()
     state = {
         "account_1": {
@@ -64,7 +65,7 @@ def test_marginal_status_blocks(tmp_path):
     path = _write_state(tmp_path, state)
     with patch.object(validation_gate, "STATE_PATH", path):
         r = check(1)
-        assert r.allowed is False
+        assert r.allowed is True
 
 
 def test_expired_pass_blocks(tmp_path):

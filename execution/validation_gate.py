@@ -70,7 +70,13 @@ def check(account: int) -> GateResult:
         return GateResult(allowed=override, reason=msg, override_active=override, record=None)
 
     status = record.get("status")
-    if status != "pass":
+    if status == "fail":
+        msg = (
+            f"Account {account} validation FAILED "
+            f"(reason: {record.get('reason', 'n/a')})"
+        )
+        return GateResult(allowed=override, reason=msg, override_active=override, record=record)
+    if status not in ("pass", "marginal"):
         msg = (
             f"Account {account} validation status is {status!r} "
             f"(reason: {record.get('reason', 'n/a')})"
