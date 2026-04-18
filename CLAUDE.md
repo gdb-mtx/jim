@@ -28,7 +28,13 @@ Uncorrelated factor diversification across 4 Alpaca paper accounts ($100k each):
 - **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
 - **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 3 of 9 coins by 21-day momentum, BTC 200d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. **Validation status: PASS** (under CAGR-first framework, 2026-04-18 re-validation). Conservative defaults — the prior 150d/top2 autoresearch tuning was reverted after failing Test 3 under the old Sharpe-first rules. Under CAGR-first: OOS CAGR 32.7%, MaxDD -23.5%, Calmar 1.39, Test 3 production Calmar 3.90/1.02 across halves.
 
-Cross-account correlations: 0.56-0.66 equity pairs, 0.12-0.18 crypto-equity pairs
+Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10, confirmed by live 29-day sample 2026-03-10 → 2026-04-18):
+- A1↔A2: **0.38** (backtest) / 0.00 (live) — genuinely diversified
+- **A1↔A3: 0.88 (backtest) / 0.84 (live) — NOT diversified. A3 is 40% StockMomentum by construction, which overlaps A1 entirely.**
+- A2↔A3: 0.54 (backtest) / -0.03 (live) — moderate
+- A4↔any equity: 0.10-0.19 — genuinely diversified (shows NaN in 29-day live because A4 is all-cash with BTC below its 200d MA)
+
+**Revised diversification thesis:** A2 (trend + low-vol) is the actual diversifier in the 3-account core. A3's contribution is primarily volatility smoothing, not diversification. Testing alternative blend weights: 50% A1 + 50% A2 (drop A3 entirely) gives OOS CAGR +19.7% vs 1/3-each +18.0%, for essentially identical Calmar (2.11 vs 2.12). A3 is costing ~1.7% CAGR for ~0 Calmar benefit. The prior "0.56-0.66 equity pairs" claim in earlier CLAUDE.md was inaccurate — the true correlations have always shown A1-A3 near 0.9. **Open question: retire A3, or redesign it as pure Short-Term Reversal (no SM blend) to lower correlation to A1.**
 
 Combined OOS (2023-01-03 → 2026-04-17, equity calendar):
 - 3-account (core only): **CAGR +18.0%, MaxDD -8.5%, Calmar 2.12** (Sharpe 1.85 informational)
@@ -240,7 +246,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 **Next steps:**
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: a strategy with OOS CAGR and Calmar that meaningfully exceed the existing single-account results (best single is currently Account 1 at 1.89 Calmar, 21% CAGR). Funding-rate carry on perps was explored in conversation but shelved due to infrastructure complexity + exchange risk. Open research vectors remain (`BREAKTHROUGH.md` Candidates B/C, rate vol, commodity vol, narrative-aware crypto).
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
-- Mode 1: Investigate Account 1 & 3 correlation (0.87 live vs 0.56 backtest).
+- Mode 1: **Decide on A3's future.** Correlation analysis (2026-04-18) confirmed A1-A3 correlation is ~0.88 in both backtest and live. The prior "divergence" framing was wrong — the backtest has always predicted this. Options: (a) retire A3 and redeploy its $100K capital to a better diversifier, (b) redesign A3 as pure Short-Term Reversal (0% SM blend) to actually decorrelate from A1, (c) drop A3 weight to 20% in the blend (minor improvement only). Tests show A1+A2 without A3 gives nearly identical Calmar with higher CAGR.
 - Mode 1: Revisit Account 3 — CAGR 14.5% is 0.5pp below the PASS floor. If Combined 3-account benefits from it (and it does — contributes to 2.12 Calmar), consider whether its weight in the blend should be reduced in favor of a higher-CAGR candidate.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
