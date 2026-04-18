@@ -1,8 +1,8 @@
 # Breakthrough Hunt — April 2026
 
-**Status:** Not committed. This is a working document — a handoff from a mobile/web session where the sandbox had no HTTP egress, so the tests couldn't run. Pick this up on the laptop where yfinance, FRED, Finnhub, and Insider Monkey actually work.
+**Status:** Updated 2026-04-18 with test results. Breakthrough #1 was tested and killed. Breakthrough #2 is paused pending validation of the underlying crypto Sharpe (which turned out to be in-sample optimized, not out-of-sample verified). The next concrete work is in `VALIDATION_PLAN.md`.
 
-**Context for a fresh session:** Read `PLAN_MODE2.md` first for the strategic frame. Then `CLAUDE.md` for the current system state. Then this doc for where research goes next.
+**Context for a fresh session:** Read `PLAN_MODE2.md` first for the strategic frame. Then `CLAUDE.md` for the current system state. Then this doc (especially the "Update — 2026-04-18" section below) for what we learned. Then `VALIDATION_PLAN.md` for what we do next.
 
 ---
 
@@ -22,7 +22,47 @@ So: kill the old plan or reframe? Reframe.
 
 ---
 
+## Update — 2026-04-18: What the tests actually said
+
+We ran Breakthrough #1 on 2026-04-17. We then went to run Breakthrough #2 and discovered a bigger problem with the premise.
+
+### Breakthrough #1 result: KILLED.
+
+Test design followed the plan below to the letter. Dec 2025 / Jan / Feb / Mar 2026 monthly rebalances, top-30 S&P 500 momentum candidates per date, 54 unique symbols, 47 transcripts successfully scraped from Insider Monkey (7 missing — AMAT, GLW, LRCX, LVS, MRNA, APA, C — excluded from both portfolios for fairness). 10 parallel subagents scored each transcript 1-5 on forward conviction using the rubric in this doc, writing to `data/mode2/mode1_filter/scores/group{1..10}.json`.
+
+**Headline result:** Portfolio M (top-15 by momentum) averaged **+1.40%/month**. Portfolio C (top-15 by Claude conviction score) averaged **-0.28%/month**. Excess: **-1.68%/month**. Claude didn't just fail to add alpha — it actively destroyed it.
+
+**Score → 30d return relationship:** correlation **+0.07** (basically zero). 5/5 conviction names hit positive 40% of the time — below the 65% target and below pure momentum's hit rate.
+
+**What Claude got wrong specifically:** every month, Claude swapped out the dirty-momentum names (ANET, HII, NEM, WBD, ALB) and swapped in consensus AI narratives (NVDA, GOOG, GOOGL, DELL, AVGO). Those swaps consistently hurt. Claude's "beat-and-raise + specific forward catalysts" heuristic overweighted names already priced to perfection.
+
+**What this tells us:** pure momentum already encodes most of what transcript-reading would tell you. Claude's qualitative read didn't concentrate alpha — it added consensus bias. The "Claude concentrates existing alpha" thesis is disproven.
+
+Per the decision tree in this doc: **<0.5% excess → kill Mode 2. Redirect to Mode 1 infrastructure.** We got -1.68%, not just below the kill line but deep into negative.
+
+### Breakthrough #2 status: PAUSED (and the reason matters)
+
+Breakthrough #2 was premised on one sentence: *"Account 4 is already the quiet star — Sharpe 2.01, CAGR 45.6%, MaxDD -14.1%."* When we went to test Candidate A (Claude noise filter on top-2 selections), we looked at where that 2.01 came from. It came from `mode2/crypto_autoresearch.py`, which sweeps ~40 parameter configurations (filter type × lookback × top-N × rebalance cadence × vol target × momentum type) on the **full 2018-2026 sample** and picks the winning Sharpe. No train/test split. No walk-forward. No out-of-sample period held back.
+
+`git log -S "walk_forward_analysis"` and `git log -S "full_validation"` both return only the initial commit. `backtesting/validation.py` was built, documented, and never called on any strategy. PLAN.md line 197 explicitly says "No Live Money Without Statistical Validation" with a reject threshold at line 647 — the rule existed, the framework existed, the rule was not enforced.
+
+**This means every Sharpe / CAGR / MaxDD currently in CLAUDE.md is in-sample tuned, not out-of-sample verified.** Running Breakthrough #2 would measure a Sharpe lift on top of a phantom number. Not useful.
+
+### What's next
+
+`VALIDATION_PLAN.md`. Walk-forward + Monte Carlo + parameter-stability tests on all 4 accounts, crypto first (most suspect, shortest history, most tuning). Accept whatever OOS numbers come out. Add an enforcement gate (`data/risk_state/validation_state.json` + `execute_rebalance` check) so this can't happen again. Pre-committed thresholds in the plan — no moving goalposts.
+
+If the crypto Sharpe holds up OOS at >1.3, we have a real anchor and can re-entertain Candidate B (dynamic universe) and Candidate C (macro liquidity overlay) — *neither of which requires Claude*, both of which are standard quant work. Candidate A is dead by the same logic that killed Breakthrough #1: Claude as filter on quant alpha doesn't work.
+
+If the crypto Sharpe collapses OOS, we have a priority-one problem (paper trading on phantom numbers, bridge-plan math based on inflated expected returns) and the whole agenda shifts.
+
+The meta-lesson: we asked "can Claude add alpha on top of Mode 1?" before asking "is the Mode 1 alpha even real?" Both questions had to be answered, but in that order.
+
+---
+
 ## Breakthrough #1: Mode 2 as a Mode 1 filter, not a standalone strategy
+
+**Status: KILLED 2026-04-17.** See Update section above for results. Original reasoning preserved below.
 
 **The reframe in one sentence:** Claude's value isn't finding new alpha — it's **concentrating existing Mode 1 alpha** by vetoing the momentum names where the qualitative read says the ride is over.
 
@@ -69,6 +109,10 @@ So: kill the old plan or reframe? Reframe.
 
 ## Breakthrough #2: Narrative-aware crypto
 
+**Status: PAUSED 2026-04-18.** Premised on the Account 4 Sharpe 2.01 being real. That number is in-sample optimized from a ~40-config parameter sweep with no OOS holdout, so the "ceiling" and "lift from 2.01 → 2.3+" framing below is not currently measurable. Foundation has to be validated (`VALIDATION_PLAN.md`) before any extension test is meaningful. Candidate A (Claude noise filter) is also dead-on-arrival by the same logic that killed Breakthrough #1 — don't build it. Candidates B (dynamic universe) and C (macro liquidity overlay) remain interesting and neither requires Claude, but they wait until the crypto base is OOS-verified.
+
+Original reasoning preserved below.
+
 Account 4 is already the quiet star — **Sharpe 2.01, CAGR 45.6%, MaxDD -14.1%, Calmar 3.24, 0.18 SPY correlation** after the 150d/top-2 optimisation. The rebalance scheduler runs at 00:05 UTC daily. The filter monitor catches BTC cross-backs same-day. This is the cleanest strategy in the whole system.
 
 But there's a ceiling coming: **the 9-coin universe is static, and crypto is the most narrative-driven asset class on Earth.** When the AI narrative hits, top coins rotate to NEAR / TAO / RNDR / FET. When memes hit, WIF / BONK / PEPE. L2 season, DePIN, RWAs, restaking — each lasts 2-6 weeks and doesn't touch the 9-coin majors. A fixed universe silently caps the strategy's Sharpe.
@@ -114,26 +158,19 @@ These all looked attractive but don't clear the bar after the data review:
 
 ---
 
-## Concrete next steps for the laptop session
+## Concrete next steps (updated 2026-04-18)
 
-```bash
-# Step 1 — Breakthrough #1 test (2 days)
-# Build the test harness
-touch mode2/mode1_filter_backtest.py
+Both original tests are now resolved or paused:
 
-# Pull 4 months of Account 1 candidate universes
-# Cache transcripts for ~80 unique symbols
-# Run Claude blind scoring (API or in-conversation)
-# Compute Portfolio M vs Portfolio C 30d returns
-# Decision: go / no-go on Mode 2 as filter concept
+- ~~Step 1 — Breakthrough #1 test~~ **DONE 2026-04-17. Killed.** Artifacts in `data/mode2/mode1_filter/` and `mode2/mode1_filter_*.py`.
+- ~~Step 2 — Breakthrough #2 test~~ **PAUSED.** Premise (crypto Sharpe 2.01) is in-sample tuned. Running this test without first validating the crypto base would measure lift on top of a phantom number.
 
-# Step 2 — Breakthrough #2 test (2 days, only if #1 is go or marginal)
-touch mode2/crypto_noise_filter_backtest.py
+**Actual next step:** `VALIDATION_PLAN.md`. Walk-forward + Monte Carlo + parameter-stability tests across all 4 accounts, crypto first. Pre-committed OOS Sharpe thresholds. Build the enforcement gate so `execute_rebalance` refuses to trade an unvalidated account.
 
-# Pull last 2 years of daily rebalance history
-# Score top-2 selections for noise vs organic
-# Measure Sharpe lift from dropping suspect selections
-```
+After validation completes, come back here and decide which (if any) of the following is still worth building:
+- **Candidate A** — dead (Claude-as-filter thesis is killed).
+- **Candidate B** — dynamic universe. Requires Claude to tag narratives by quarter. Test only after crypto base is OOS-verified AND there's evidence fixed universe is the binding constraint.
+- **Candidate C** — macro liquidity overlay (WALCL + DXY + M2 via FRED). Doesn't require Claude. Straight quant work. Lowest risk path to a Sharpe lift if the crypto base is real.
 
 ### Decision tree after test #1
 
@@ -151,10 +188,12 @@ Portfolio C - Portfolio M < 0.5%          →  KILL Mode 2. Redirect to Mode 1 w
 
 ---
 
-## The meta-point
+## The meta-point (revised 2026-04-18)
 
-We spent 5 weeks proving Mode 2 as originally conceived (standalone PEAD trader) doesn't have enough signal to stand on its own. That's not a failure — that's what the evidence said. The question now is whether Claude's reading capability has **any** commercial application in this system.
+The original meta-point stands: we went into this week to get a real answer on whether Claude's reading capability has any commercial application in this system. We got one. It doesn't, at least not as a single-name filter on momentum candidates. That's a clean negative result in 2 hours of execution — exactly what the doc promised.
 
-The test above answers that in 2 days. If yes, the architecture of the system changes — Mode 2 becomes a filter layer, not a standalone account. If no, we know, and we stop burning time on it. Either way, we come out of this week with a real answer to the bet we placed when we wrote PLAN_MODE2.md.
+But the week's bigger finding was accidental. Pressure-testing Breakthrough #2 surfaced that the entire Mode 1 validation layer was built and never run. The numbers we'd been treating as ground truth (Sharpe 1.38 on Account 1, Sharpe 2.01 on Account 4, Sharpe 1.59 on the combined portfolio) are in-sample tuned and have no out-of-sample verification. That's the real load-bearing problem, and finding it was more valuable than any extension we might have built on top.
 
-That's the breakthrough. Not a new strategy — a clearer reading of where Claude actually adds value in a trading system.
+Revised framing: **Claude's commercial application in this system is not as an alpha source — it's as a discipline layer.** The value in today's work wasn't the filter test itself; it was running the test honestly, pre-committing to thresholds, and accepting a negative result without moving goalposts. That same discipline now has to be applied to the strategies we're already running with real exposure (paper, for now). That's what `VALIDATION_PLAN.md` is for.
+
+Not a new strategy. A clearer reading of what actually matters.
