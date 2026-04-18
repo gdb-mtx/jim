@@ -72,35 +72,96 @@ MARGINAL. CAGR 14.5% is 0.5pp below the 15% PASS floor. Calmar 2.03 is actually 
 
 ---
 
-## Decision 2 — Keep or revert SMA-125/top2 for Account 4
+## Decision 2 — Account 4 portfolio weight (25% vs 40%)
 
-### The change
+### Framing (user directive 2026-04-18)
 
-Built `scripts/crypto_robust_opt.py` that scores crypto configurations by `min(Calmar_half_A, Calmar_half_B)` — explicitly optimizing for regime robustness rather than full-sample peak. Expanded the filter-period grid from the original `{150, 200}` to `{100, 125, 150, 175, 200}`.
+> "For me the question about account4 was more about 25% vs. 40% instead of questioning the results. We will rereview the results but they were so positive that a 25% vs. 40% of portfolio makes more sense than reverting what wasn't as good unless we find a mistake."
 
-**Winner:** SMA-125/lb21/top2. Rank 1 by min-Calmar.
+So the primary decision is **weight allocation**, not keep/revert. The default assumption is that SMA-125/top2 stays in production unless the validation pass turns up a concrete error in the methodology or math. **The real question: how much of the combined book should sit in Account 4?**
 
-### The numbers
+### What the robust-opt change actually did (brief recap)
 
-**Standalone OOS (2023-01 → 2026-03, crypto calendar):**
+Built `scripts/crypto_robust_opt.py` that scores crypto configs by `min(Calmar_half_A, Calmar_half_B)` — optimizing for regime robustness rather than full-sample Sharpe peak. Expanded filter-period grid from `{150, 200}` to `{100, 125, 150, 175, 200}`. Winner SMA-125/top2 (rank 1 by min-Calmar 2.89) was promoted to production.
 
-| Metric | Old (200d/top3) | **New (125d/top2)** | Δ |
+**Standalone OOS scorecard (2023-01 → 2026-03):**
+
+| Metric | Old (200d/top3) | **New (125d/top2)** |
+|---|---|---|
+| CAGR | +32.7% | **+47.1%** |
+| MaxDD | -23.5% | **-11.4%** |
+| Calmar | 1.39 | **4.15** |
+| UPI | 4.27 | 9.02 |
+| Sortino | 1.62 | 2.25 |
+| Bootstrap CAGR p5 | +15.9% | +24.2% |
+| OOS/IS CAGR ratio | 97% | 89% |
+
+Test 3 production Calmar: 2.89 (half A, 2020-22) / 3.10 (half B, 2023-26) — regime-robust. All validation gates pass.
+
+**The validation pass (steps 1-5 below) should confirm this is real. If no error is found, the focus shifts entirely to the weight question.**
+
+### Where "25%" came from and why it's a placeholder
+
+25% was inherited from the original 4-account architecture: "four accounts at $100K each, one of them is crypto." That's a capital-split convention, not a portfolio-theoretic optimum. The validation runner's `portfolio_fit` test defaults to 25% for the same reason — matching the capital split.
+
+None of that is a reason 25% is actually the right weight given the strategy's current OOS scorecard. With Account 4 OOS Calmar 4.15 and ~0.16 correlation to the core, the portfolio math favors a higher weight.
+
+### The numbers across weights
+
+Combined portfolio OOS (2023-01-03 → 2026-03-10, core is 3-account equal-weight blend, crypto is SMA-125/top2):
+
+| Crypto weight | Combined CAGR | Combined MaxDD | Combined Calmar |
 |---|---|---|---|
-| CAGR | +32.7% | **+47.1%** | +14.4pp |
-| MaxDD | -23.5% | -11.4% | +12.1pp (half) |
-| Calmar | 1.39 | **4.15** | +2.76 |
-| UPI | 4.27 | 9.02 | +4.75 |
-| Sortino | 1.62 | 2.25 | +0.63 |
-| Bootstrap CAGR p5 | +15.9% | +24.2% | +8.3pp |
-| Test 3 half-A Calmar | 3.90 | 2.89 | -1.01 |
-| Test 3 half-B Calmar | 1.02 | **3.10** | +2.08 |
-| OOS/IS CAGR ratio | 97% | 89% | -8pp |
+| 10% | +20.8% | -7.3% | 2.84 |
+| 15% | +22.2% | -7.2% | 3.08 |
+| 20% | +23.6% | -7.1% | 3.32 |
+| **25%** | **+25.0%** | **-7.0%** | **3.57** |
+| 30% | +26.4% | -6.9% | 3.83 |
+| 35% | +27.8% | -7.0% | 3.98 |
+| **40%** | **+29.2%** | **-7.1%** | **4.10** |
+| 45% | +30.6% | -7.3% | 4.22 |
+| 50% | +31.9% | -7.4% | 4.34 |
 
-**Portfolio impact** (combined book with crypto at 25% weight):
-- Old: CAGR +21.9%, MaxDD -7.4%, Calmar 2.98
-- New: **CAGR +25.0%, MaxDD -7.0%, Calmar 3.57**
+Observations:
+- **MaxDD is essentially flat across weights** — the crypto drawdowns land on different calendar days than the equity drawdowns most of the time, so increasing crypto weight doesn't materially worsen combined peak-to-trough pain in this sample.
+- **CAGR scales roughly linearly.** +1.4pp CAGR per 5% crypto weight.
+- **Calmar peaks around 45-50%** but continues climbing through 40%.
+- **25% → 40% adds +4.2pp CAGR (+$2.1K/yr on $50K) with effectively identical MaxDD.**
 
-### The code change
+### The core argument FOR 40%
+
+1. **The OOS data says so.** Calmar peaks higher, CAGR scales up, MaxDD doesn't worsen. On the measurable metrics, 40% is strictly dominant over 25% on this sample.
+2. **Account 4 is the highest-CAGR strategy in the system by 2×.** 47% vs 21% for the best equity account. Under-weighting the best strategy is a behavioral bias (home-bias to equities), not a portfolio-theoretic conclusion.
+3. **Bridge-plan math.** The user's target is $50K → whatever compounding at 28%/yr over 3-5 years vs 25%/yr matters materially. 29.2% CAGR over 5 years = $50K → $182K. 25% CAGR = $50K → $152K. Difference is $30K, not rounding.
+4. **The correlation is genuinely low** (0.16-0.19 to the core). Not a disguised equity bet.
+
+### The core argument FOR 25% (status quo)
+
+1. **Historical MaxDD on one sample is not the same as forward MaxDD.** The shallow combined MaxDD is partly luck of calendar alignment between equity and crypto drawdowns. A future episode where both peak together (e.g., synchronized liquidity crisis) would be worse at 40% than 25%.
+2. **Single-strategy concentration risk.** At 40% weight, one strategy can take down 40% of the portfolio in a true tail event. Protocol failure, coin-specific catastrophe, or a sustained crypto winter the BTC filter fails to catch fast enough — all are plausible scenarios. At 25%, same event loses 25%. At 40%, loses 40%. Risk is proportional to weight, reward is also proportional to weight — so in pure expected-value terms this is neutral. But the asymmetry of "survives to compound another day" matters.
+3. **We have 29 days of live data, not 3 years.** The OOS backtest is solid, but the live record for SMA-125/top2 is literally zero days (BTC has been below its 125d MA the entire 29-day live window, so A4 has been in cash). Sizing up before we have any live evidence is aggressive.
+4. **Crypto's historical correlation to equities has been low but not stable.** In 2022 Fed-driven bear markets, BTC-SPY correlation spiked to 0.5+. If we enter a period where that regime returns, the 0.16 correlation assumption understates correlated drawdown risk.
+5. **This is paper trading.** There's no reason to swing to 40% now. Ship 25%, see how SMA-125/top2 performs live for 6-12 months, reconsider up-weighting once the live record agrees with the backtest.
+
+### The compromise: 30% or 35%
+
+Not explored in detail here but reasonable middle positions:
+- 30%: CAGR +26.4%, Calmar 3.83 — captures most of the CAGR lift, stays below the single-strategy "majority of book" threshold
+- 35%: CAGR +27.8%, Calmar 3.98 — further along the curve
+
+### Preliminary validation the fresh session must do first
+
+Before executing any weight decision, verify the robust-opt result. The thesis is sensible but the machinery deserves one clean-eyes check:
+
+1. **Inspect `data/mode2/crypto_robust_opt.parquet`.** Look at the full ranking. Does the min-Calmar surface show a smooth plateau around SMA-{125, 150, 175}/top2, or is SMA-125 a spiky local max? A plateau means robust; a spike means grid-fitting. We claim plateau — verify.
+2. **Check OOS/IS CAGR ratio.** 89% looks fine, but compare to what the old 200/top3 config showed on the same halves (not what the validation runner reported, which used a slightly different train window). Recompute both on identical date ranges.
+3. **Audit the robust-opt script.** Any bugs in the min-Calmar computation? In the train/test split for the final OOS holdout check? Re-read `scripts/crypto_robust_opt.py` line-by-line.
+4. **Sanity-check the portfolio-weight table above.** Re-run `marginal_portfolio_contribution` at 25%, 30%, 35%, 40% independently. Make sure the union-calendar alignment (fixed earlier this session) is behaving correctly — it was buggy initially.
+5. **Specifically: is 40% Calmar 4.10 real or an artifact of the alignment?** MaxDD nearly flat across weights is suspiciously clean. Verify by running the combined portfolio at different weights with a careful look at *when* the drawdowns happen in each.
+
+**If steps 1-5 find no errors, proceed to the weight decision. If they find an error, fix it first, then re-assess.**
+
+### The code change (for reference, not for reversion)
 
 Commit `1baad0d`. Changed `strategies/crypto_momentum.py` defaults:
 ```python
@@ -110,47 +171,31 @@ lookback_days=21, top_n=3, btc_ma_period=200
 lookback_days=21, top_n=2, btc_ma_period=125
 ```
 
-Also updated `scripts/filter_check.py` (monitor MA 200 → 125), `strategies/portfolio.py` `compute_btc_trend_filter` (default 200 → 125), `dashboard/src/types.ts` (`btc_ma200` → `btc_ma125`). Expanded Test 3 sweep grid in `scripts/run_validation.py` to include the 25-unit steps.
+Also: `scripts/filter_check.py` (monitor MA 200 → 125), `strategies/portfolio.py` `compute_btc_trend_filter` (default 200 → 125), `dashboard/src/types.ts` (`btc_ma200` → `btc_ma125`). Expanded Test 3 sweep grid in `scripts/run_validation.py`.
 
-To revert: reset the four default values back to `top_n=3, btc_ma_period=200`. The crypto_robust_opt script stays regardless; it's diagnostic, not load-bearing.
-
-### The core argument FOR the change
-
-1. The old config (200/top3) was explicitly labeled "conservative default — the pre-autoresearch null values" in the docstring. It was chosen to avoid autoresearch overfitting, not because it was optimal.
-2. The new config is selected by an objective that's aligned with the project thesis (CAGR-first, regime-robust). Not a full-sample Sharpe maximization.
-3. SMA-{125, 150, 175}/top2 all rank in the top 3 by min-Calmar (2.89, 2.19, 2.03) — a plateau on the parameter surface, not a single-point lucky hit.
-4. The OOS numbers are transformatively better, not marginally better. CAGR +14pp, MaxDD halved, Calmar 3x.
-
-### The core argument AGAINST the change
-
-1. **The grid expansion itself is a form of search-space fitting.** We didn't have SMA-125 in the original grid. When the CAGR-first framework needed a better answer, we expanded the grid and found a better answer. There's a circularity to that — "we couldn't find a good config, so we looked harder, and we found one." A truly out-of-sample test would hold the grid fixed.
-2. **OOS/IS CAGR ratio dropped from 97% → 89%.** Still passes the 70% floor, but the old config had more consistency between train and test. The new config's train CAGR is +53% vs test +47% — more of a drop-off.
-3. **top_n=2 is more concentrated than top_n=3.** Higher single-coin idiosyncratic risk. If a top-2 coin suffers a protocol failure (exchange hack, depeg, regulatory shutdown), losses are larger than with top-3 diversification.
-4. **Half-A Calmar dropped from 3.90 to 2.89.** We traded some upside in the bull regime for more consistency in the choppy regime. If the next regime looks more like 2020-22 than 2023-26, the old config would have been better.
-5. **This is the second time we've changed crypto defaults in a week.** First was 150/top2 → 200/top3 (reverting tuning). Now 200/top3 → 125/top2 (new tuning). Paper-trading with frequent parameter changes is a red flag — what are we actually validating?
-
-### The sanity-check test
-
-Candidate argument against (1): the robust-opt is selecting for regime robustness, not optimum. Even if SMA-125 is specific to this grid, SMA-{100, 125, 150} all score well. The grid expansion was motivated by the finding that SMA-100 was half-B's top and SMA-150+ was half-A's top — 125 was added as the obvious midpoint to test.
-
-A fresh session should:
-- Look at the `data/mode2/crypto_robust_opt.parquet` file and examine the full ranking, not just rank 1. Does the parameter surface look smooth or spiky?
-- Compare SMA-125/top2 against SMA-150/top2 (rank 2). Is the gap between rank 1 and rank 2 meaningful, or within the noise of a 2×3-year sample?
-- Test SMA-125/top3 and SMA-150/top3 — is top_n=2 actually better than top_n=3 when you control for filter period?
-- Consider: what's the Bayesian prior on "the right filter period for a crypto momentum strategy"? Industry convention clusters around 150-200. 125 is unusual. Is there a mechanism reason 125 should work, or is it just a local peak in a noisy grid?
+**This stays unless step 1-5 find an error.** User was explicit: not a revert question.
 
 ### Questions a fresh session should ask
 
-- Is the grid-expansion-driven discovery of SMA-125 real, or an artifact? Would we find an equally-good config by expanding in some other dimension (lookback period, vol target)?
-- If we held this config for 24 months forward and it underperformed the 200/top3 config, would we know whether to revert? What would the signal be?
-- Should Account 4's allocation weight be explicitly decided now? The 25% number has been a placeholder — with Calmar 4.15 standalone, the portfolio math suggests 30-40% might be justified. But concentration risk in one strategy grows with weight.
-- Is the right response to the robust-opt result: (a) ship SMA-125/top2, (b) stick with SMA-200/top3 and treat robust-opt as diagnostic only, (c) ship SMA-150/top2 as a compromise that matches industry convention but still benefits from the robust-opt insight?
+- Does the validation find any error in the robust-opt? (Step 1-5 above.) If yes — fix first, then revisit. If no — weight question stands.
+- What's the user's actual risk tolerance for a single-strategy drawdown? The OOS data says 40% weight has combined MaxDD -7.1%, but stress-test: what if crypto alone drew down -30% in the next 12 months while equities were flat? At 40% weight that's -12% combined drawdown from the crypto leg alone. At 25%, -7.5%.
+- Is the live gate status the blocker, or the user's psychological tolerance? (The first is mechanical; the second is the real decision variable.)
+- Should we explicitly test 30% and 35% as compromise positions, or is this a binary 25/40 decision in the user's mind?
+
+### How the weight change would actually happen
+
+Account sizing is not a code-level change — it's a capital allocation decision. Currently the 4-account architecture is "$100K each" (25% capital split by default). To shift to 40% A4, we would:
+
+1. Rebalance capital across Alpaca paper accounts (move $60K from equity accounts to A4, or equivalent).
+2. Update CLAUDE.md to reflect new weights.
+3. Update `portfolio_fit` default weight in the validation runner if we want forward validation to use the new weight as baseline.
+4. The strategies themselves don't change — only the capital base each account trades from.
+
+For real money later, this becomes a starting-capital decision at account setup.
 
 ### What the current code does
 
-SMA-125/top2 is the production config. Gate status: PASS. If we don't actively revert, this is what trades when A4 next rebalances (which requires BTC > 125d SMA — currently BTC is below, so A4 is in cash anyway and no trades will happen immediately).
-
-**This gives us time to decide.** The gate allows paper trading, but no real money flows until BTC flips bullish on the 125d filter. Could reasonably defer the decision weeks without operational risk.
+SMA-125/top2 is the production config. Gate status: PASS. Account 4 trades at whatever the user allocates to account 4 — currently $100K paper. The weight question is operational, not code. A4 is presently in cash (BTC below its 125d MA) — buys time to decide without operational pressure.
 
 ---
 
