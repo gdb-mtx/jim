@@ -6,8 +6,11 @@
 We're optimized for a builder with an AI partner. Different constraints, different optimal path. We build fast, iterate fast, and the infrastructure serves the research.
 
 ### Key Documents
+- **`DECISIONS_PENDING.md`** — two open decisions from the 2026-04-18 session (A3 reweight question, A4 SMA-125/top2 promotion). User wants a clean-session reconsideration before committing. **Read this first if joining a fresh session.**
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
 - `PLAN_MODE2.md` — Two-mode architecture: Mode 1 (structural alpha, existing) + Mode 2 (informational alpha, PEAD + event-driven + macro regime). The strategic plan for compounding $50K over the bridge to 59½.
+- `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
+- `RATE_VOL_SCOPE.md` — Account 5 candidate scoping (MOVE-conditional TLT reversal)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `References/` — Original 2020 proposal and Ernie Chan books
 
