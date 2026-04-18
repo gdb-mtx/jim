@@ -411,8 +411,7 @@ def _compute_overall(results: dict) -> dict:
 
     if not t3.get("skip") and not t3.get("pass", True):
         notes.append(f"Test 3 parameter instability: {t3['reason']}")
-        if status == "pass":
-            status = "marginal"
+        status = "fail"
 
     if not t4.get("skip") and t4.get("sharpe_p5") is not None:
         if t4["sharpe_p5"] < BOOTSTRAP_P5_FAIL:
