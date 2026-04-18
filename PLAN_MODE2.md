@@ -290,6 +290,59 @@ This is the research agenda. Each of these needs to be PROVEN before real money:
 - Longer filters (250d, 300d) are worse than no filter at all.
 - Strategy updated and deployed to Account 4.
 
+### Research Thread 6: Leveraged ETF Momentum Rotation ✅ COMPLETED 2026-04-16 — NEGATIVE RESULT
+- Swept 7 dimensions on 12 liquid 3x leveraged ETFs (TQQQ, UPRO, SOXL, TNA, TECL, FAS, ERX, etc.) with 15+ years of history (2010-2026)
+- Code: `mode2/leveraged_etf_autoresearch.py`
+- **Finding: Does NOT match crypto. Can't beat SPY buy-and-hold on risk-adjusted basis.**
+  - Best config (no filter / 63d / top 3 / 10d rebal / 15% vol-target): **Sharpe 0.80, CAGR +11.9%, MaxDD -28.6%**
+  - vs Crypto optimized: Sharpe 2.01, CAGR +45.6%, MaxDD -14.1%
+  - vs SPY buy-and-hold: Sharpe 0.88, CAGR +14.5%, MaxDD -33.7%
+- **Why it fails (unlike crypto):**
+  1. **SPY filter hurts, not helps.** Unlike BTC filter (catches 100% of crypto bear markets), SPY filter kills cross-sector momentum — when SPY drops, ERX or FAS might be surging. No single "regime switch" signal works for the whole leveraged ETF universe.
+  2. **Vol-scaling is mandatory but kills returns.** Without vol-scaling: CAGR +36.7% but MaxDD -75.1% (untradeable). With 15% vol-target: CAGR drops to +11.9% — worse than unlevered SPY.
+  3. **It's leveraged beta, not alpha.** The Sharpe (0.80) is below SPY (0.88). Leverage amplifies returns AND volatility proportionally — no free lunch.
+- **Key insight:** The crypto strategy works because BTC is a uniquely clean regime indicator. When BTC trends down, ALL crypto trends down. There's no equivalent single signal for leveraged equity ETFs — they're diversified across uncorrelated sectors.
+- **Decision: Not worth pursuing. Moving on to Thread 7 (concentrated sector momentum).**
+
+### Research Thread 7: Sector Momentum with Regime-Adaptive Concentration
+- Current cross-sectional momentum (top 6 of 17 ETFs, Sharpe 0.85) is too diversified. Crypto proves concentration (top 2 of 9) dramatically improves Sharpe.
+- Apply concentration + binary filter logic to 11 SPDR sector ETFs (XLK, XLF, XLE, XLV, XLI, XLP, XLU, XLY, XLRE, XLC, XLB)
+- **Dimensions to sweep:** top N (1-4, hypothesis: top 2 wins like crypto), lookback (21-189d), filter (SPY 200d MA binary), vol-scaling, rebalance (weekly/biweekly/monthly)
+- **Key difference from current strategy:** concentration + binary filter — the two changes that took crypto from Sharpe 1.56 to 2.01
+- **Status:** Queued — next after Thread 6
+
+### Research Thread 8: Commodity Momentum Rotation
+- Commodities have the strongest momentum effect of any asset class (Asness, Moskowitz, Pedersen 2013 — "Value and Momentum Everywhere")
+- Universe: 8-12 commodity ETFs — GLD, SLV, USO (oil), UNG (nat gas), DBA (agriculture), CPER (copper), WEAT (wheat), CORN, SOYB, URA (uranium)
+- Low correlation to equities (0.05-0.20) — adds genuine diversification
+- Binary filter: DBC (broad commodity index) above 200d MA, or individual commodity MA
+- **Risk:** Futures-based ETFs have contango drag (roll cost). Need to test only spot-like ETFs or account for roll cost.
+- **Status:** Queued
+
+### Research Thread 9: International/Country Momentum Rotation
+- Country equity indices have persistent momentum (documented since the 1990s). Less crowded than US sector momentum.
+- Universe: 15-20 iShares country ETFs (EWJ, EWZ, EWY, EWT, EWA, EWC, EWG, EWU, EWH, EWS, EPI, INDA, THD, etc.)
+- Country-level returns driven by macro cycles, FX, and policy — all slow-moving, momentum-friendly
+- Binary filter: VT (total world) or ACWI above 200d MA
+- **Status:** Queued
+
+### Research Thread 10: Multi-Asset "All-Weather Momentum"
+- Instead of momentum within a single asset class, run it across ALL asset classes simultaneously — equities, bonds, commodities, currencies, crypto
+- At any given time something is trending. 2022: commodities. 2023-24: crypto + tech. 2025: gold.
+- Universe: ~20 ETFs spanning equities (SPY, QQQ, EFA, EEM), bonds (TLT, IEF, HYG), commodities (GLD, SLV, USO, DBA), currencies (UUP, FXE)
+- Multi-timeframe signal: blend of 21d, 63d, 126d, 252d momentum
+- Cross-asset momentum has the highest Sharpe of any momentum variant (Moskowitz et al. 2012)
+- **Status:** Queued
+
+### Research Thread 11: VIX Term Structure Trading
+- VIX futures term structure (contango vs backwardation) is one of the strongest and most persistent signals in finance
+- Contango ~80% of the time → short-vol strategies earn structural premium. Backwardation signals crisis within days.
+- Products: SVXY (short vol in contango), UVXY (long vol in backwardation), or cash
+- Signal: VIX/VIX3M ratio (>1.0 = backwardation = danger)
+- **Risk:** Vol strategies can blow up spectacularly (Volmageddon Feb 2018). Binary filter MUST work. Test against 2018, 2020, 2022.
+- **Data:** yfinance has ^VIX and ^VIX3M. SVXY/UVXY have limited history (SVXY post-2018 rebalance).
+- **Status:** Queued — needs new signal type (term structure), higher build cost than others
+
 ---
 
 ## Success Criteria
