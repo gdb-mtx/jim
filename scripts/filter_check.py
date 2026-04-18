@@ -34,6 +34,7 @@ from execution.rebalance import (
 )
 from execution.rebalance_log import log_rebalance
 from execution.risk_manager import RiskManager
+from execution.validation_gate import ValidationGateError, require_validated
 from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_filter
 
 # --- Config ---
@@ -128,6 +129,12 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
     if dry_run:
         log.info(f"  Account {account}: DRY RUN — skipping execution")
         return {"account": account, "status": "dry_run", "orders": 0}
+
+    try:
+        require_validated(account)
+    except ValidationGateError as e:
+        log.warning(f"  Account {account}: validation gate blocked — {e}")
+        return {"account": account, "status": "unvalidated", "orders": 0, "reason": str(e)}
 
     try:
         with file_rebalance_lock(account):

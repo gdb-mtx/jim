@@ -11,6 +11,7 @@ from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
 from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
 from execution.rebalance_log import log_rebalance, get_recent_rebalances
 from execution.risk_manager import RiskManager
+from execution.validation_gate import ValidationGateError, require_validated
 from data.snapshots import take_snapshot
 from api.locks import get_rebalance_lock
 
@@ -121,6 +122,11 @@ async def execute_rebalance_endpoint(
     Always preview first with /rebalance/preview.
     Uses per-account lock to prevent concurrent rebalances.
     """
+    try:
+        require_validated(account)
+    except ValidationGateError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
     lock = get_rebalance_lock(account)
     if lock.locked():
         raise HTTPException(

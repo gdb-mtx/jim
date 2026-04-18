@@ -24,6 +24,14 @@ async def _daily_crypto_rebalance():
 
     Retries up to 3 times with exponential backoff on failure.
     """
+    from execution.validation_gate import ValidationGateError, require_validated
+
+    try:
+        require_validated(4)
+    except ValidationGateError as e:
+        log.warning(f"Daily crypto rebalance blocked by validation gate: {e}")
+        return
+
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
