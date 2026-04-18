@@ -247,7 +247,9 @@ def test_3_parameter_stability(adapter: AccountAdapter) -> dict:
 
     sweep: list[Config] = []
     for filter_type, filter_period in [
-        ("sma", 100), ("sma", 150), ("sma", 200), ("ema", 150), ("none", 0)
+        ("sma", 100), ("sma", 125), ("sma", 150), ("sma", 175), ("sma", 200),
+        ("ema", 100), ("ema", 150), ("ema", 200),
+        ("none", 0),
     ]:
         for lookback in [14, 21, 30, 42]:
             for top_n in [1, 2, 3]:

@@ -92,7 +92,7 @@ def compute_filters() -> dict:
     spy_ma = spy_close.rolling(200).mean()
 
     btc_prices = download_btc_prices(start="2018-01-01")
-    btc_ma = btc_prices.rolling(200).mean()
+    btc_ma = btc_prices.rolling(125).mean()
 
     return {
         "spy_scalar": float(spy_filter.iloc[-1]),
@@ -100,7 +100,7 @@ def compute_filters() -> dict:
         "spy_price": round(float(spy_close.iloc[-1]), 2),
         "spy_ma200": round(float(spy_ma.iloc[-1]), 2),
         "btc_price": round(float(btc_prices.iloc[-1]), 2),
-        "btc_ma200": round(float(btc_ma.iloc[-1]), 2),
+        "btc_ma125": round(float(btc_ma.iloc[-1]), 2),
     }
 
 
@@ -227,7 +227,7 @@ def main():
     log.info(
         f"Filters computed in {time.time() - t0:.1f}s: "
         f"SPY={current['spy_scalar']} (${current['spy_price']} vs MA ${current['spy_ma200']}), "
-        f"BTC={current['btc_scalar']} (${current['btc_price']} vs MA ${current['btc_ma200']})"
+        f"BTC={current['btc_scalar']} (${current['btc_price']} vs MA ${current['btc_ma125']})"
     )
 
     # Load previous state
@@ -255,7 +255,7 @@ def main():
             "spy_price": current["spy_price"],
             "spy_ma200": current["spy_ma200"],
             "btc_price": current["btc_price"],
-            "btc_ma200": current["btc_ma200"],
+            "btc_ma125": current["btc_ma125"],
         })
         save_state(prev)
         notify(

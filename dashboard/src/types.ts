@@ -214,7 +214,7 @@ export interface FilterMonitorState {
   spy_price: number;
   spy_ma200: number;
   btc_price: number;
-  btc_ma200: number;
+  btc_ma125: number;
   last_checked: string;
   last_spy_change: string | null;
   last_btc_change: string | null;

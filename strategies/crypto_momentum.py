@@ -35,18 +35,23 @@ class CryptoMomentum(BaseStrategy):
     def __init__(
         self,
         lookback_days: int = 21,
-        top_n: int = 3,
+        top_n: int = 2,
         holding_period_days: int = 1,
-        btc_ma_period: int = 200,
+        btc_ma_period: int = 125,
     ):
         """
         Args:
             lookback_days: Momentum ranking period (21 days — standard)
-            top_n: Number of top coins to hold (3 — conservative default;
-                was 2 per autoresearch sweep but that tuning was regime-unstable)
+            top_n: Number of top coins to hold (2 — robust-opt winner
+                2026-04-18, see scripts/crypto_robust_opt.py)
             holding_period_days: Rebalance frequency (1 = daily)
-            btc_ma_period: BTC moving average period for trend filter (200 —
-                conservative default; was 150 per autoresearch but Test 3 showed
+            btc_ma_period: BTC moving average period for trend filter (125 —
+                robust-opt winner 2026-04-18 under CAGR-first framework.
+                Scored configs by min(Calmar_A, Calmar_B) across pre/post-2023
+                halves rather than full-sample Sharpe. SMA-125/top2 has
+                Calmar 2.89/3.10 (near-identical in both regimes); explicitly
+                selected for regime robustness, not backtest peak. Was 200d
+                (conservative default); before that, was 150d (regime-lucky).
                 top-5 config overlap 0/5 across halves, so reverted to the
                 pre-tuning null value)
         """

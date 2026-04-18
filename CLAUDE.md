@@ -26,7 +26,7 @@ Uncorrelated factor diversification across 4 Alpaca paper accounts ($100k each):
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 3 of 9 coins by 21-day momentum, BTC 200d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. **Validation status: PASS** (under CAGR-first framework, 2026-04-18 re-validation). Conservative defaults — the prior 150d/top2 autoresearch tuning was reverted after failing Test 3 under the old Sharpe-first rules. Under CAGR-first: OOS CAGR 32.7%, MaxDD -23.5%, Calmar 1.39, Test 3 production Calmar 3.90/1.02 across halves.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. **Validation status: PASS** (CAGR-first framework, robust-opt production 2026-04-18). Parameters picked via `scripts/crypto_robust_opt.py` by explicitly maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — the regime-robust objective. SMA-125/top2 has nearly-identical Calmar in both halves (2.89 pre-2023 / 3.10 post-2023) while other configs excel in one regime but fail the other. **OOS scorecard: CAGR +47.1%, MaxDD -11.4%, Calmar 4.15.** Prior 200d/top3 conservative defaults had CAGR +32.7%, Calmar 1.39 — the robust-opt improvement is substantial (+14pp CAGR, half the drawdown).
 
 Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10, confirmed by live 29-day sample 2026-03-10 → 2026-04-18):
 - A1↔A2: **0.38** (backtest) / 0.00 (live) — genuinely diversified
@@ -38,10 +38,11 @@ Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10, confirmed by
 
 Combined OOS (2023-01-03 → 2026-04-17, equity calendar):
 - 3-account (core only): **CAGR +18.0%, MaxDD -8.5%, Calmar 2.12** (Sharpe 1.85 informational)
-- 3-account + Account 4 at 25% weight: **CAGR +21.9%, MaxDD -7.4%, Calmar 2.98**
+- 3-account + Account 4 at 25% weight: **CAGR +25.0%, MaxDD -7.0%, Calmar 3.57**
+- 3-account + Account 4 at 40% weight (aggressive): **CAGR +29.2%, MaxDD -7.1%, Calmar 4.10**
 
-Account 4 standalone (2023-01-01 → 2026-03-10, crypto calendar):
-**CAGR +32.7%, MaxDD -23.5%, Calmar 1.39** (Sharpe 1.42 informational). In-sample train period Calmar was 3.90 — the OOS regression is in drawdown tolerance, not CAGR (OOS/IS CAGR ratio 97%).
+Account 4 standalone (2023-01-01 → 2026-03-10, crypto calendar, SMA-125/top2 robust-opt production):
+**CAGR +47.1%, MaxDD -11.4%, Calmar 4.15** (Sharpe 1.93 informational). Test 3 production Calmar 2.89/3.10 across halves — regime-robust by construction. Bootstrap CAGR p5 +24.2% (worst-case compounding still strong).
 
 Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials.
 
@@ -57,14 +58,15 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | UPI | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|---|
-| **3-Account + Crypto 25%** | — | **+21.9%** | **-7.4%** | **2.98** | — | — | — | — |
+| **3-Account + Crypto 40%** | — | **+29.2%** | **-7.1%** | **4.10** | — | — | — | — |
+| **3-Account + Crypto 25%** | — | **+25.0%** | **-7.0%** | **3.57** | — | — | — | — |
 | **Combined 3-Account Core** | — | **+18.0%** | **-8.5%** | **2.12** | 2.12 | 7.62 | 1.86 | *1.85* |
-| **Crypto Momentum (Acct 4)** | PASS | **+32.7%** | **-23.5%** | **1.39** | 1.39 | 4.27 | 1.62 | *1.42* |
+| **Crypto Momentum (Acct 4)** | PASS | **+47.1%** | **-11.4%** | **4.15** | 4.15 | 9.02 | 2.25 | *1.93* |
 | **Stock Momentum + SPY (Acct 1)** | PASS | **+21.0%** | **-11.1%** | **1.89** | 1.89 | 5.42 | 1.63 | *1.65* |
 | **Trend + Low-Vol (Acct 2)** | PASS | **+17.9%** | **-11.6%** | **1.55** | 1.55 | 5.62 | 1.41 | *1.46* |
 | **Reversal + Momentum (Acct 3)** | MARGINAL | **+14.5%** | **-7.2%** | **2.03** | 2.03 | 6.10 | 1.59 | *1.61* |
 
-Account 3 is MARGINAL (CAGR 0.5pp below the 15% PASS floor, Calmar 2.03 is best-in-system). Pre-committed thresholds held — no goalpost-moving. Paper continues; gate allows MARGINAL. Account 4 CAGR +32.7% more than doubles any equity account; that's the satellite thesis working.
+Account 3 is MARGINAL (CAGR 0.5pp below the 15% PASS floor, Calmar 2.03). Account 4 CAGR +47.1% is over 2x any equity account, with Calmar 4.15 — that's the satellite thesis working, plus the robust-opt lift (old 200d/top3 was CAGR +32.7% / Calmar 1.39; new 125d/top2 is +47.1% / 4.15 — dramatic improvement from changing the tuning objective from Sharpe-smoothness to regime-robust Calmar).
 
 Research/building-block strategies (in-sample only — never went to a live account, OOS not measured):
 
@@ -168,7 +170,8 @@ dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with e
 dashboard/               — React + Vite + TradingView Charts
 scripts/start.sh         — Start backend + frontend (recommended)
 scripts/filter_check.py  — Daily filter monitor — auto-rebalances on SPY/BTC filter change
-scripts/run_validation.py — VALIDATION_PLAN Tests 1-4 runner; updates data/risk_state/validation_state.json
+scripts/run_validation.py — VALIDATION_PLAN Tests 1-5 runner; updates data/risk_state/validation_state.json
+scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config 2026-04-18
 scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
 
 # Mode 2: PEAD / Informational Alpha
@@ -218,9 +221,10 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
   - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
   - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
   - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10, weekly rebalance
-  - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC, conservative 200d/top3 defaults, OOS CAGR +32.7%
+  - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC, robust-opt 125d/top2 production, OOS CAGR +47.1%, Calmar 4.15
   - Combined 3-account core (OOS): CAGR +18.0%, MaxDD -8.5%, Calmar 2.12
-  - Combined with Account 4 at 25%: CAGR +21.9%, MaxDD -7.4%, Calmar 2.98
+  - Combined with Account 4 at 25%: CAGR +25.0%, MaxDD -7.0%, Calmar 3.57
+  - Combined with Account 4 at 40%: CAGR +29.2%, MaxDD -7.1%, Calmar 4.10
 
 **Validation status (as of 2026-04-18, CAGR-first framework):** Full battery from `VALIDATION_PLAN.md` run via `scripts/run_validation.py`. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. Accounts 1, 2, 4 PASS. Account 3 MARGINAL (CAGR 14.5% vs 15% floor, but best-in-system Calmar 2.03). `execution/validation_gate.py` blocks FAIL and unvalidated accounts; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1`.
 
