@@ -434,20 +434,30 @@ def marginal_portfolio_contribution(
     correlation to the core can improve the combined portfolio more
     than a high-standalone-Sharpe candidate that correlates to the core.
 
+    Calendar alignment: reindex both series to the UNION of their dates,
+    filling missing values with 0 (no return on that date — which is what
+    actually happens, e.g. equity on weekends). Then compute the blended
+    daily return. This preserves crypto weekend compounding that a naive
+    inner-join would discard.
+
+    `periods_per_year` is applied to the UNION calendar, so pass the
+    higher frequency (365 for mixed equity+crypto books).
+
     Returns:
         Dict with base/combined metrics and the deltas.
     """
-    aligned = pd.concat([candidate.rename("c"), existing.rename("e")], axis=1).dropna()
-    if aligned.empty:
-        return {"error": "No overlap between candidate and existing returns"}
-    combined = weight * aligned["c"] + (1 - weight) * aligned["e"]
-    base_cagr = annualized_return(aligned["e"], periods_per_year)
-    base_dd = max_drawdown(aligned["e"])
-    base_calmar = calmar_ratio(aligned["e"], periods_per_year)
+    idx = candidate.index.union(existing.index).sort_values()
+    cand = candidate.reindex(idx).fillna(0.0)
+    base = existing.reindex(idx).fillna(0.0)
+    correlation = float(candidate.corr(existing))  # on native overlap
+
+    combined = weight * cand + (1 - weight) * base
+    base_cagr = annualized_return(base, periods_per_year)
+    base_dd = max_drawdown(base)
+    base_calmar = calmar_ratio(base, periods_per_year)
     new_cagr = annualized_return(combined, periods_per_year)
     new_dd = max_drawdown(combined)
     new_calmar = calmar_ratio(combined, periods_per_year)
-    correlation = float(aligned["c"].corr(aligned["e"]))
     return {
         "weight": weight,
         "correlation": correlation,
