@@ -48,13 +48,23 @@ def is_non_tradeable(symbol: str) -> bool:
     return bool(_NON_TRADEABLE_RE.search(symbol))
 
 
-# Account metadata: maps account number to name and default strategy
+# Account metadata: maps account number to name, strategy, and live status.
+# `status="retired"` + `strategy=None` preserves the Alpaca account slot for
+# future strategy assignment without trading activity. Liquidation is a
+# prerequisite (see scripts/liquidate_account.py).
 ACCOUNT_INFO = {
-    1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum"},
-    2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol"},
-    3: {"name": "FIRE 0.3", "strategy": "reversal_blend", "label": "Reversal Blend"},
-    4: {"name": "FIRE 0.4", "strategy": "crypto_momentum_filtered", "label": "Crypto"},
+    1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum", "status": "active"},
+    2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol", "status": "active"},
+    3: {"name": "FIRE 0.3", "strategy": None, "label": "Retired (slot open)", "status": "retired", "retired_at": "2026-04-20"},
+    4: {"name": "FIRE 0.4", "strategy": "crypto_momentum_filtered", "label": "Crypto", "status": "active"},
 }
+
+
+def active_accounts() -> list[int]:
+    """Account numbers with status='active'. Use for iterations that drive
+    live trading, snapshots, and dashboard live views. Historical endpoints
+    and backtests should still iterate the full ACCOUNT_INFO."""
+    return [n for n, info in ACCOUNT_INFO.items() if info.get("status", "active") == "active"]
 
 
 @dataclass
@@ -310,6 +320,35 @@ class AlpacaBroker:
         """Cancel all open orders. Returns number cancelled."""
         cancelled = self.api.cancel_all_orders()
         return len(cancelled) if cancelled else 0
+
+    def close_all_positions(self, cancel_open_orders: bool = True) -> list[dict]:
+        """Close every position on this account via market orders.
+
+        Used for account retirement / full liquidation. Alpaca returns a
+        response object per symbol with the resulting order. Caller is
+        responsible for logging to the rebalance journal if desired.
+
+        Note: the alpaca-trade-api `close_all_positions()` doesn't accept
+        a cancel-orders kwarg on this SDK version, so we cancel open
+        orders separately before calling this when needed.
+        """
+        if cancel_open_orders:
+            self.cancel_all_orders()
+        responses = self.api.close_all_positions()
+        results = []
+        for r in responses or []:
+            # alpaca-trade-api wraps each close in a response with .body (the order) and .status
+            body = getattr(r, "body", None) or r
+            status_code = getattr(r, "status", None)
+            results.append({
+                "symbol": getattr(body, "symbol", None),
+                "order_id": getattr(body, "id", None),
+                "qty": getattr(body, "qty", None),
+                "side": getattr(body, "side", None),
+                "status": getattr(body, "status", None),
+                "http_status": status_code,
+            })
+        return results
 
     def get_latest_price(self, symbol: str) -> float:
         """Get latest trade price for a symbol.

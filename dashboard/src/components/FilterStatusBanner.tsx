@@ -53,7 +53,8 @@ export default memo(function FilterStatusBanner({
 
   if (!filters) return null;
 
-  const showSpy = account === 0 || (account >= 1 && account <= 3);
+  // SPY filter applies to active equity accounts (1, 2). A3 retired 2026-04-20.
+  const showSpy = account === 0 || account === 1 || account === 2;
   const showBtc = account === 0 || account === 4;
 
   const spy = filters.spy;
@@ -110,7 +111,7 @@ export default memo(function FilterStatusBanner({
               {formatPrice(btc.price)}
             </span>
             {" / "}
-            <span className="tabular-nums">{formatPrice(btc.ma_150 ?? btc.ma_200)}</span>
+            <span className="tabular-nums">{formatPrice(btc.ma_125 ?? btc.ma_200)}</span>
             {" MA "}
             {btc.above_ma ? (
               <span className="text-[#00d4aa]">— strategy active</span>

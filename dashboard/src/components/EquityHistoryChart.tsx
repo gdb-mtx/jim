@@ -14,11 +14,11 @@ import { fetchEquityHistory, fetchRebalanceHistory } from "../api";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
 
+// A3 retired 2026-04-20; its series is excluded so the live chart isn't polluted.
 const SERIES_CONFIG = [
   { key: "combined", label: "Combined", color: "#7c4dff" },
   { key: "acct_1", label: "FIRE 0.1", color: "#00d4aa" },
   { key: "acct_2", label: "FIRE 0.2", color: "#4d8eff" },
-  { key: "acct_3", label: "FIRE 0.3", color: "#ffc04d" },
   { key: "acct_4", label: "FIRE 0.4", color: "#ff6b9d" },
 ] as const;
 
@@ -27,7 +27,6 @@ const ACCT_SERIES = SERIES_CONFIG.filter((c) => c.key !== "combined");
 const ACCT_COLOR: Record<number, string> = {
   1: "#00d4aa",
   2: "#4d8eff",
-  3: "#ffc04d",
   4: "#ff6b9d",
 };
 
@@ -54,7 +53,11 @@ const CHART_OPTS = {
 const priceFormatter = (price: number) =>
   "$" + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-/** Convert rebalance history entries to TradingView chart markers. */
+/** Convert rebalance history entries to TradingView chart markers.
+ *
+ * Filters out retired accounts (ACCT_COLOR is the active-account source of
+ * truth) so weekly A3 rebalance markers don't appear on the live combined
+ * curve after retirement. A3's final liquidation is also filtered. */
 function toRebalanceMarkers(
   entries: RebalanceHistoryEntry[],
   accountView: AccountView,
@@ -65,6 +68,7 @@ function toRebalanceMarkers(
     { totalOrders: number; hasFails: boolean; accounts: Set<number> }
   >();
   for (const e of entries) {
+    if (!(e.account in ACCT_COLOR)) continue;
     const date = e.timestamp.slice(0, 10);
     const existing = byDate.get(date) ?? {
       totalOrders: 0,

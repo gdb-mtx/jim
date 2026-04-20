@@ -148,10 +148,10 @@ async def list_strategies():
         except Exception as e:
             print(f"Warning: Could not load portfolio strategies: {e}")
 
-        # Combined 3-account portfolio
+        # Combined live portfolio (A1 + A2 + A4 at 1/3 each, union calendar).
         try:
             name, returns = run_combined_portfolio(start="2010-01-01")
-            report = full_report(returns, name=name)
+            report = full_report(returns, name=name, periods_per_year=365)
             results.append({
                 "name": name,
                 "id": "combined_3account",

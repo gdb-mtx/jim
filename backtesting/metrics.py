@@ -112,30 +112,29 @@ def annualized_return(returns: pd.Series, periods_per_year: int = 252) -> float:
 
 
 def win_rate(returns: pd.Series) -> float:
-    """Percentage of trades/periods with positive returns.
+    """Percentage of *active* periods with positive returns.
 
-    Args:
-        returns: Series of periodic returns
-
-    Returns:
-        Win rate as decimal (0.55 = 55%)
+    Excludes zero-return days (strategy in cash due to filter) from the
+    denominator — those days are neither wins nor losses. Without this
+    exclusion, filtered strategies (A1/A2/A4) look artificially bad.
     """
     if len(returns) == 0:
         return 0.0
-    return float((returns > 0).sum() / len(returns))
+    active = returns[returns != 0]
+    if len(active) == 0:
+        return 0.0
+    return float((active > 0).sum() / len(active))
 
 
 def profit_factor(returns: pd.Series) -> float:
-    """Gross profits / gross losses.
+    """Gross profits / gross losses over active periods (> 1.0 = profitable).
 
-    Args:
-        returns: Series of periodic returns
-
-    Returns:
-        Profit factor (> 1.0 means profitable)
+    Cash days (zero returns) don't affect the ratio either way — filtering
+    them keeps parity with win_rate and kelly_criterion.
     """
-    gains = returns[returns > 0].sum()
-    losses = abs(returns[returns < 0].sum())
+    active = returns[returns != 0]
+    gains = active[active > 0].sum()
+    losses = abs(active[active < 0].sum())
     if losses == 0:
         return float("inf") if gains > 0 else 0.0
     return float(gains / losses)
@@ -144,27 +143,26 @@ def profit_factor(returns: pd.Series) -> float:
 def kelly_criterion(returns: pd.Series) -> float:
     """Kelly optimal fraction — how much of capital to risk.
 
-    Uses the simplified Kelly formula: f* = (bp - q) / b
-    where b = win/loss ratio, p = win probability, q = loss probability
+    Formula: f* = (bp - q) / b
+      b = win/loss ratio, p = win probability, q = 1 - p
 
-    Args:
-        returns: Series of trade returns
-
-    Returns:
-        Kelly fraction (optimal % of capital to risk)
+    Computed over *active* periods only — zero-return (cash filter) days
+    would otherwise drag p down and push Kelly to the negative floor.
+    Floored at 0 (negative Kelly means don't trade).
     """
-    wins = returns[returns > 0]
-    losses = returns[returns < 0]
+    active = returns[returns != 0]
+    wins = active[active > 0]
+    losses = active[active < 0]
 
-    if len(wins) == 0 or len(losses) == 0:
+    if len(active) == 0 or len(wins) == 0 or len(losses) == 0:
         return 0.0
 
-    p = len(wins) / len(returns)  # Win probability
-    q = 1 - p  # Loss probability
-    b = wins.mean() / abs(losses.mean())  # Win/loss ratio
+    p = len(wins) / len(active)
+    q = 1 - p
+    b = wins.mean() / abs(losses.mean())
 
     kelly = (b * p - q) / b
-    return float(max(kelly, 0))  # Never negative (means don't trade)
+    return float(max(kelly, 0))
 
 
 def sortino_ratio(

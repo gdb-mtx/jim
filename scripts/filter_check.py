@@ -42,11 +42,12 @@ from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_fil
 STATE_FILE = PROJECT_ROOT / "data" / "risk_state" / "filter_state.json"
 LOG_FILE = PROJECT_ROOT / "data" / "filter_check.log"
 
-# Account → filter type
+# Account → filter type. A3 retired 2026-04-21 (removed from auto-rebalance
+# on filter changes). A3's validation_state.json status is "retired" so
+# even if this map were wrong, require_validated() would still block.
 ACCOUNT_FILTERS = {
     1: "spy",
     2: "spy",
-    3: "spy",
     4: "btc",
 }
 

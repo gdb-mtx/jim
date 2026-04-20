@@ -9,10 +9,11 @@ import {
 import type { CorrelationReport, EquityPoint } from "../types";
 import { fetchCorrelation } from "../api";
 
+// Active-account pairs only (A3 retired 2026-04-20). Live book: A1, A2, A4.
 const PAIR_CONFIG = [
   { key: "acct_1_acct_2", label: "Acct 1 \u00d7 2", color: "#00d4aa" },
-  { key: "acct_1_acct_3", label: "Acct 1 \u00d7 3", color: "#4d8eff" },
-  { key: "acct_2_acct_3", label: "Acct 2 \u00d7 3", color: "#ffc04d" },
+  { key: "acct_1_acct_4", label: "Acct 1 \u00d7 4", color: "#4d8eff" },
+  { key: "acct_2_acct_4", label: "Acct 2 \u00d7 4", color: "#ffc04d" },
 ] as const;
 
 /** Interpolate green→yellow→red based on correlation value. */
@@ -57,19 +58,21 @@ function CorrelationMatrix({
   matrix: Record<string, number>;
   expected: Record<string, number>;
 }) {
-  const accounts = ["Acct 1", "Acct 2", "Acct 3"];
+  // Active accounts only. A3 retired 2026-04-20.
+  const accountIds = [1, 2, 4] as const;
+  const accounts = accountIds.map((n) => `Acct ${n}`);
 
   function getValue(i: number, j: number): number | null {
     if (i === j) return 1.0;
-    const a = Math.min(i, j) + 1;
-    const b = Math.max(i, j) + 1;
+    const a = Math.min(accountIds[i], accountIds[j]);
+    const b = Math.max(accountIds[i], accountIds[j]);
     return matrix[`acct_${a}_acct_${b}`] ?? null;
   }
 
   function getExpected(i: number, j: number): number | null {
     if (i === j) return null;
-    const a = Math.min(i, j) + 1;
-    const b = Math.max(i, j) + 1;
+    const a = Math.min(accountIds[i], accountIds[j]);
+    const b = Math.max(accountIds[i], accountIds[j]);
     return expected[`acct_${a}_acct_${b}`] ?? null;
   }
 

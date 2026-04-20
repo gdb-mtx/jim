@@ -109,8 +109,13 @@ async def run_backtest(
             for d, v in zip(equity.index, equity.values)
         ]
 
-        # Use 365 periods/year for crypto (24/7 markets), 252 for stocks
-        is_crypto = strategy_id in CRYPTO_STRATEGIES or strategy_id == "crypto_momentum_filtered"
+        # 365 periods/year for any book that includes crypto (union calendar).
+        # combined_3account = A1 + A2 + A4 at 1/3 each, so it uses 365.
+        is_crypto = (
+            strategy_id in CRYPTO_STRATEGIES
+            or strategy_id == "crypto_momentum_filtered"
+            or strategy_id == "combined_3account"
+        )
         periods = 365 if is_crypto else 252
         report = full_report(returns, name=strategy_name, periods_per_year=periods)
 

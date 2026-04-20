@@ -12,7 +12,7 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
   // ── Live Accounts ──────────────────────────────────────────────────
   combined_3account: {
     category: "live",
-    description: "Equal-weight blend of all 3 account strategies",
+    description: "Equal-weight blend of A1 (SM) + A2 (Trend+LowVol) + A4 (Crypto), 33% each — the live book after A3 retirement",
     sortOrder: 0,
   },
   sm_filtered: {
@@ -30,19 +30,12 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     accountLabel: "FIRE 0.2",
     sortOrder: 2,
   },
-  reversal_blend: {
-    category: "live",
-    description: "60% Short-Term Reversal + 40% Stock Momentum",
-    account: 3,
-    accountLabel: "FIRE 0.3",
-    sortOrder: 3,
-  },
   crypto_momentum_filtered: {
     category: "live",
-    description: "Top 2 cryptos by 21-day momentum, BTC 150d SMA filter + vol-scaling, daily rebalance",
+    description: "Top 2 cryptos by 21-day momentum, BTC 125d SMA filter + vol-scaling, daily rebalance",
     account: 4,
     accountLabel: "FIRE 0.4",
-    sortOrder: 4,
+    sortOrder: 3,
   },
 
   // ── Portfolio Blends ───────────────────────────────────────────────
@@ -58,50 +51,55 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
   },
 
   // ── Building Blocks (individual strategies) ────────────────────────
+  reversal_blend: {
+    category: "building_block",
+    description: "Retired 2026-04-21 — was FIRE 0.3 (60% Short-Term Reversal + 40% Stock Momentum). Too correlated to A1 (0.88 OOS) to earn its weight.",
+    sortOrder: 0,
+  },
   stock_momentum: {
     category: "building_block",
     description: "Top 15 S&P 500 stocks ranked by 12-month return, ex last month",
-    sortOrder: 0,
+    sortOrder: 1,
   },
   multi_asset_trend_solo: {
     category: "building_block",
     description: "Trend-following across 18 ETFs, goes to cash in downtrends",
-    sortOrder: 1,
+    sortOrder: 2,
   },
   low_volatility_solo: {
     category: "building_block",
     description: "Lowest-beta S&P 500 stocks, defensive factor",
-    sortOrder: 2,
+    sortOrder: 3,
   },
   short_term_reversal_solo: {
     category: "building_block",
     description: "Buys recent losers, sells recent winners, 5-day holding period",
-    sortOrder: 3,
+    sortOrder: 4,
   },
   cross_sectional: {
     category: "building_block",
     description: "Rank ETFs by relative momentum, long top / short bottom",
-    sortOrder: 4,
+    sortOrder: 5,
   },
   dual_momentum: {
     category: "building_block",
     description: "Antonacci: switches between stocks, bonds, and cash",
-    sortOrder: 5,
+    sortOrder: 6,
   },
   ts_momentum: {
     category: "building_block",
     description: "Long/flat each ETF based on its own 12-month trend",
-    sortOrder: 6,
+    sortOrder: 7,
   },
   multi_tf_momentum: {
     category: "building_block",
     description: "Blends 1/3/6/12 month lookback windows",
-    sortOrder: 7,
+    sortOrder: 8,
   },
   crypto_momentum: {
     category: "building_block",
     description: "21-day crypto momentum rotation, top 2 of 9 coins, equal weight",
-    sortOrder: 8,
+    sortOrder: 9,
   },
 
   // ── Solo Wrappers (portfolio-wrapped, some with SPY filter) ────────

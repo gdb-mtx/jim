@@ -60,12 +60,18 @@ def download_crypto_prices(
     Returns:
         DataFrame with DatetimeIndex, one column per crypto
     """
+    import time
+
     cache_path = DATA_DIR / "raw" / "crypto_prices.parquet"
+    max_age_hours = 16
 
     if cache_path.exists():
-        prices = pd.read_parquet(cache_path)
-        print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
-        return prices
+        age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+        if age_hours < max_age_hours:
+            prices = pd.read_parquet(cache_path)
+            print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
+            return prices
+        print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     if symbols is None:
         symbols = CRYPTO_UNIVERSE
@@ -108,12 +114,18 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
     Returns:
         Series of BTC/USD closing prices
     """
+    import time
+
     cache_path = DATA_DIR / "raw" / "btc_prices.parquet"
+    max_age_hours = 16
 
     if cache_path.exists():
-        btc = pd.read_parquet(cache_path).squeeze()
-        print(f"Loaded BTC prices from cache: {len(btc)} rows")
-        return btc
+        age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+        if age_hours < max_age_hours:
+            btc = pd.read_parquet(cache_path).squeeze()
+            print(f"Loaded BTC prices from cache: {len(btc)} rows")
+            return btc
+        print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading BTC price data...")
     df = yf.download("BTC-USD", start=start, auto_adjust=True, progress=False)

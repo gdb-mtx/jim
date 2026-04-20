@@ -393,16 +393,17 @@ def test_4_bootstrap(adapter: AccountAdapter) -> dict:
 
 # ── Portfolio fit (satellite marginal contribution) ───────────────────
 def portfolio_fit(adapter: AccountAdapter) -> dict:
-    """How much does adding this account to the 3-account core lift CAGR?
-    Satellite weight 25% by default."""
+    """How much does adding this account to the equity core lift CAGR?
+    A4 satellite weight defaults to 33% (3-account live book after A3 retirement)."""
     if adapter.account == 4:
-        weight = 0.25
+        weight = 1 / 3
     else:
-        weight = 1 / 3  # core account in the 3-account blend
+        weight = 1 / 2  # core account in the equity-only blend (A1, A2)
 
-    # Need existing portfolio returns — reconstruct 3-account mean
-    from strategies.portfolio import run_combined_portfolio
-    _, combined = run_combined_portfolio(start="2010-01-01")
+    # A4's marginal contribution is measured against the equity-only core
+    # (A1 + A2 at 50/50) — the non-crypto book after A3 retirement.
+    from strategies.portfolio import run_equity_core
+    _, combined = run_equity_core(start="2010-01-01")
     combined = combined.dropna()
     combined_test = combined[combined.index > TRAIN_END]
     candidate_test = adapter.full_returns[adapter.full_returns.index > TRAIN_END]

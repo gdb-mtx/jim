@@ -12,15 +12,17 @@ import RiskStatusPanel from "./RiskStatusPanel";
 import RebalancePanel from "./RebalancePanel";
 import RebalanceHistory from "./RebalanceHistory";
 import FilterStatusBanner from "./FilterStatusBanner";
+import DataFreshnessPill from "./DataFreshnessPill";
 import { showToast } from "./Toast";
 
-type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined
+type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3 retired, kept in type for history endpoints
 
+// Only active accounts are shown in the live switcher. A3 retired 2026-04-20;
+// its historical equity curve remains accessible via Backtests → Building Blocks.
 const ACCOUNTS: { id: AccountView; name: string; label: string }[] = [
   { id: 0, name: "Combined", label: "All Accounts" },
   { id: 1, name: "FIRE 0.1", label: "Momentum" },
   { id: 2, name: "FIRE 0.2", label: "Trend + Low-Vol" },
-  { id: 3, name: "FIRE 0.3", label: "Reversal Blend" },
   { id: 4, name: "FIRE 0.4", label: "Crypto" },
 ];
 
@@ -196,8 +198,11 @@ export default function LivePortfolio() {
       {/* Risk status */}
       <RiskStatusPanel account={account} />
 
-      {/* Regime filter status */}
-      <FilterStatusBanner account={account} />
+      {/* Regime filter status + data freshness */}
+      <div className="flex flex-wrap gap-3">
+        <FilterStatusBanner account={account} />
+        <DataFreshnessPill />
+      </div>
 
       {/* Account summary cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">

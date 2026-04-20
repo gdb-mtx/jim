@@ -77,6 +77,12 @@ export async function fetchCorrelation() {
   return fetchJSON(`${BASE_URL}/portfolio/correlation`);
 }
 
+export async function fetchDataFreshness() {
+  return fetchJSON<import("./types").DataFreshnessResponse>(
+    `${BASE_URL}/portfolio/data-freshness`
+  );
+}
+
 export async function takeSnapshot(account?: number) {
   const url =
     account !== undefined

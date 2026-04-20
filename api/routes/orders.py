@@ -7,7 +7,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
-from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
+from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO, active_accounts
 from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
 from execution.rebalance_log import log_rebalance, get_recent_rebalances
 from execution.risk_manager import RiskManager
@@ -39,6 +39,16 @@ def _get_risk_manager(account: int) -> RiskManager:
     return _risk_managers[account]
 
 
+def _require_active(account: int) -> None:
+    """Reject requests targeting a retired account before any broker work."""
+    status = ACCOUNT_INFO.get(account, {}).get("status", "active")
+    if status != "active":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Account {account} status is '{status}' — rebalance not allowed.",
+        )
+
+
 @router.get("/history")
 async def order_history(
     account: int = Query(default=1, ge=1, le=4, description="Account number (1-4)"),
@@ -59,6 +69,7 @@ async def preview_rebalance(
 
     Returns the full rebalance plan: target weights, position diffs, and orders.
     """
+    _require_active(account)
     broker = _get_broker(account)
     risk_mgr = _get_risk_manager(account)
 
@@ -122,6 +133,7 @@ async def execute_rebalance_endpoint(
     Always preview first with /rebalance/preview.
     Uses per-account lock to prevent concurrent rebalances.
     """
+    _require_active(account)
     try:
         require_validated(account)
     except ValidationGateError as e:

@@ -197,7 +197,7 @@ export interface RebalanceHistoryEntry {
 export interface FilterInfo {
   price: number;
   ma_200?: number; // SPY uses 200d MA
-  ma_150?: number; // BTC uses 150d MA (optimized from 200d)
+  ma_125?: number; // BTC uses 125d MA (robust-opt 2026-04-18, from 200d → 125d)
   above_ma: boolean;
   filter_scalar: number;
   error?: string;
@@ -206,6 +206,20 @@ export interface FilterInfo {
 export interface FilterStatusResponse {
   spy: FilterInfo;
   btc: FilterInfo;
+}
+
+export interface DataCacheInfo {
+  name: string;
+  file: string;
+  age_h: number | null;
+  threshold_h: number;
+  stale: boolean;
+  missing: boolean;
+}
+
+export interface DataFreshnessResponse {
+  any_stale: boolean;
+  caches: DataCacheInfo[];
 }
 
 export interface FilterMonitorState {

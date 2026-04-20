@@ -157,9 +157,12 @@ def get_equity_history(account: int) -> list[dict]:
 
 
 def get_combined_equity_history() -> list[dict]:
-    """Sum equity across all 4 accounts by date."""
+    """Sum equity across active accounts by date. Retired accounts are
+    excluded so the combined curve tracks the live book only."""
+    from execution.alpaca_broker import active_accounts
+
     frames = []
-    for acct in (1, 2, 3, 4):
+    for acct in active_accounts():
         df = load_snapshots(acct)
         if not df.empty:
             frames.append(df[["equity"]].rename(columns={"equity": f"acct_{acct}"}))
@@ -176,9 +179,12 @@ def get_combined_equity_history() -> list[dict]:
 
 
 def get_all_equity_histories() -> dict[str, list[dict]]:
-    """Return equity curves for all 4 accounts + combined, keyed for frontend."""
+    """Return equity curves for active accounts + combined, keyed for frontend.
+    Retired account history remains available via per-account `/history`."""
+    from execution.alpaca_broker import active_accounts
+
     result = {}
-    for acct in (1, 2, 3, 4):
+    for acct in active_accounts():
         result[f"acct_{acct}"] = get_equity_history(acct)
     result["combined"] = get_combined_equity_history()
     return result
@@ -325,9 +331,13 @@ def get_daily_returns(account: int) -> pd.Series:
 
 
 def get_all_daily_returns() -> pd.DataFrame:
-    """Daily returns for all 4 accounts, aligned by date."""
+    """Daily returns for active accounts, aligned by date.
+    Retired accounts are excluded — their returns would be ~0 going forward
+    (cash) and would dilute correlation signal."""
+    from execution.alpaca_broker import active_accounts
+
     frames = {}
-    for acct in (1, 2, 3, 4):
+    for acct in active_accounts():
         r = get_daily_returns(acct)
         if not r.empty:
             frames[f"acct_{acct}"] = r

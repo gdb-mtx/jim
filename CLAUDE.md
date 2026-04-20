@@ -6,7 +6,8 @@
 We're optimized for a builder with an AI partner. Different constraints, different optimal path. We build fast, iterate fast, and the infrastructure serves the research.
 
 ### Key Documents
-- **`DECISIONS_PENDING.md`** — two open decisions from the 2026-04-18 session (A3 reweight question, A4 SMA-125/top2 promotion). User wants a clean-session reconsideration before committing. **Read this first if joining a fresh session.**
+- **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
+- `DECISIONS_RESOLVED.md` — record of the April 2026 portfolio-architecture decisions (A3 retired, A4 at 33% with 40% upgrade ladder). Formerly DECISIONS_PENDING.md; renamed after both decisions executed.
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
 - `PLAN_MODE2.md` — Two-mode architecture: Mode 1 (structural alpha, existing) + Mode 2 (informational alpha, PEAD + event-driven + macro regime). The strategic plan for compounding $50K over the bridge to 59½.
 - `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
@@ -24,52 +25,61 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Statistical validation**: Walk-forward, Monte Carlo block bootstrap, parameter stability, portfolio fit — all required before any live money, quarterly re-validation enforced via gate
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
-### Four-Account Architecture
-Uncorrelated factor diversification across 4 Alpaca paper accounts ($100k each):
+### Three-Account Live Architecture (post-2026-04-20 A3 retirement)
+Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of total book. A3 is retired but its Alpaca account slot is preserved for future strategy assignment.
+
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
-- **Account 3 (FIRE 0.3 — Reversal + Momentum)**: 60% Short-Term Reversal + 40% SM — anti-momentum hedge. **Weekly rebalance** (reversal signal decays after ~5 days).
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. **Validation status: PASS** (CAGR-first framework, robust-opt production 2026-04-18). Parameters picked via `scripts/crypto_robust_opt.py` by explicitly maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — the regime-robust objective. SMA-125/top2 has nearly-identical Calmar in both halves (2.89 pre-2023 / 3.10 post-2023) while other configs excel in one regime but fail the other. **OOS scorecard: CAGR +47.1%, MaxDD -11.4%, Calmar 4.15.** Prior 200d/top3 conservative defaults had CAGR +32.7%, Calmar 1.39 — the robust-opt improvement is substantial (+14pp CAGR, half the drawdown).
+- **Account 3 (FIRE 0.3 — RETIRED 2026-04-20)**: 60% STR + 40% SM. Retired because 40% of its book was literally A1 (structural overlap → A1↔A3 OOS correlation 0.876). Liquidated $99,826.89 all-cash. Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 wins with nearly-identical Calmar in both halves (2.89 pre-2023 / 3.10 post-2023). **Caveat: `min_periods=1` on the MA warmup may inflate half-A Calmar — see AUDIT_MONTH2.md C2.** A4 weight in combined book is **33%** (1/3), with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
 
-Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10, confirmed by live 29-day sample 2026-03-10 → 2026-04-18):
-- A1↔A2: **0.38** (backtest) / 0.00 (live) — genuinely diversified
-- **A1↔A3: 0.88 (backtest) / 0.84 (live) — NOT diversified. A3 is 40% StockMomentum by construction, which overlaps A1 entirely.**
-- A2↔A3: 0.54 (backtest) / -0.03 (live) — moderate
-- A4↔any equity: 0.10-0.19 — genuinely diversified (shows NaN in 29-day live because A4 is all-cash with BTC below its 200d MA)
+Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
+- A1↔A2: **0.38** (backtest) — genuinely diversified
+- A1↔A4: 0.10-0.19 — genuinely diversified
+- A2↔A4: 0.10-0.19 — genuinely diversified
+- (A3 retired — historical correlations preserved in DECISIONS_RESOLVED.md)
 
-**Revised diversification thesis:** A2 (trend + low-vol) is the actual diversifier in the 3-account core. A3's contribution is primarily volatility smoothing, not diversification. Testing alternative blend weights: 50% A1 + 50% A2 (drop A3 entirely) gives OOS CAGR +19.7% vs 1/3-each +18.0%, for essentially identical Calmar (2.11 vs 2.12). A3 is costing ~1.7% CAGR for ~0 Calmar benefit. The prior "0.56-0.66 equity pairs" claim in earlier CLAUDE.md was inaccurate — the true correlations have always shown A1-A3 near 0.9. **Open question: retire A3, or redesign it as pure Short-Term Reversal (no SM blend) to lower correlation to A1.**
+**Live correlation panel** (dashboard) shows A1/A2/A4 pairs only. Live A4 pairs currently show "—" because A4 has been all-cash since launch (BTC below 125d MA filter → zero-variance returns make Pearson correlation undefined).
 
-Combined OOS (2023-01-03 → 2026-04-17, equity calendar):
-- 3-account (core only): **CAGR +18.0%, MaxDD -8.5%, Calmar 2.12** (Sharpe 1.85 informational)
-- 3-account + Account 4 at 25% weight: **CAGR +25.0%, MaxDD -7.0%, Calmar 3.57**
-- 3-account + Account 4 at 40% weight (aggressive): **CAGR +29.2%, MaxDD -7.1%, Calmar 4.10**
+Combined OOS (2023-01-03 → 2026-04-17 equity; union calendar + ppy=365 when A4 included):
 
-Account 4 standalone (2023-01-01 → 2026-03-10, crypto calendar, SMA-125/top2 robust-opt production):
-**CAGR +47.1%, MaxDD -11.4%, Calmar 4.15** (Sharpe 1.93 informational). Test 3 production Calmar 2.89/3.10 across halves — regime-robust by construction. Bootstrap CAGR p5 +24.2% (worst-case compounding still strong).
+⚠️ **The numbers below are biased HIGH by the weekend-zero bug in `run_combined_portfolio` (AUDIT_MONTH2.md C1).** Equity legs are filled with 0 on crypto-only days rather than held, so realized A4 weight drifts upward. Directions are correct; absolute magnitudes will drop once fixed.
 
-Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials.
+- Equity core (A1+A2 at 50/50, clean): **CAGR +19.7%, MaxDD -9.3%, Calmar 2.11**
+- 3-account live book (A1+A2+A4 at 1/3 each, biased): **CAGR +28.5%, MaxDD -7.5%, Calmar 3.79**
+
+Account 4 standalone (fresh data through 2026-04-20, post-cache-refresh):
+**CAGR +45.2%, MaxDD -11.4%, Calmar 3.98** (Sharpe 1.90 informational). Prior report of 47.1%/4.15 was on a slightly shorter window; fresh-data extension moved numbers modestly. Bootstrap p5 CAGR will be re-reported after C2 is addressed.
+
+Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials. Account 3 is retired; orders endpoint `_require_active()` guard + validation_gate both block rebalance attempts against it.
 
 Rebalance schedule (two layers — exposure management + signal rotation):
-- **Daily at 4:30 PM ET**: Filter monitor checks all accounts — auto-rebalances if SPY/BTC filter flips (launchd, no server needed)
+- **Daily at 4:30 PM ET**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips (launchd, no server needed). A3 excluded from `ACCOUNT_FILTERS`.
 - **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via APScheduler (requires server)
-- **Every Monday**: Account 3 reversal signal rotation (manual)
 - **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual)
+- A3 weekly cadence retired with A3 itself.
+
+⚠️ **Concurrency gap (AUDIT_MONTH2.md S1):** API rebalance endpoint uses `asyncio.Lock` only; filter_check.py uses `file_rebalance_lock` only; APScheduler uses `asyncio.Lock` only. Three independent locks — duplicate orders possible on concurrent rebalances for the same account. Fix pending before real money.
 
 ### Strategies — OOS scorecard (live accounts)
 
-**Live account performance reported OOS per the CAGR-first framework (test period 2023-01-03 → 2026-04-17 equity, 2023-01-01 → 2026-03-10 crypto). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION_PLAN.md`.**
+**Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20, post-cache-refresh). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION_PLAN.md`.**
+
+**Load-bearing caveats before trusting these numbers (see AUDIT_MONTH2.md):**
+- **C1:** Combined "3-acct + A4" rows are biased high by the weekend-zero bug in `run_combined_portfolio`.
+- **C2:** A4's Test-3 half-A Calmar 2.89 — the robust-opt gate — is flattered by `min_periods=1` on BTC MA warmup.
+- **C3:** A1 standalone CAGR is ~1-2pp overstated by S&P 500 survivorship bias (known, documented below).
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | UPI | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|---|
-| **3-Account + Crypto 40%** | — | **+29.2%** | **-7.1%** | **4.10** | — | — | — | — |
-| **3-Account + Crypto 25%** | — | **+25.0%** | **-7.0%** | **3.57** | — | — | — | — |
-| **Combined 3-Account Core** | — | **+18.0%** | **-8.5%** | **2.12** | 2.12 | 7.62 | 1.86 | *1.85* |
-| **Crypto Momentum (Acct 4)** | PASS | **+47.1%** | **-11.4%** | **4.15** | 4.15 | 9.02 | 2.25 | *1.93* |
-| **Stock Momentum + SPY (Acct 1)** | PASS | **+21.0%** | **-11.1%** | **1.89** | 1.89 | 5.42 | 1.63 | *1.65* |
-| **Trend + Low-Vol (Acct 2)** | PASS | **+17.9%** | **-11.6%** | **1.55** | 1.55 | 5.62 | 1.41 | *1.46* |
-| **Reversal + Momentum (Acct 3)** | MARGINAL | **+14.5%** | **-7.2%** | **2.03** | 2.03 | 6.10 | 1.59 | *1.61* |
+| **Live book (A1+A2+A4 @ 1/3)** ⚠ biased | — | **+28.5%** | **-7.5%** | **3.79** | — | — | — | — |
+| **Equity core (A1+A2 @ 50/50)** | — | **+19.7%** | **-9.3%** | **2.11** | — | — | — | *1.87* |
+| **Crypto Momentum (Acct 4)** ⚠ C2 | PASS | **+45.2%** | **-11.4%** | **3.98** | 3.98 | 8.68 | 2.18 | *1.90* |
+| **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+20.9%** | **-11.1%** | **1.89** | 1.89 | 5.39 | 1.63 | *1.65* |
+| **Trend + Low-Vol (Acct 2)** | PASS | **+17.4%** | **-10.7%** | **1.62** | 1.62 | 5.42 | 1.35 | *1.42* |
+| *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — | — |
 
-Account 3 is MARGINAL (CAGR 0.5pp below the 15% PASS floor, Calmar 2.03). Account 4 CAGR +47.1% is over 2x any equity account, with Calmar 4.15 — that's the satellite thesis working, plus the robust-opt lift (old 200d/top3 was CAGR +32.7% / Calmar 1.39; new 125d/top2 is +47.1% / 4.15 — dramatic improvement from changing the tuning objective from Sharpe-smoothness to regime-robust Calmar).
+All three active accounts pass the CAGR ≥ 15%, Calmar ≥ 1.0, OOS/IS ratio ≥ 70% gates on fresh data. A4's headline numbers dropped slightly (47.1% → 45.2% CAGR; 4.15 → 3.98 Calmar) with fresh-data window extension — small move, still strong. A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
 
 Research/building-block strategies (in-sample only — never went to a live account, OOS not measured):
 
@@ -92,7 +102,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - **Crypto Universe**: 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP)
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007)
-- **BTC 150-day SMA trend filter**: Binary 100% cash when BTC < 150d SMA (sat out all of 2022). Optimized from 200d — crypto cycles faster than equities.
+- **BTC 125-day SMA trend filter**: Binary 100% cash when BTC < 125d SMA (sat out all of 2022). Robust-opt picked 125d from 200d/150d/125d/100d grid on 2026-04-18.
 - **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 + Account 4, +0.1-0.3 Sharpe improvement
 - **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period
@@ -220,16 +230,16 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 ### Current Phase & Next Steps
 
-**Mode 1 (Structural Alpha):** Completed Phases 1-6. All 4 accounts live on Alpaca paper ($400k total), all rebalanced to full exposure 2026-04-14.
-  - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10
-  - Account 2: 34 stocks (Trend + Low-Vol) — first trade 2026-03-10
-  - Account 3: 52 stocks (Reversal Blend) — first trade 2026-03-10, weekly rebalance
-  - Account 4: Crypto Momentum Rotation — daily automated rebalance at 00:05 UTC, robust-opt 125d/top2 production, OOS CAGR +47.1%, Calmar 4.15
-  - Combined 3-account core (OOS): CAGR +18.0%, MaxDD -8.5%, Calmar 2.12
-  - Combined with Account 4 at 25%: CAGR +25.0%, MaxDD -7.0%, Calmar 3.57
-  - Combined with Account 4 at 40%: CAGR +29.2%, MaxDD -7.1%, Calmar 4.10
+**Mode 1 (Structural Alpha):** Post-month-2 audit, 3-account live book (A1+A2+A4) at 1/3 each, A3 retired.
+  - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 20.9%
+  - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 17.4%
+  - Account 3: RETIRED 2026-04-20. Slot preserved. See `DECISIONS_RESOLVED.md`.
+  - Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 robust-opt production, OOS CAGR 45.2%, Calmar 3.98. Currently 100% cash (BTC below 125d MA since launch).
+  - Live-tracking clock reset to **2026-04-20** — Mar 10 → Apr 17 window was compromised by stale-data bug. A4 33%→40% upgrade clock counts from here (and only counts signal-trading days, not cash-on-filter days).
 
-**Validation status (as of 2026-04-18, CAGR-first framework):** Full battery from `VALIDATION_PLAN.md` run via `scripts/run_validation.py`. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. Accounts 1, 2, 4 PASS. Account 3 MARGINAL (CAGR 14.5% vs 15% floor, but best-in-system Calmar 2.03). `execution/validation_gate.py` blocks FAIL and unvalidated accounts; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1`.
+**Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
+
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1 (C1, C2, C3) affects headline numbers; Tier 2 (S1-S4) are concurrency/atomicity issues; Tier 3 (D1-D4) are clock/data correctness; Tier 4 (R1-R11) are reporting hygiene. Nothing is blocking paper trading, but **Tier 1 + S1 should be addressed before any real-money graduation**.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -251,10 +261,9 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: a strategy with OOS CAGR and Calmar that meaningfully exceed the existing single-account results (best single is currently Account 1 at 1.89 Calmar, 21% CAGR). Funding-rate carry on perps was explored in conversation but shelved due to infrastructure complexity + exchange risk. Open research vectors remain (`BREAKTHROUGH.md` Candidates B/C, rate vol, commodity vol, narrative-aware crypto).
+- **Mode 1 priority: work through `AUDIT_MONTH2.md` Tier 1 first.** C1 (weekend-zero) to get honest combined numbers, C2 (BTC MA warmup) to verify SMA-125/top2 is the real robust-opt winner, C3 disclosure on survivorship. Then Tier 2 S1 (cross-process lock) is the next must-do before real money.
+- **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
-- Mode 1: **Decide on A3's future.** Correlation analysis (2026-04-18) confirmed A1-A3 correlation is ~0.88 in both backtest and live. The prior "divergence" framing was wrong — the backtest has always predicted this. Options: (a) retire A3 and redeploy its $100K capital to a better diversifier, (b) redesign A3 as pure Short-Term Reversal (0% SM blend) to actually decorrelate from A1, (c) drop A3 weight to 20% in the blend (minor improvement only). Tests show A1+A2 without A3 gives nearly identical Calmar with higher CAGR.
-- Mode 1: Revisit Account 3 — CAGR 14.5% is 0.5pp below the PASS floor. If Combined 3-account benefits from it (and it does — contributes to 2.12 Calmar), consider whether its weight in the blend should be reduced in favor of a higher-CAGR candidate.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: Track C recommendation for 40 days (check price by 2026-05-25).

@@ -9,7 +9,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO
+from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO, active_accounts
 from execution.risk_manager import RiskManager, STATE_DIR
 from data.snapshots import (
     take_snapshot,
@@ -91,7 +91,8 @@ async def combined_summary():
         total_unrealized_pl = 0
         market_open = False
 
-        for acct_num in ACCOUNT_INFO:
+        active = active_accounts()
+        for acct_num in active:
             try:
                 broker = _get_broker(acct_num)
                 acct = broker.get_account()
@@ -115,7 +116,7 @@ async def combined_summary():
             "positions_count": len(all_positions),
             "positions": all_positions,
             "market_open": market_open,
-            "accounts": len(ACCOUNT_INFO),
+            "accounts": len(active),
         }
 
     return await asyncio.to_thread(_compute)
@@ -149,7 +150,7 @@ async def create_snapshot(
                 pass
             return take_snapshot(account)
         else:
-            for acct in ACCOUNT_INFO:
+            for acct in active_accounts():
                 try:
                     backfill_from_alpaca(acct)
                 except Exception:
@@ -186,7 +187,7 @@ async def equity_history(
             # Patch today's values with live Alpaca equity
             total_live = 0.0
             live_equity: dict[int, float] = {}
-            for acct_num in ACCOUNT_INFO:
+            for acct_num in active_accounts():
                 try:
                     broker = _get_broker(acct_num)
                     live_eq = broker.get_account()["equity"]
@@ -247,7 +248,7 @@ async def risk_status():
     accounts = {}
     any_halted = False
 
-    for acct_num in ACCOUNT_INFO:
+    for acct_num in active_accounts():
         state_file = STATE_DIR / f"circuit_breaker_acct{acct_num}.json"
         if state_file.exists():
             try:
@@ -311,10 +312,10 @@ async def reset_circuit_breaker(
 
 @router.get("/filters")
 async def filter_status():
-    """Get current regime filter status (SPY 200d MA + BTC 200d MA).
+    """Get current regime filter status (SPY 200d MA + BTC 125d MA).
 
     Uses Alpaca real-time quotes for the current price comparison,
-    yfinance cached data for the 200d MA (changes negligibly day-to-day).
+    yfinance cached data for the MA (changes negligibly day-to-day).
     """
 
     def _compute():
@@ -346,7 +347,7 @@ async def filter_status():
 
         try:
             btc_prices = download_btc_prices()
-            btc_ma = btc_prices.rolling(150, min_periods=1).mean()
+            btc_ma = btc_prices.rolling(125, min_periods=1).mean()
             btc_ma_val = float(btc_ma.iloc[-1])
 
             # Use Alpaca real-time price instead of cached yfinance close
@@ -358,7 +359,7 @@ async def filter_status():
 
             result["btc"] = {
                 "price": round(btc_price, 2),
-                "ma_150": round(btc_ma_val, 2),
+                "ma_125": round(btc_ma_val, 2),
                 "above_ma": btc_price > btc_ma_val,
                 "filter_scalar": 1.0 if btc_price > btc_ma_val else 0.0,
             }
@@ -368,6 +369,46 @@ async def filter_status():
         return result
 
     return await asyncio.to_thread(_compute)
+
+
+@router.get("/data-freshness")
+async def data_freshness():
+    """Age of each data cache in hours. Dashboard uses this to flag
+    staleness — a value > stale_threshold_hours means refreshes aren't
+    happening and the filter monitor / rebalances may be running on
+    old data (as happened Mar 10 → Apr 18, 2026)."""
+    import time
+    from pathlib import Path
+
+    raw_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+    # Files the live-trading paths depend on. Source of truth here, not in code.
+    # stale_threshold_hours mirrors the cache's max_age_hours (see data/crypto.py etc.)
+    files = [
+        {"name": "BTC prices",      "file": "btc_prices.parquet",    "threshold_h": 20},
+        {"name": "Crypto universe", "file": "crypto_prices.parquet", "threshold_h": 20},
+        {"name": "VIX",             "file": "vix.parquet",           "threshold_h": 20},
+        {"name": "S&P 500",         "file": "sp500_prices.parquet",  "threshold_h": 30},
+        {"name": "SPY filter",      "file": "spy_filter.parquet",    "threshold_h": 20},
+        {"name": "ETF universe",    "file": "etf_prices.parquet",    "threshold_h": 20},
+    ]
+    now = time.time()
+    caches = []
+    for f in files:
+        p = raw_dir / f["file"]
+        if not p.exists():
+            caches.append({**f, "age_h": None, "stale": True, "missing": True})
+            continue
+        age_h = (now - p.stat().st_mtime) / 3600
+        caches.append({
+            "name": f["name"],
+            "file": f["file"],
+            "age_h": round(age_h, 1),
+            "threshold_h": f["threshold_h"],
+            "stale": age_h > f["threshold_h"],
+            "missing": False,
+        })
+    any_stale = any(c["stale"] for c in caches)
+    return {"any_stale": any_stale, "caches": caches}
 
 
 @router.get("/filter-state")

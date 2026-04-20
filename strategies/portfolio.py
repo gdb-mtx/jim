@@ -349,29 +349,53 @@ def run_portfolio(
     return config["name"], combined
 
 
-# The 3 account strategies that make up the combined portfolio
-COMBINED_ACCOUNT_STRATEGIES = ["sm_filtered", "trend_lowvol", "reversal_blend"]
+# Live book after A3 retirement (2026-04-21): A1 + A2 + A4 at 1/3 each.
+LIVE_ACCOUNT_STRATEGIES = ["sm_filtered", "trend_lowvol", "crypto_momentum_filtered"]
+
+# Equity-only core (A1 + A2) — base for A4's marginal portfolio contribution.
+EQUITY_CORE_STRATEGIES = ["sm_filtered", "trend_lowvol"]
+
+
+def run_equity_core(
+    start: str = "2010-01-01",
+    end: str | None = None,
+) -> tuple[str, pd.Series]:
+    """Run the equity-only core (A1 + A2) at 50/50 on the equity calendar.
+
+    Used as the "existing book" base when measuring A4's marginal
+    portfolio contribution. Returns a 252-day-convention series.
+    """
+    account_returns = {}
+    for pid in EQUITY_CORE_STRATEGIES:
+        _, returns = run_portfolio(pid, start=start, end=end)
+        account_returns[pid] = returns
+
+    aligned = pd.DataFrame(account_returns).dropna()
+    combined = aligned.mean(axis=1)
+    return "Equity Core (A1 + A2)", combined
 
 
 def run_combined_portfolio(
     start: str = "2010-01-01",
     end: str | None = None,
 ) -> tuple[str, pd.Series]:
-    """Run the combined 3-account portfolio (equal-weighted).
+    """Run the full live book: A1 + A2 + A4 at 1/3 each.
 
-    Runs each account's strategy independently (preserving per-account SPY
-    filters and vol-scaling), then averages returns at 1/3 each.
-
-    Returns:
-        Tuple of (name, combined_returns_series)
+    Uses a union calendar (equity + crypto days) with fillna(0) so crypto
+    weekend returns are preserved. The series starts from the latest
+    strategy's first day (A4 inception = 2020-09-11). Callers should
+    annualize with periods_per_year=365.
     """
     account_returns = {}
-    for pid in COMBINED_ACCOUNT_STRATEGIES:
+    for pid in LIVE_ACCOUNT_STRATEGIES:
         _, returns = run_portfolio(pid, start=start, end=end)
+        non_zero = returns[(returns != 0) & returns.notna()]
+        if len(non_zero):
+            returns = returns.loc[non_zero.index[0]:]
         account_returns[pid] = returns
 
-    # Align to common dates and equal-weight average
-    aligned = pd.DataFrame(account_returns).dropna()
-    combined = aligned.mean(axis=1)
-
-    return "Combined 3-Account Portfolio", combined
+    latest_start = max(s.index[0] for s in account_returns.values())
+    account_returns = {k: v[v.index >= latest_start] for k, v in account_returns.items()}
+    df = pd.DataFrame(account_returns).fillna(0.0)
+    combined = df.mean(axis=1)
+    return "Combined Live Portfolio (A1 + A2 + A4)", combined
