@@ -2,6 +2,11 @@
 
 Stores one row per trading day per account in parquet files under data/processed/.
 Supports backfill from Alpaca's portfolio history API to recover missed days.
+
+Writes are serialized cross-process by `file_snapshot_lock` (AUDIT_MONTH2.md
+S3) and persisted via `write_parquet_atomic` (S2), so concurrent writers
+(filter cron, /snapshot endpoint, post-rebalance hook, server startup) can
+safely race without losing rows or leaving a partial parquet.
 """
 
 import os
@@ -10,6 +15,8 @@ from datetime import date, datetime
 import numpy as np
 import pandas as pd
 
+from api.locks import file_snapshot_lock
+from data.pipeline import write_parquet_atomic
 from execution.alpaca_broker import AlpacaBroker
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "processed")
@@ -46,22 +53,26 @@ def save_snapshot(
     daily_pnl: float,
     positions_count: int,
 ) -> bool:
-    """Append a single day's snapshot. Returns False if date already exists."""
-    df = load_snapshots(account)
+    """Append a single day's snapshot. Returns False if date already exists.
+
+    The load / dedupe / write sequence runs under `file_snapshot_lock` so
+    concurrent writers for the same account don't lose rows.
+    """
     dt = pd.Timestamp(snap_date).normalize()
+    with file_snapshot_lock(account):
+        df = load_snapshots(account)
+        if dt in df.index:
+            return False
 
-    if dt in df.index:
-        return False
+        new_row = pd.DataFrame(
+            {"equity": [equity], "cash": [cash], "daily_pnl": [daily_pnl], "positions_count": [positions_count]},
+            index=pd.DatetimeIndex([dt], name="date"),
+        )
+        df = pd.concat([df, new_row]).sort_index()
 
-    new_row = pd.DataFrame(
-        {"equity": [equity], "cash": [cash], "daily_pnl": [daily_pnl], "positions_count": [positions_count]},
-        index=pd.DatetimeIndex([dt], name="date"),
-    )
-    df = pd.concat([df, new_row]).sort_index()
-
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    df.to_parquet(_snapshot_path(account))
-    return True
+        os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+        write_parquet_atomic(df, _snapshot_path(account))
+        return True
 
 
 def take_snapshot(account: int) -> dict:
@@ -104,7 +115,9 @@ def take_all_snapshots() -> list[dict]:
 def backfill_from_alpaca(account: int) -> int:
     """Backfill historical equity from Alpaca portfolio history API.
 
-    Returns number of new rows added.
+    Returns number of new rows added. Runs under `file_snapshot_lock` so
+    concurrent writers (cron snapshot, /snapshot endpoint, startup) don't
+    race with the read-modify-write against the parquet.
     """
     broker = AlpacaBroker(account=account)
     # get_portfolio_history returns an object with timestamp, equity, profit_loss
@@ -113,33 +126,34 @@ def backfill_from_alpaca(account: int) -> int:
     if not history or not hasattr(history, "timestamp") or not history.timestamp:
         return 0
 
-    df = load_snapshots(account)
+    with file_snapshot_lock(account):
+        df = load_snapshots(account)
 
-    # Collect all new rows, then append in one batch
-    new_rows = []
-    for ts, equity, pl in zip(history.timestamp, history.equity, history.profit_loss):
-        dt = pd.Timestamp(datetime.fromtimestamp(ts).strftime("%Y-%m-%d")).normalize()
-        if equity is None or float(equity) == 0:
-            continue
-        if dt in df.index:
-            continue
-        new_rows.append({
-            "date": dt,
-            "equity": float(equity),
-            "cash": np.nan,  # Not available from history API
-            "daily_pnl": float(pl) if pl is not None else 0.0,
-            "positions_count": np.nan,  # Not available from history API
-        })
+        # Collect all new rows, then append in one batch
+        new_rows = []
+        for ts, equity, pl in zip(history.timestamp, history.equity, history.profit_loss):
+            dt = pd.Timestamp(datetime.fromtimestamp(ts).strftime("%Y-%m-%d")).normalize()
+            if equity is None or float(equity) == 0:
+                continue
+            if dt in df.index:
+                continue
+            new_rows.append({
+                "date": dt,
+                "equity": float(equity),
+                "cash": np.nan,  # Not available from history API
+                "daily_pnl": float(pl) if pl is not None else 0.0,
+                "positions_count": np.nan,  # Not available from history API
+            })
 
-    if not new_rows:
-        return 0
+        if not new_rows:
+            return 0
 
-    new_df = pd.DataFrame(new_rows).set_index("date")
-    df = pd.concat([df, new_df]).sort_index()
+        new_df = pd.DataFrame(new_rows).set_index("date")
+        df = pd.concat([df, new_df]).sort_index()
 
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    df.to_parquet(_snapshot_path(account))
-    return len(new_rows)
+        os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+        write_parquet_atomic(df, _snapshot_path(account))
+        return len(new_rows)
 
 
 # ── Query functions ──────────────────────────────────────────────────

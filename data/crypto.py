@@ -77,15 +77,12 @@ def download_crypto_prices(
         symbols = CRYPTO_UNIVERSE
 
     print(f"Downloading prices for {len(symbols)} cryptos from {start}...")
-    df = yf.download(symbols, start=start, end=end, auto_adjust=True, progress=False)
+    from data.pipeline import download_with_retry, write_parquet_atomic
+    # Require >=80% of the 9-coin universe returned; anything less points to
+    # a yfinance hiccup, not delisted coins.
+    prices = download_with_retry(symbols, start=start, end=end, min_coverage_ratio=0.8)
 
-    if isinstance(df.columns, pd.MultiIndex):
-        prices = df["Close"]
-    else:
-        prices = df[["Close"]]
-        prices.columns = symbols
-
-    # Drop coins with too many missing values (< 50% coverage)
+    # Drop coins with too many missing values (< 50% historical coverage)
     coverage = prices.notna().sum() / len(prices)
     good_coins = coverage[coverage >= 0.50].index
     prices = prices[good_coins].dropna(how="all")
@@ -96,8 +93,7 @@ def download_crypto_prices(
     print(f"Final universe: {prices.shape[1]} coins with 50%+ coverage")
     print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    prices.to_parquet(cache_path)
+    write_parquet_atomic(prices, cache_path)
     print(f"Cached to {cache_path}")
 
     return prices
@@ -128,16 +124,13 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
         print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading BTC price data...")
-    df = yf.download("BTC-USD", start=start, auto_adjust=True, progress=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        btc = df["Close"].squeeze()
-    else:
-        btc = df["Close"].squeeze()
+    from data.pipeline import download_with_retry, write_parquet_atomic
+    prices = download_with_retry(["BTC-USD"], start=start, min_coverage_ratio=1.0)
+    btc = prices.iloc[:, 0]
 
     btc.name = "BTC-USD"
     btc_df = btc.to_frame()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    btc_df.to_parquet(cache_path)
+    write_parquet_atomic(btc_df, cache_path)
     print(f"Cached BTC prices: {len(btc)} rows")
 
     return btc

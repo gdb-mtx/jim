@@ -59,7 +59,7 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 - **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual)
 - A3 weekly cadence retired with A3 itself.
 
-⚠️ **Concurrency gap (AUDIT_MONTH2.md S1):** API rebalance endpoint uses `asyncio.Lock` only; filter_check.py uses `file_rebalance_lock` only; APScheduler uses `asyncio.Lock` only. Three independent locks — duplicate orders possible on concurrent rebalances for the same account. Fix pending before real money.
+**Concurrency (AUDIT_MONTH2.md S1, fixed 2026-04-20):** all three rebalance entry points (API `/rebalance/execute`, APScheduler A4 job, `filter_check.py`) now serialize via `dual_rebalance_lock` (async + file lock) or, for the sync cron path, the same `file_rebalance_lock` they observe. Contention raises `RebalanceLockedError` → 409 from the API, `status="locked"` from the cron. Verified end-to-end — real-money-graduation blocker lifted.
 
 ### Strategies — OOS scorecard (live accounts)
 
@@ -239,7 +239,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
 
-**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. Tier 2 (S1-S4) are concurrency/atomicity issues; Tier 3 (D1-D4) are clock/data correctness; Tier 4 (R1-R11) are reporting hygiene. Nothing is blocking paper trading, but **S1 should be addressed before any real-money graduation**.
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. **Tier 2 S1-S4 all fixed 2026-04-20** — `dual_rebalance_lock`, `write_parquet_atomic`, `file_snapshot_lock`, `download_with_retry` live in `api/locks.py` and `data/pipeline.py`; all live-path rebalance and yfinance calls go through them. Tier 3 (D1-D4) clock/data correctness and Tier 4 (R1-R11) reporting hygiene remain open — none block paper or real-money operation.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -261,7 +261,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Mode 1 priority:** C1 + C2 fixed 2026-04-20. C1 non-material numerically (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. C3 disclosure remains. Next must-do before real money: Tier 2 S1 (cross-process lock).
+- **Mode 1 priority:** C1 + C2 + Tier 2 S1-S4 all fixed 2026-04-20. C1 non-material (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. S1 A/B/C verified end-to-end. C3 disclosure remains; Tier 3/4 items remain as lower-priority cleanup.
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.

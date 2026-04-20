@@ -5,11 +5,84 @@ Uses yfinance as primary source. Cross-validate against a second source
 before trusting any backtest result (see PLAN.md Section 5: Data Quality).
 """
 
+import os
+import time
 import pandas as pd
 import yfinance as yf
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
+
+
+def write_parquet_atomic(df: pd.DataFrame, path: Path | str) -> None:
+    """Write a DataFrame to parquet atomically.
+
+    Writes to `path + .tmp`, then `os.replace()` swaps it into place.
+    A crash or Ctrl-C mid-write leaves the original file intact (or absent)
+    — never partial. Closes AUDIT_MONTH2.md S2.
+    """
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(tmp)
+    os.replace(tmp, path)
+
+
+def download_with_retry(
+    symbols: list[str],
+    start: str,
+    end: str | None = None,
+    *,
+    interval: str = "1d",
+    max_retries: int = 3,
+    min_coverage_ratio: float = 0.5,
+) -> pd.DataFrame:
+    """Download adjusted close prices with 3× exponential-backoff retry.
+
+    Raises on persistent failure — callers get either a full DataFrame or
+    an exception, never silently-partial data. Validates that the result
+    contains at least `min_coverage_ratio` of the requested symbols.
+
+    This is the single retry path for every live-trading yfinance call.
+    Closes AUDIT_MONTH2.md S4; same hardening that fixed the 91/451 S&P
+    corruption is now shared across `download_prices`, crypto, and BTC.
+    """
+    if not symbols:
+        raise ValueError("symbols list is empty")
+
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            df = yf.download(
+                symbols,
+                start=start,
+                end=end,
+                interval=interval,
+                auto_adjust=True,
+                progress=False,
+            )
+            if isinstance(df.columns, pd.MultiIndex):
+                prices = df["Close"]
+            else:
+                prices = df[["Close"]]
+                prices.columns = symbols
+
+            coverage = prices.shape[1] / len(symbols)
+            if coverage < min_coverage_ratio:
+                raise RuntimeError(
+                    f"coverage {prices.shape[1]}/{len(symbols)} below "
+                    f"min_coverage_ratio={min_coverage_ratio}"
+                )
+            return prices.dropna(how="all")
+        except Exception as e:
+            last_err = e
+            print(f"  download attempt {attempt}/{max_retries} failed: {e}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)  # 2s, 4s, 8s
+
+    raise RuntimeError(
+        f"download failed after {max_retries} retries for {len(symbols)} symbols: {last_err}"
+    )
 
 
 def download_prices(
@@ -20,6 +93,8 @@ def download_prices(
 ) -> pd.DataFrame:
     """Download adjusted close prices for a list of symbols.
 
+    Retries on transient yfinance failure (see download_with_retry).
+
     Args:
         symbols: List of ticker symbols (e.g., ["SPY", "QQQ", "GLD"])
         start: Start date string (YYYY-MM-DD)
@@ -29,16 +104,7 @@ def download_prices(
     Returns:
         DataFrame with DatetimeIndex and one column per symbol (adjusted close)
     """
-    df = yf.download(symbols, start=start, end=end, interval=interval, auto_adjust=True)
-
-    if isinstance(df.columns, pd.MultiIndex):
-        prices = df["Close"]
-    else:
-        prices = df[["Close"]]
-        prices.columns = symbols
-
-    prices = prices.dropna(how="all")
-    return prices
+    return download_with_retry(symbols, start=start, end=end, interval=interval)
 
 
 def download_and_cache(
@@ -78,8 +144,7 @@ def download_and_cache(
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)
 
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    prices.to_parquet(cache_path)
+    write_parquet_atomic(prices, cache_path)
     print(f"Cached {len(prices)} rows to: {cache_path}")
 
     return prices

@@ -96,12 +96,13 @@ def download_sp500_prices(
     print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {start}...")
     print("This may take a few minutes on first run...")
 
-    # Download in batches to avoid yfinance timeouts. Each batch gets 3
-    # retry attempts with exponential backoff. If a batch still fails, we
-    # raise rather than silently write a truncated cache (prior bug:
-    # Apr 20 refresh returned 91/451 tickers and corrupted signals).
+    # Download in batches to avoid yfinance timeouts. Retry + >=50%-per-batch
+    # coverage guard live in data.pipeline.download_with_retry (S4). If a
+    # batch still fails after retries, we raise rather than silently write
+    # a truncated cache (prior bug: Apr 20 refresh returned 91/451 tickers
+    # and corrupted signals).
+    from data.pipeline import download_with_retry
     batch_size = 50
-    max_retries = 3
     all_prices = []
     failed_batches: list[int] = []
 
@@ -111,27 +112,12 @@ def download_sp500_prices(
         total_batches = (len(tickers) - 1) // batch_size + 1
         print(f"  Batch {batch_num}/{total_batches}: {len(batch)} tickers")
 
-        batch_prices = None
-        for attempt in range(1, max_retries + 1):
-            try:
-                df = yf.download(batch, start=start, end=end, auto_adjust=True, progress=False)
-                if isinstance(df.columns, pd.MultiIndex):
-                    batch_prices = df["Close"]
-                else:
-                    batch_prices = df[["Close"]]
-                    batch_prices.columns = batch
-                if batch_prices.shape[1] < len(batch) * 0.5:
-                    raise RuntimeError(
-                        f"batch returned only {batch_prices.shape[1]}/{len(batch)} tickers"
-                    )
-                break
-            except Exception as e:
-                print(f"    attempt {attempt}/{max_retries} failed: {e}")
-                if attempt < max_retries:
-                    import time as _t
-                    _t.sleep(2 ** attempt)  # 2s, 4s, 8s backoff
-
-        if batch_prices is None:
+        try:
+            batch_prices = download_with_retry(
+                batch, start=start, end=end, min_coverage_ratio=0.5
+            )
+        except Exception as e:
+            print(f"  Batch {batch_num} exhausted retries: {e}")
             failed_batches.append(batch_num)
         else:
             all_prices.append(batch_prices)
@@ -139,7 +125,7 @@ def download_sp500_prices(
     if failed_batches:
         raise RuntimeError(
             f"S&P 500 download failed for batches {failed_batches} after "
-            f"{max_retries} retries each. Refusing to write a truncated cache. "
+            f"retries exhausted. Refusing to write a truncated cache. "
             f"Retry later (likely yfinance rate-limit) or investigate."
         )
 
@@ -157,8 +143,8 @@ def download_sp500_prices(
     print(f"Final universe: {prices.shape[1]} stocks with {min_coverage:.0%}+ coverage")
     print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    prices.to_parquet(cache_path)
+    from data.pipeline import write_parquet_atomic
+    write_parquet_atomic(prices, cache_path)
     print(f"Cached to {cache_path}")
 
     return prices
@@ -187,16 +173,13 @@ def download_vix(start: str = "2005-01-01") -> pd.Series:
         print(f"VIX cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading VIX data...")
-    df = yf.download("^VIX", start=start, auto_adjust=True, progress=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        vix = df["Close"].squeeze()
-    else:
-        vix = df["Close"].squeeze()
+    from data.pipeline import download_with_retry, write_parquet_atomic
+    prices = download_with_retry(["^VIX"], start=start, min_coverage_ratio=1.0)
+    vix = prices.iloc[:, 0]
 
     vix.name = "VIX"
     vix_df = vix.to_frame()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    vix_df.to_parquet(cache_path)
+    write_parquet_atomic(vix_df, cache_path)
     print(f"Cached VIX: {len(vix)} rows")
 
     return vix

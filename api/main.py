@@ -14,7 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, strategies, backtests, orders
-from api.locks import get_rebalance_lock
+from api.locks import RebalanceLockedError, dual_rebalance_lock
 
 log = logging.getLogger("fire.scheduler")
 
@@ -43,61 +43,60 @@ async def _daily_crypto_rebalance():
 
             log.info(f"Daily crypto rebalance starting (attempt {attempt}/{max_retries})...")
 
-            lock = get_rebalance_lock(4)
-            if lock.locked():
-                log.warning("Crypto rebalance skipped — another rebalance already running")
-                return
-
-            async with lock:
-                broker = AlpacaBroker(account=4)
-                result = await asyncio.to_thread(
-                    compute_rebalance,
-                    broker=broker,
-                    strategy_id="crypto_momentum_filtered",
-                    risk_manager=RiskManager(account=4),
-                )
-
-                if result.price_error:
-                    log.error(f"Crypto rebalance skipped — missing prices: {result.missing_prices}")
-                    return
-
-                if result.risk_check.get("portfolio_halted"):
-                    log.warning("Crypto rebalance skipped — circuit breaker active")
-                    return
-
-                # Price staleness guard — re-fetch and block on >2% drift
-                if result.prices:
-                    drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
-                    if drifted:
-                        raise RuntimeError(f"Price drift detected: {drifted}")
-
-                if result.orders:
-                    order_results = await asyncio.to_thread(execute_rebalance, broker, result)
-                    failed = [o for o in order_results if o.get("status") == "error"]
-                    log.info(
-                        f"Crypto rebalance: {len(order_results)} orders submitted"
-                        + (f" ({len(failed)} failed)" if failed else "")
-                    )
-                    for f in failed:
-                        log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
-
-                    log_rebalance(
-                        account=4,
+            try:
+                async with dual_rebalance_lock(4):
+                    broker = AlpacaBroker(account=4)
+                    result = await asyncio.to_thread(
+                        compute_rebalance,
+                        broker=broker,
                         strategy_id="crypto_momentum_filtered",
-                        portfolio_value=result.portfolio_value,
-                        orders_submitted=len(order_results),
-                        orders_failed=len(failed),
-                        order_details=order_results,
-                        btc_filter_active=result.btc_filter_active,
-                        btc_filter_scalar=result.btc_filter_scalar,
-                        source="scheduled",
+                        risk_manager=RiskManager(account=4),
                     )
-                else:
-                    log.info("Crypto rebalance: no trades needed")
 
-                await asyncio.to_thread(take_snapshot, 4)
-                log.info("Daily crypto rebalance complete")
-                return  # Success — exit retry loop
+                    if result.price_error:
+                        log.error(f"Crypto rebalance skipped — missing prices: {result.missing_prices}")
+                        return
+
+                    if result.risk_check.get("portfolio_halted"):
+                        log.warning("Crypto rebalance skipped — circuit breaker active")
+                        return
+
+                    # Price staleness guard — re-fetch and block on >2% drift
+                    if result.prices:
+                        drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
+                        if drifted:
+                            raise RuntimeError(f"Price drift detected: {drifted}")
+
+                    if result.orders:
+                        order_results = await asyncio.to_thread(execute_rebalance, broker, result)
+                        failed = [o for o in order_results if o.get("status") == "error"]
+                        log.info(
+                            f"Crypto rebalance: {len(order_results)} orders submitted"
+                            + (f" ({len(failed)} failed)" if failed else "")
+                        )
+                        for f in failed:
+                            log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
+
+                        log_rebalance(
+                            account=4,
+                            strategy_id="crypto_momentum_filtered",
+                            portfolio_value=result.portfolio_value,
+                            orders_submitted=len(order_results),
+                            orders_failed=len(failed),
+                            order_details=order_results,
+                            btc_filter_active=result.btc_filter_active,
+                            btc_filter_scalar=result.btc_filter_scalar,
+                            source="scheduled",
+                        )
+                    else:
+                        log.info("Crypto rebalance: no trades needed")
+
+                    await asyncio.to_thread(take_snapshot, 4)
+                    log.info("Daily crypto rebalance complete")
+                    return  # Success — exit retry loop
+            except RebalanceLockedError as e:
+                log.warning(f"Crypto rebalance skipped — {e}")
+                return
 
         except Exception as e:
             log.error(f"Daily crypto rebalance attempt {attempt} failed: {e}", exc_info=True)

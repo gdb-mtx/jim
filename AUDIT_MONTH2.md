@@ -5,7 +5,7 @@
 
 **TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode.
 
-**Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. Tier 2 (S1-S4) and Tier 3/4 remain open.
+**Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. Tier 3/4 remain open.
 
 ---
 
@@ -47,26 +47,29 @@
 
 ## Tier 2 — Safety / concurrency
 
-### 🔴 S1. Cross-process lock race — duplicate orders are possible
-**Files:** `api/locks.py:19-45`, `api/routes/orders.py:130-150`, `scripts/filter_check.py:141`, `api/main.py:46-51`
-**Finding:** The API rebalance endpoint takes only `asyncio.Lock` (in-process). `filter_check.py` (cron) takes only `file_rebalance_lock` (cross-process via fcntl). APScheduler's daily A4 job takes only the asyncio lock. These three locks don't observe each other — two processes can simultaneously enter `compute_rebalance` / `execute_rebalance` for the same account, double-submitting orders.
-**Impact:** On paper it's noise; on real money it's duplicate fills. This is the single most important concurrency fix.
-**Fix:** API endpoint AND APScheduler must acquire both locks (asyncio first, then file lock inside `asyncio.to_thread`).
+### ✅ S1. Cross-process lock race — FIXED 2026-04-20
+**Files:** `api/locks.py`, `api/routes/orders.py:125-146`, `api/main.py:36-108`, `scripts/filter_check.py:141` (unchanged)
+**Finding:** The API rebalance endpoint took only `asyncio.Lock` (in-process). `filter_check.py` (cron) took only `file_rebalance_lock` (cross-process via fcntl). APScheduler's daily A4 job took only the asyncio lock. These three locks didn't observe each other — two processes could simultaneously enter `compute_rebalance` / `execute_rebalance` for the same account, double-submitting orders.
+**Fix applied:** new `dual_rebalance_lock(account)` async context manager in `api/locks.py` takes the async lock in-process, then acquires the file lock inside `asyncio.to_thread`. Both the API execute endpoint and the APScheduler A4 job use it. Contention raises `RebalanceLockedError` (subclass of OSError) → 409 from the API, "skipped" log from the scheduler. `filter_check.py` unchanged — its existing `file_rebalance_lock` call now serializes against the server paths.
+**Verified:** bidirectional end-to-end — (A) external process holds file lock → API endpoint returns `409 {"detail":"rebalance already in progress (another process) for account 4"}`; (B) in-process holds file lock → `filter_check.rebalance_account(4)` returns `status="locked"` and logs `"locked by another process — skipping"`; (C) happy path confirmed via dashboard A4 rebalance execute — "Portfolio already at target, no trades needed."
 
-### 🟠 S2. Parquet writes are not atomic
-**Files:** `data/sp500.py:161`, `data/crypto.py:100,140`, `data/pipeline.py:82`, `data/snapshots.py:63,141`
-**Finding:** `df.to_parquet(path)` truncates then streams. A crash, Ctrl-C, or OOM mid-write leaves a zero/partial file. Next read either raises or silently returns wrong data (same shape as the 91-ticker corruption we just fixed, via a different path).
-**Fix:** Write to `path.tmp`, `os.replace(path.tmp, path)`. The filter-state file already uses this pattern — copy it everywhere.
+### ✅ S2. Parquet writes are not atomic — FIXED 2026-04-20
+**Files:** `data/pipeline.py` (helper), `data/sp500.py`, `data/crypto.py:100,140`, `data/snapshots.py:66,146`
+**Finding:** `df.to_parquet(path)` truncates then streams. A crash, Ctrl-C, or OOM mid-write left a zero/partial file — same shape as the 91/451 corruption, via a different path.
+**Fix applied:** new `write_parquet_atomic(df, path)` in `data/pipeline.py` writes to `path + .tmp` then `os.replace`. Applied to 7 live-path sites: ETF cache, SP500, crypto universe, BTC, VIX, snapshot save, snapshot backfill. Research-only scripts (`mode2/`, `scripts/crypto_robust_opt.py`) not migrated — no live-path exposure.
+**Verified:** smoke test confirmed target file preserved when `.tmp` exists but swap never happened.
 
-### 🟠 S3. `save_snapshot` read-modify-write has no lock
-**File:** `data/snapshots.py:50-63`
-**Finding:** Loads the whole parquet, appends one row, rewrites. Filter-monitor + manual rebalance + dashboard `/snapshot` can race on the same account. Two writers → silently lost rows.
-**Fix:** lockfile around save, or switch to append-only JSONL.
+### ✅ S3. `save_snapshot` read-modify-write race — FIXED 2026-04-20
+**File:** `data/snapshots.py:42-71, 106-144`
+**Finding:** `save_snapshot` loaded parquet, appended one row, rewrote. Filter-monitor + manual rebalance + dashboard `/snapshot` could race on the same account → silently lost rows.
+**Fix applied:** new `file_snapshot_lock(account, timeout=10)` in `api/locks.py` (blocking fcntl with timeout — snapshot writers are legitimate, just need serialization). `save_snapshot` and `backfill_from_alpaca` acquire it internally, so all callers are safe by default. Both functions also now use `write_parquet_atomic`.
+**Verified:** 5 concurrent threads writing different dates for the same account — all 5 rows persisted.
 
-### 🟠 S4. `download_prices` has no retry and is used in the live rebalance path
-**Files:** `data/pipeline.py:15-41`, `execution/rebalance.py:116,162`
-**Finding:** Single-shot yfinance call with no retry. The same rate-limit/partial-batch hiccup that caused the 91-ticker SP500 corruption can return partial data during a live rebalance → wrong target weights → wrong orders.
-**Fix:** factor the retry helper out of `download_sp500_prices` and wrap `download_prices` with it.
+### ✅ S4. `download_prices` has no retry — FIXED 2026-04-20
+**Files:** `data/pipeline.py` (helper), `data/sp500.py`, `data/crypto.py`
+**Finding:** Single-shot yfinance call with no retry, used in the live rebalance path at `execution/rebalance.py:116,162`. Same rate-limit/partial-batch hiccup that caused the 91/451 SP500 corruption could return partial data during a live rebalance → wrong target weights → wrong orders.
+**Fix applied:** new `download_with_retry(symbols, start, ..., max_retries=3, min_coverage_ratio=0.5)` in `data/pipeline.py`. 3× exponential backoff (2s/4s/8s), ≥coverage-ratio guard, raises on persistent failure. `download_prices`, `download_sp500_prices` (batch body), `download_crypto_prices`, `download_btc_prices`, and `download_vix` all now go through it. Single retry path for every live-path yfinance call.
+**Verified:** monkey-patched transient failure → recovered on attempt 2; monkey-patched persistent failure → raised after 2 attempts (no partial data returned).
 
 ---
 
@@ -134,10 +137,10 @@
 2. Fix C2 (BTC MA warmup). Re-run `scripts/crypto_robust_opt.py` with proper 125d warmup + full BTC history passed to filter. Verify SMA-125/top2 is still the winner. If a different config wins by a material margin, update A4 production config.
 3. Update CLAUDE.md headline table with the corrected combined numbers.
 
-**Session 2 — Concurrency safety (Tier 2):**
-4. S1: Make API `/rebalance/execute` and APScheduler A4 job acquire both asyncio + file locks. Required before any real-money graduation.
-5. S2 + S3: Atomic parquet writes; snapshot write locking.
-6. S4: Wrap `download_prices` with retry helper (share with `download_sp500_prices`).
+**Session 2 — Concurrency safety (Tier 2):** ✅ COMPLETE 2026-04-20
+4. ✅ S1: `dual_rebalance_lock` in `api/locks.py`; API endpoint + APScheduler use it; `filter_check.py` unchanged. A/B/C verified.
+5. ✅ S2 + S3: `write_parquet_atomic` helper + `file_snapshot_lock` (blocking, internal to `save_snapshot`/`backfill_from_alpaca`).
+6. ✅ S4: `download_with_retry` helper; shared across `download_prices`, SP500 batch loop, crypto, BTC, VIX.
 
 **Session 3 — Clock / data correctness (Tier 3):**
 7. D1 + D2: UTC-aware timestamp handling + explicit ET trading-date helper.
