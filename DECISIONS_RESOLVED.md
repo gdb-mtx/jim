@@ -56,17 +56,17 @@ The live 29-day correlation (0.84) was observed during the stale-data window and
 ### Why 33% was chosen
 
 - **Simplicity:** one fewer account to maintain (A3 retired), weekly rebalance cadence gone, lower cognitive overhead for Mode 2 build
-- **Material CAGR lift vs status quo:** projected ~3.5pp on paper (**biased high** — see caveats)
+- **Material CAGR lift vs status quo:** projected ~3.5pp on paper (C1 fix 2026-04-20 confirmed this is not meaningfully biased)
 - **Leaves room to scale:** 33% → 40% ladder preserves upside once live data confirms
 - **Concentration comfort:** 33% A4 at worst-case -30% crypto-only drawdown = -10% combined, vs -12% at 40%. Psychologically manageable.
 
 ### What was done (2026-04-20)
 
 - `strategies/portfolio.py`: split `COMBINED_ACCOUNT_STRATEGIES` into `LIVE_ACCOUNT_STRATEGIES = [A1, A2, A4]` (for dashboard combined view) and `EQUITY_CORE_STRATEGIES = [A1, A2]` (for validation base)
-- `run_combined_portfolio`: A1 + A2 + A4 at 1/3 each on union calendar, ppy=365
+- `run_combined_portfolio`: A1 + A2 + A4 at 1/3 each on equity trading calendar, A4 compounded Fri→Mon, ppy=252 (migrated from union+fillna(0)+ppy=365 on 2026-04-20 as part of C1 fix)
 - `run_equity_core`: A1 + A2 at 50/50 on equity calendar, ppy=252
 - `scripts/run_validation.py`: A4 `portfolio_fit` baseline moved to `run_equity_core`; default weight 25% → 33%
-- `api/routes/backtests.py`: uses ppy=365 when combined includes crypto
+- `api/routes/backtests.py`: ppy=252 for combined (equity calendar); ppy=365 for crypto-only books
 - `dashboard/src/strategyMetadata.ts`: combined_3account description updated; `reversal_blend` retired
 - A3 liquidation: cash stays in A3's Alpaca paper account (no physical redistribution); weights are calculated from A1+A2+A4 live equity only
 
@@ -78,10 +78,10 @@ Effective live-clock reset date: **2026-04-20** (post-cache-fix, post-A3-retirem
 
 ### Caveats from the Tier-1 audit
 
-- **C1 (weekend-zero bias):** the "drop-A3 + 33% A4 → Calmar 3.79, CAGR 28.5%" number is inflated because `run_combined_portfolio` treats equity weekends as 0% return rather than held positions. Realized weights drift over a year from 33/33/33 toward ~23/23/54. Direction still favors 33% over 25%, margin smaller than stated.
+- **C1 (weekend-zero bias) — FIXED 2026-04-20:** `run_combined_portfolio` was migrated from union calendar + fillna(0) + ppy=365 to equity-calendar + A4 Fri→Mon compound + ppy=252. Predicted "biased HIGH" effect did not materialize — empirical delta ≤ 0.3pp CAGR / 0.05 Calmar. Corrected weight-sweep confirms 33% A4 → Calmar 3.76 (vs. prior claim 3.79), with 40% at Calmar 3.94 and 50% at 4.20 — ladder direction intact.
 - **C2 (BTC MA warmup):** SMA-125/top2's Test-3 half-A Calmar (2.89) — the primary robust-opt gate — is partly flattered by `min_periods=1`. The A4 production config may not survive a clean recompute.
 
-Before scaling to 40%, both Tier-1 bugs should be fixed and numbers re-verified. The 33% weight choice itself does not need revisiting — it's dominated by 25% on any reasonable correction.
+Before scaling to 40%, C2 should be fixed and the A4 robust-opt config re-verified. The 33% weight choice itself does not need revisiting — it's dominated by 25% on any reasonable correction.
 
 ---
 

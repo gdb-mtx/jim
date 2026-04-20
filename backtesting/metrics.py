@@ -432,22 +432,22 @@ def marginal_portfolio_contribution(
     correlation to the core can improve the combined portfolio more
     than a high-standalone-Sharpe candidate that correlates to the core.
 
-    Calendar alignment: reindex both series to the UNION of their dates,
-    filling missing values with 0 (no return on that date — which is what
-    actually happens, e.g. equity on weekends). Then compute the blended
-    daily return. This preserves crypto weekend compounding that a naive
-    inner-join would discard.
-
-    `periods_per_year` is applied to the UNION calendar, so pass the
-    higher frequency (365 for mixed equity+crypto books).
+    Calendar alignment: uses `existing`'s calendar as the reference.
+    `candidate`'s returns are compounded and reindexed onto that calendar,
+    so Fri→Mon crypto weekend compounding is preserved on the equity
+    trading calendar. `periods_per_year` should match `existing`'s
+    calendar (252 for equity trading days).
 
     Returns:
         Dict with base/combined metrics and the deltas.
     """
-    idx = candidate.index.union(existing.index).sort_values()
-    cand = candidate.reindex(idx).fillna(0.0)
-    base = existing.reindex(idx).fillna(0.0)
     correlation = float(candidate.corr(existing))  # on native overlap
+
+    cand_curve = (1.0 + candidate).cumprod()
+    cand_on_cal = cand_curve.reindex(existing.index, method="ffill").pct_change()
+    df = pd.DataFrame({"cand": cand_on_cal, "base": existing}).dropna()
+    cand = df["cand"]
+    base = df["base"]
 
     combined = weight * cand + (1 - weight) * base
     base_cagr = annualized_return(base, periods_per_year)

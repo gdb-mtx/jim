@@ -409,11 +409,12 @@ def portfolio_fit(adapter: AccountAdapter) -> dict:
     candidate_test = adapter.full_returns[adapter.full_returns.index > TRAIN_END]
 
     if adapter.account == 4:
-        # Satellite: measure what Account 4 would add to the 3-account core.
-        # marginal_portfolio_contribution uses union-calendar alignment so
-        # crypto weekend returns are preserved — pass the crypto ppy (365).
+        # Satellite: measure what Account 4 would add to the equity core.
+        # marginal_portfolio_contribution reindexes candidate onto existing's
+        # calendar (equity trading days), so ppy=252 regardless of A4's
+        # native 365d cadence.
         marginal = marginal_portfolio_contribution(
-            candidate_test, combined_test, weight=weight, periods_per_year=adapter.periods_per_year
+            candidate_test, combined_test, weight=weight, periods_per_year=252
         )
     else:
         # Core accounts are already part of `combined` — skip

@@ -5,6 +5,8 @@
 
 **TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode.
 
+**Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. Tier 2 (S1-S4) and Tier 3/4 remain open.
+
 ---
 
 ## Already fixed today (don't redo)
@@ -23,17 +25,18 @@
 
 ## Tier 1 — Changes reported numbers (fix before trusting headline metrics)
 
-### 🔴 C1. `run_combined_portfolio` weekend-zero bias inflates the combined-book CAGR/Calmar
+### ✅ C1. `run_combined_portfolio` weekend-zero bias — FIXED 2026-04-20 (non-material)
 **File:** `strategies/portfolio.py:399-401`
 **Finding:** On crypto weekends A1 and A2 have no observation; `fillna(0.0)` then `df.mean(axis=1)` treats them as zero returns, so realized weights drift from advertised 33/33/33 toward ~23/23/54 over a year. Crypto's contribution is overstated.
-**Impact:** Every "3-acct + A4 at W%" row in DECISIONS_RESOLVED.md is biased high. The "drop-A3 + 33% A4: Calmar 3.79 / CAGR 28.5%" decision was made on biased numbers. Decision likely still directionally right, but margin of dominance over 25% is smaller than claimed.
-**Fix:** forward-fill equity legs across crypto-only days before averaging (equity positions are held, not zero'd). Re-run the weight-sweep table afterward.
+**Impact (predicted):** Every "3-acct + A4 at W%" row biased high; "drop-A3 + 33% A4: Calmar 3.79 / CAGR 28.5%" decision on biased numbers.
+**Fix applied:** `run_combined_portfolio` migrated to equity trading calendar with A4 compounded Fri→Mon (ppy=252). `marginal_portfolio_contribution` follows the same convention. Callers in `api/routes/strategies.py`, `api/routes/backtests.py`, `scripts/run_validation.py` updated to ppy=252.
+**Empirical result:** predicted bias **did not materialize**. Old vs new: CAGR +28.09%/-7.56%/3.71 → +28.33%/-7.56%/3.75 (Δ ≤ 0.3pp CAGR, ≤ 0.05 Calmar). Total cumulative return preserved within 0.15pp (126.15% → 126.30%). `mean(axis=1)` with fillna(0) implicitly rebalances daily to 1/3 and the weekend-compound math is near-algebraically equivalent for small daily returns. Code migrated anyway for cleaner semantics. Corrected weight-sweep still dominates 25% (33% Calmar 3.76 vs 25% Calmar 3.50), with 40% at 3.94 — ladder direction intact.
 
-### 🔴 C2. Test-3 / robust-opt BTC MA warmup is biased — SMA-125 half-A Calmar 2.89 is flattered
-**Files:** `strategies/crypto_momentum.py:89`, `scripts/crypto_robust_opt.py:112`, `scripts/run_validation.py:295`
-**Finding:** `rolling(125, min_periods=1)` on BTC price produces an expanding-mean during the first 125 days of each half. In half A (2020-01 onward), this means the filter is effectively "on" through the COVID crash when a true 125d warmup would have flipped it off sooner. Robust-opt's 144-config ranking is partly driven by which configs benefit most from this artifact.
-**Impact:** The "SMA-125/top2 wins min-Calmar" claim may not survive a clean recompute. Half-A production Calmar 2.89 is the primary gate for Test 3 — real value is unknown.
-**Fix:** pass full BTC history to the filter (compute MA over full range) and slice returns afterward; change `min_periods=1` → `min_periods=125` for production; rerun robust-opt ranking.
+### ✅ C2. BTC MA warmup bias — FIXED 2026-04-20
+**Files:** `strategies/crypto_momentum.py:89`, `mode2/crypto_autoresearch.py:92/96/100/101`, `api/routes/portfolio.py:350`
+**Finding:** `rolling(125, min_periods=1)` on BTC price produces an expanding-mean during the first 125 days of each half. Robust-opt's 144-config ranking was partly driven by which configs benefit most from this artifact.
+**Fix applied:** all 5 call sites changed to strict `min_periods=<period>`. `_get_btc_trend_scalar` and `run_config` refactored to compute MA on full BTC history **before** reindexing to strategy/slice dates — so half-split harnesses (robust-opt, validation) now use pre-slice BTC for warmup.
+**Result:** SMA-125/top2 **still wins** min-Calmar ranking. Half A Calmar 2.89 unchanged (audit's "flattered" prediction did not materialize — the prod runtime always had full BTC history). Half B shifted 3.10 → 2.94 under strict warmup. A4 validation still PASS: CAGR +45.2%, MaxDD -11.4%, Calmar 3.98, ratio 85%; bootstrap p5 CAGR +24.8%. No production config change required.
 
 ### 🟠 C3. S&P 500 survivorship bias (known, re-emphasized)
 **File:** `data/sp500.py:41-55`, `strategies/stock_momentum.py:123`
@@ -157,14 +160,14 @@
 
 ## Known numeric caveats to carry forward
 
-Until Tier 1 is fixed, assume the following headline numbers are directionally right but specifically off:
+**Post-C1/C2 fix status (2026-04-20):**
 
-- **Combined "3-acct + A4 @ W%"** CAGR and Calmar in DECISIONS_RESOLVED.md and CLAUDE.md are inflated by C1 (weekend-zero).
-- **A4 half-A production Calmar 2.89** (the Test 3 pass-gate) is flattered by C2 (warmup bias).
-- **A1 OOS CAGR 20.9%** is ~1-2pp overstated by C3 (survivorship).
+- **C1 weekend-zero** — FIXED, non-material. Combined 3-acct @ 1/3: +28.3% / -7.6% / 3.75 (was +28.5% / -7.5% / 3.79, Δ within 0.3pp).
+- **C2 BTC MA warmup** — FIXED. SMA-125/top2 still wins min-Calmar ranking (half A 2.89 unchanged, half B 3.10→2.94). No production config change.
+- **C3 S&P 500 survivorship** — acknowledged; A1 OOS CAGR 20.9% is ~1-2pp overstated. Point-in-time constituents sourcing deferred to pre-real-money track.
 - **Live 29-day A1-A3 correlation 0.84** was a real number, but A2-A4/A1-A4 live correlations over the Mar 10 → Apr 17 window reflect stale-data artifacts for the equity side — don't cite them as independent validations.
 
-The **retired/kept/weight decisions themselves** (A3 retired, A4 at 33%) stand on backtest evidence that the Tier 1 bugs don't reverse — just reduce the margin of dominance. No decision is currently expected to flip once the fixes land, but **re-verify** before acting on them.
+The **retired/kept/weight decisions themselves** (A3 retired, A4 at 33%) stood on the Tier 1 predictions; post-fix numbers **confirm** they remain the right calls (corrected weight-sweep: 33% → Calmar 3.76, 25% → 3.50, 40% → 3.94). Ladder to 40% direction intact.
 
 ---
 

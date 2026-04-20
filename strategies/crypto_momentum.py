@@ -84,9 +84,14 @@ class CryptoMomentum(BaseStrategy):
         if self._btc is None:
             return pd.Series(1.0, index=dates)
 
-        # Align BTC to strategy dates
+        # Compute MA on full BTC history so warmup uses pre-strategy data
+        # (strict min_periods=btc_ma_period; AUDIT_MONTH2.md C2).
+        btc_ma_full = self._btc.rolling(
+            self.btc_ma_period, min_periods=self.btc_ma_period
+        ).mean()
+
         btc_aligned = self._btc.reindex(dates).ffill()
-        btc_ma = btc_aligned.rolling(self.btc_ma_period, min_periods=1).mean()
+        btc_ma = btc_ma_full.reindex(dates).ffill()
 
         scalar = pd.Series(
             np.where(btc_aligned > btc_ma, 1.0, 0.0),

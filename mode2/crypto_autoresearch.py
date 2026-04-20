@@ -84,21 +84,27 @@ def run_config(prices: pd.DataFrame, btc: pd.Series, cfg: Config) -> Result:
 
     btc_aligned = btc.reindex(prices.index).ffill()
 
-    # Build filter scalar based on filter type
+    # MAs computed on full btc history (strict min_periods) then reindexed to
+    # prices.index — so half-sliced backtests use pre-slice BTC for warmup
+    # (AUDIT_MONTH2.md C2).
     if cfg.filter_type == "none":
         filter_scalar = pd.Series(1.0, index=prices.index)
         pct_invested = 100.0
     elif cfg.filter_type == "sma":
-        ma = btc_aligned.rolling(cfg.filter_period, min_periods=1).mean()
+        ma_full = btc.rolling(cfg.filter_period, min_periods=cfg.filter_period).mean()
+        ma = ma_full.reindex(prices.index).ffill()
         filter_scalar = pd.Series(np.where(btc_aligned > ma, 1.0, 0.0), index=prices.index)
         pct_invested = (btc_aligned > ma).mean() * 100
     elif cfg.filter_type == "ema":
-        ma = btc_aligned.ewm(span=cfg.filter_period, min_periods=1).mean()
+        ma_full = btc.ewm(span=cfg.filter_period, min_periods=cfg.filter_period).mean()
+        ma = ma_full.reindex(prices.index).ffill()
         filter_scalar = pd.Series(np.where(btc_aligned > ma, 1.0, 0.0), index=prices.index)
         pct_invested = (btc_aligned > ma).mean() * 100
     elif cfg.filter_type == "dual":
-        fast_ma = btc_aligned.rolling(cfg.filter_fast, min_periods=1).mean()
-        slow_ma = btc_aligned.rolling(cfg.filter_period, min_periods=1).mean()
+        fast_full = btc.rolling(cfg.filter_fast, min_periods=cfg.filter_fast).mean()
+        slow_full = btc.rolling(cfg.filter_period, min_periods=cfg.filter_period).mean()
+        fast_ma = fast_full.reindex(prices.index).ffill()
+        slow_ma = slow_full.reindex(prices.index).ffill()
         filter_scalar = pd.Series(np.where(fast_ma > slow_ma, 1.0, 0.0), index=prices.index)
         pct_invested = (fast_ma > slow_ma).mean() * 100
     else:

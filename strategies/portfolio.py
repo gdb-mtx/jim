@@ -379,12 +379,12 @@ def run_combined_portfolio(
     start: str = "2010-01-01",
     end: str | None = None,
 ) -> tuple[str, pd.Series]:
-    """Run the full live book: A1 + A2 + A4 at 1/3 each.
+    """Run the full live book: A1 + A2 + A4 at 1/3 each on the equity calendar.
 
-    Uses a union calendar (equity + crypto days) with fillna(0) so crypto
-    weekend returns are preserved. The series starts from the latest
-    strategy's first day (A4 inception = 2020-09-11). Callers should
-    annualize with periods_per_year=365.
+    A4's crypto returns are compounded across weekends so Monday's A4 return
+    reflects the Fri→Mon cumulative BTC move. The series starts from the
+    latest strategy's first day (A4 inception = 2020-09-11). Callers
+    annualize with periods_per_year=252.
     """
     account_returns = {}
     for pid in LIVE_ACCOUNT_STRATEGIES:
@@ -394,8 +394,18 @@ def run_combined_portfolio(
             returns = returns.loc[non_zero.index[0]:]
         account_returns[pid] = returns
 
+    eq_cal = account_returns["sm_filtered"].index.union(
+        account_returns["trend_lowvol"].index
+    )
     latest_start = max(s.index[0] for s in account_returns.values())
-    account_returns = {k: v[v.index >= latest_start] for k, v in account_returns.items()}
-    df = pd.DataFrame(account_returns).fillna(0.0)
+    eq_cal = eq_cal[eq_cal >= latest_start]
+
+    def _to_equity_calendar(r: pd.Series) -> pd.Series:
+        equity_curve = (1.0 + r).cumprod()
+        on_eq = equity_curve.reindex(eq_cal, method="ffill")
+        return on_eq.pct_change()
+
+    on_calendar = {k: _to_equity_calendar(v) for k, v in account_returns.items()}
+    df = pd.DataFrame(on_calendar).dropna()
     combined = df.mean(axis=1)
     return "Combined Live Portfolio (A1 + A2 + A4)", combined

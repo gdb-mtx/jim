@@ -31,7 +31,7 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — RETIRED 2026-04-20)**: 60% STR + 40% SM. Retired because 40% of its book was literally A1 (structural overlap → A1↔A3 OOS correlation 0.876). Liquidated $99,826.89 all-cash. Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 wins with nearly-identical Calmar in both halves (2.89 pre-2023 / 3.10 post-2023). **Caveat: `min_periods=1` on the MA warmup may inflate half-A Calmar — see AUDIT_MONTH2.md C2.** A4 weight in combined book is **33%** (1/3), with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 remains the robust winner post-C2 fix (half A 2.89 / half B 2.94 with strict 125d MA warmup; half B was 3.10 under the old min_periods=1 convention). A4 weight in combined book is **33%** (1/3), with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
 
 Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 - A1↔A2: **0.38** (backtest) — genuinely diversified
@@ -41,15 +41,15 @@ Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 
 **Live correlation panel** (dashboard) shows A1/A2/A4 pairs only. Live A4 pairs currently show "—" because A4 has been all-cash since launch (BTC below 125d MA filter → zero-variance returns make Pearson correlation undefined).
 
-Combined OOS (2023-01-03 → 2026-04-17 equity; union calendar + ppy=365 when A4 included):
+Combined OOS (2023-01-03 → 2026-04-17; equity trading calendar, A4 compounded Fri→Mon, ppy=252):
 
-⚠️ **The numbers below are biased HIGH by the weekend-zero bug in `run_combined_portfolio` (AUDIT_MONTH2.md C1).** Equity legs are filled with 0 on crypto-only days rather than held, so realized A4 weight drifts upward. Directions are correct; absolute magnitudes will drop once fixed.
+- Equity core (A1+A2 at 50/50): **CAGR +19.5%, MaxDD -8.8%, Calmar 2.21**
+- 3-account live book (A1+A2+A4 at 1/3 each): **CAGR +28.3%, MaxDD -7.6%, Calmar 3.75**
 
-- Equity core (A1+A2 at 50/50, clean): **CAGR +19.7%, MaxDD -9.3%, Calmar 2.11**
-- 3-account live book (A1+A2+A4 at 1/3 each, biased): **CAGR +28.5%, MaxDD -7.5%, Calmar 3.79**
+*C1 fix applied 2026-04-20: the old union-calendar+fillna(0)+ppy=365 convention gave essentially the same numbers (28.09%/-7.56%/3.71) — the audit's "biased HIGH" magnitude claim did not materialize. Code migrated anyway for cleaner semantics.*
 
-Account 4 standalone (fresh data through 2026-04-20, post-cache-refresh):
-**CAGR +45.2%, MaxDD -11.4%, Calmar 3.98** (Sharpe 1.90 informational). Prior report of 47.1%/4.15 was on a slightly shorter window; fresh-data extension moved numbers modestly. Bootstrap p5 CAGR will be re-reported after C2 is addressed.
+Account 4 standalone (fresh data through 2026-04-20, post C1+C2 fixes):
+**CAGR +45.2%, MaxDD -11.4%, Calmar 3.98** (Sharpe 1.90 informational). Block-bootstrap CAGR p5/p50/p95: **+24.8% / +45.8% / +76.1%**. Prior report of 47.1%/4.15 was on a slightly shorter window.
 
 Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials. Account 3 is retired; orders endpoint `_require_active()` guard + validation_gate both block rebalance attempts against it.
 
@@ -66,15 +66,15 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 **Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20, post-cache-refresh). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION_PLAN.md`.**
 
 **Load-bearing caveats before trusting these numbers (see AUDIT_MONTH2.md):**
-- **C1:** Combined "3-acct + A4" rows are biased high by the weekend-zero bug in `run_combined_portfolio`.
-- **C2:** A4's Test-3 half-A Calmar 2.89 — the robust-opt gate — is flattered by `min_periods=1` on BTC MA warmup.
+- **C1 (fixed 2026-04-20):** `run_combined_portfolio` migrated from union calendar + fillna(0) + ppy=365 to equity trading calendar with A4 compounded Fri→Mon + ppy=252. Empirical delta on headline numbers was ≤ 0.3pp CAGR / 0.05 Calmar — audit's "biased HIGH" claim did not materialize.
+- **C2 (fixed 2026-04-20):** `min_periods=1` on BTC MA warmup changed to strict `min_periods=period` in `strategies/crypto_momentum.py`, `mode2/crypto_autoresearch.py`, and `api/routes/portfolio.py`. Robust-opt + validation harnesses now compute MA on full BTC history before reindexing to half-slices, so pre-slice warmup is used. SMA-125/top2 remains the min-Calmar winner (half A 2.89 unchanged, half B 3.10 → 2.94).
 - **C3:** A1 standalone CAGR is ~1-2pp overstated by S&P 500 survivorship bias (known, documented below).
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | UPI | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|---|
-| **Live book (A1+A2+A4 @ 1/3)** ⚠ biased | — | **+28.5%** | **-7.5%** | **3.79** | — | — | — | — |
-| **Equity core (A1+A2 @ 50/50)** | — | **+19.7%** | **-9.3%** | **2.11** | — | — | — | *1.87* |
-| **Crypto Momentum (Acct 4)** ⚠ C2 | PASS | **+45.2%** | **-11.4%** | **3.98** | 3.98 | 8.68 | 2.18 | *1.90* |
+| **Live book (A1+A2+A4 @ 1/3)** | — | **+28.3%** | **-7.6%** | **3.75** | — | — | — | — |
+| **Equity core (A1+A2 @ 50/50)** | — | **+19.5%** | **-8.8%** | **2.21** | — | — | — | *1.87* |
+| **Crypto Momentum (Acct 4)** | PASS | **+45.2%** | **-11.4%** | **3.98** | 3.98 | 8.68 | 2.18 | *1.90* |
 | **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+20.9%** | **-11.1%** | **1.89** | 1.89 | 5.39 | 1.63 | *1.65* |
 | **Trend + Low-Vol (Acct 2)** | PASS | **+17.4%** | **-10.7%** | **1.62** | 1.62 | 5.42 | 1.35 | *1.42* |
 | *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — | — |
@@ -239,7 +239,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
 
-**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1 (C1, C2, C3) affects headline numbers; Tier 2 (S1-S4) are concurrency/atomicity issues; Tier 3 (D1-D4) are clock/data correctness; Tier 4 (R1-R11) are reporting hygiene. Nothing is blocking paper trading, but **Tier 1 + S1 should be addressed before any real-money graduation**.
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. Tier 2 (S1-S4) are concurrency/atomicity issues; Tier 3 (D1-D4) are clock/data correctness; Tier 4 (R1-R11) are reporting hygiene. Nothing is blocking paper trading, but **S1 should be addressed before any real-money graduation**.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -261,7 +261,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Mode 1 priority: work through `AUDIT_MONTH2.md` Tier 1 first.** C1 (weekend-zero) to get honest combined numbers, C2 (BTC MA warmup) to verify SMA-125/top2 is the real robust-opt winner, C3 disclosure on survivorship. Then Tier 2 S1 (cross-process lock) is the next must-do before real money.
+- **Mode 1 priority:** C1 + C2 fixed 2026-04-20. C1 non-material numerically (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. C3 disclosure remains. Next must-do before real money: Tier 2 S1 (cross-process lock).
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
