@@ -387,11 +387,11 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
       </div>
 
       {loading ? (
-        <div className="flex h-[300px] items-center justify-center text-sm text-[#5a5a70]">
+        <div className="flex h-[300px] items-center justify-center text-sm text-[#8a8aa5]">
           Loading equity data...
         </div>
       ) : days < 2 ? (
-        <div className="flex h-[300px] items-center justify-center text-sm text-[#5a5a70]">
+        <div className="flex h-[300px] items-center justify-center text-sm text-[#8a8aa5]">
           Equity tracking started. Check back tomorrow for your first chart.
         </div>
       ) : null}
@@ -405,7 +405,7 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
           </h2>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-[#5a5a70]">
+              <tr className="text-[#8a8aa5]">
                 <th className="pb-2 text-left font-medium">Account</th>
                 <th className="pb-2 text-right font-medium">Return</th>
                 <th className="pb-2 text-right font-medium">SPY</th>
@@ -438,15 +438,27 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
                     </td>
                     <td
                       className="py-1.5 text-right"
-                      style={{ color: p.spy_return_pct >= 0 ? "#00d4aa" : "#ff6b6b" }}
+                      style={
+                        p.spy_return_pct === null
+                          ? { color: "#5a5a70" }
+                          : { color: p.spy_return_pct >= 0 ? "#00d4aa" : "#ff6b6b" }
+                      }
                     >
-                      {p.spy_return_pct >= 0 ? "+" : ""}{p.spy_return_pct.toFixed(2)}%
+                      {p.spy_return_pct === null
+                        ? "—"
+                        : `${p.spy_return_pct >= 0 ? "+" : ""}${p.spy_return_pct.toFixed(2)}%`}
                     </td>
                     <td
                       className="py-1.5 text-right"
-                      style={{ color: p.alpha_pct >= 0 ? "#00d4aa" : "#ff6b6b" }}
+                      style={
+                        p.alpha_pct === null
+                          ? { color: "#5a5a70" }
+                          : { color: p.alpha_pct >= 0 ? "#00d4aa" : "#ff6b6b" }
+                      }
                     >
-                      {p.alpha_pct >= 0 ? "+" : ""}{p.alpha_pct.toFixed(2)}%
+                      {p.alpha_pct === null
+                        ? "—"
+                        : `${p.alpha_pct >= 0 ? "+" : ""}${p.alpha_pct.toFixed(2)}%`}
                     </td>
                   </tr>
                 );
@@ -483,7 +495,7 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
       </div>
 
       {days >= 2 && (
-        <p className="mt-2 text-right text-xs text-[#5a5a70]">
+        <p className="mt-2 text-right text-xs text-[#8a8aa5]">
           {days} trading days tracked
         </p>
       )}

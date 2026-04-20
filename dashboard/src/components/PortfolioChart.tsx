@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react";
-import { createChart, LineSeries, type IChartApi, type ISeriesApi, LineType } from "lightweight-charts";
+import { createChart, LineSeries, createSeriesMarkers, type IChartApi, type ISeriesApi, LineType, type Time } from "lightweight-charts";
 import type { EquityPoint } from "../types";
 
 interface Props {
   data: EquityPoint[];
   spyData?: EquityPoint[];
+  oosStart?: string | null;
   title?: string;
 }
 
-export default function PortfolioChart({ data, spyData, title = "Equity Curve" }: Props) {
+export default function PortfolioChart({ data, spyData, oosStart, title = "Equity Curve" }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -90,6 +91,27 @@ export default function PortfolioChart({ data, spyData, title = "Equity Curve" }
     }
   }, [data]);
 
+  // OOS-start marker — only render when we have both a cutoff date and
+  // at least one data point at-or-after that date. Uses the v5
+  // createSeriesMarkers helper (setMarkers was removed in v5).
+  useEffect(() => {
+    if (!seriesRef.current || !oosStart || data.length === 0) return;
+    const cutoff = data.find((p) => p.time >= oosStart);
+    if (!cutoff) return;
+    const markers = createSeriesMarkers(seriesRef.current, [
+      {
+        time: cutoff.time as Time,
+        position: "aboveBar",
+        color: "#f5c542",
+        shape: "arrowDown",
+        text: `OOS start (${oosStart})`,
+      },
+    ]);
+    return () => {
+      markers.detach();
+    };
+  }, [oosStart, data]);
+
   useEffect(() => {
     if (spySeriesRef.current) {
       if (spyData && spyData.length > 0) {
@@ -115,8 +137,19 @@ export default function PortfolioChart({ data, spyData, title = "Equity Curve" }
             <span className="inline-block h-0.5 w-4 rounded bg-[#ff4d6a]" />
             <span className="text-[#8888a0]">SPY</span>
           </span>
+          {oosStart && (
+            <span className="flex items-center gap-1.5">
+              <span className="text-[#f5c542]">▼</span>
+              <span className="text-[#8888a0]">OOS start</span>
+            </span>
+          )}
         </div>
       </div>
+      {oosStart && (
+        <p className="mb-2 text-xs leading-snug text-[#8a8aa5]">
+          Chart covers the full backtest window. The yellow marker at <span className="text-[#c0c0d0]">{oosStart}</span> separates the in-sample design window (everything to its left) from the out-of-sample test window (everything to its right). Metrics table above reports both slices.
+        </p>
+      )}
       <div ref={containerRef} />
     </div>
   );

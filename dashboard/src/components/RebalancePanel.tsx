@@ -81,7 +81,7 @@ function OrdersTable({
                   <td className="py-2 pr-4 font-medium text-[#e8e8f0]">
                     {i === 0 && group.length > 1 ? (
                       <span
-                        className="mr-2 text-[10px] font-normal uppercase tracking-wider"
+                        className="mr-2 text-xs font-normal uppercase tracking-wider"
                         style={{ color: cfg.color + "80" }}
                       >
                         {cfg.label}
@@ -100,7 +100,7 @@ function OrdersTable({
                   <td className="py-2 pr-4 text-right tabular-nums text-[#8888a0]">
                     {currentQty}
                   </td>
-                  <td className="py-2 pr-4 text-center text-[#5a5a70]">→</td>
+                  <td className="py-2 pr-4 text-center text-[#8a8aa5]">→</td>
                   <td className="py-2 pr-4 text-right tabular-nums text-[#e8e8f0]">
                     {targetQty}
                   </td>
@@ -219,7 +219,7 @@ export default memo(function RebalancePanel({
           <h2 className="text-sm font-medium tracking-wide text-[#8888a0] uppercase">
             Rebalance
           </h2>
-          <p className="mt-0.5 text-xs text-[#5a5a70]">{strategyId}</p>
+          <p className="mt-0.5 text-xs text-[#8a8aa5]">{strategyId}</p>
         </div>
 
         {state === "idle" && (

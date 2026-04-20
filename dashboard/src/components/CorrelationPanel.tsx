@@ -85,7 +85,7 @@ function CorrelationMatrix({
         <table className="w-full text-center text-xs">
           <thead>
             <tr className="border-b border-[#2a2a3e] bg-[#12121a]">
-              <th className="px-3 py-2 text-[#5a5a70]" />
+              <th className="px-3 py-2 text-[#8a8aa5]" />
               {accounts.map((a) => (
                 <th key={a} className="px-3 py-2 font-medium text-[#8888a0]">
                   {a}
@@ -113,7 +113,7 @@ function CorrelationMatrix({
                         {val !== null ? val.toFixed(2) : "—"}
                       </div>
                       {exp !== null && (
-                        <div className="text-[10px] text-[#5a5a70]">
+                        <div className="text-xs text-[#8a8aa5]">
                           exp {exp.toFixed(2)}
                         </div>
                       )}
@@ -227,12 +227,12 @@ function RollingChart({ rolling }: { rolling: Record<string, EquityPoint[]> }) {
                 className="inline-block h-0.5 w-3 rounded"
                 style={{ backgroundColor: cfg.color }}
               />
-              <span className="text-[#5a5a70]">{cfg.label}</span>
+              <span className="text-[#8a8aa5]">{cfg.label}</span>
             </span>
           ))}
           <span className="flex items-center gap-1">
             <span className="inline-block h-0.5 w-3 rounded border-t border-dashed border-[#ff4d6a]" />
-            <span className="text-[#5a5a70]">Alert</span>
+            <span className="text-[#8a8aa5]">Alert</span>
           </span>
         </div>
       </div>
@@ -260,7 +260,7 @@ export default memo(function CorrelationPanel() {
   if (loading) {
     return (
       <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
-        <p className="text-sm text-[#5a5a70]">Loading correlation data...</p>
+        <p className="text-sm text-[#8a8aa5]">Loading correlation data...</p>
       </div>
     );
   }
@@ -274,7 +274,7 @@ export default memo(function CorrelationPanel() {
         <h2 className="mb-2 text-sm font-medium tracking-wide text-[#8888a0] uppercase">
           Correlation Monitor
         </h2>
-        <p className="text-sm text-[#5a5a70]">
+        <p className="text-sm text-[#8a8aa5]">
           Correlation monitoring requires at least 20 trading days. Currently at{" "}
           <span className="font-medium text-[#8888a0]">{report.data_days}</span>{" "}
           days.

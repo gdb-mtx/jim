@@ -152,7 +152,7 @@ function StrategySection({
           className={`text-xs font-medium tracking-wide uppercase ${headerColor}`}
         >
           {config.title}{" "}
-          <span className="text-[#5a5a70]">({strategies.length})</span>
+          <span className="text-[#8a8aa5]">({strategies.length})</span>
         </span>
         {config.collapsible && <Chevron expanded={expanded} />}
       </button>

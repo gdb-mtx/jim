@@ -119,6 +119,33 @@ async def run_backtest(
         periods = 365 if is_crypto else 252
         report = full_report(returns, name=strategy_name, periods_per_year=periods)
 
+        # IS / OOS split — matches the validation gate's holdout
+        # (train through 2022-12-31, test 2023-01-03 forward). Returns
+        # `is_metrics` / `oos_metrics` as slim scorecards for the UI to
+        # show alongside the full-sample `metrics`. `oos_start` is the
+        # first test-window return-date so the chart can mark the cutoff.
+        TRAIN_END = pd.Timestamp("2022-12-31")
+        is_returns = returns.loc[:TRAIN_END]
+        oos_returns = returns.loc[TRAIN_END + pd.Timedelta(days=1):]
+
+        def _slim_metrics(r: pd.Series) -> dict | None:
+            if len(r) < 20:
+                return None
+            rep = full_report(r, name="_slice", periods_per_year=periods)
+            return {
+                "n_days": int(len(r)),
+                "period_start": r.index[0].strftime("%Y-%m-%d"),
+                "period_end": r.index[-1].strftime("%Y-%m-%d"),
+                "cagr": rep["annualized_return"],
+                "max_drawdown": rep["max_drawdown"],
+                "calmar_ratio": rep["calmar_ratio"],
+                "sharpe_ratio": rep["sharpe_ratio"],
+            }
+
+        is_metrics = _slim_metrics(is_returns)
+        oos_metrics = _slim_metrics(oos_returns)
+        oos_start = oos_returns.index[0].strftime("%Y-%m-%d") if len(oos_returns) else None
+
         # SPY buy-and-hold benchmark for the same active period
         spy_prices = download_and_cache(["SPY"], start=start, end=end, cache_name="spy_filter")
         spy_returns = spy_prices.pct_change().dropna().squeeze()
@@ -139,6 +166,10 @@ async def run_backtest(
             "equity_curve": equity_data,
             "spy_curve": spy_data,
             "metrics": report,
+            "is_metrics": is_metrics,
+            "oos_metrics": oos_metrics,
+            "oos_start": oos_start,
+            "train_end": TRAIN_END.strftime("%Y-%m-%d"),
         }
 
     return await asyncio.to_thread(_compute)

@@ -131,31 +131,52 @@ function App() {
 
           {/* Main content */}
           <div className="space-y-6 lg:col-span-3">
-            {/* Metrics row */}
-            {m && (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <MetricCard
-                  label="Annual Return"
-                  value={`${(m.annualized_return * 100).toFixed(1)}%`}
-                  color={m.annualized_return >= 0 ? "green" : "red"}
-                />
-                <MetricCard
-                  label="Sharpe Ratio"
-                  value={m.sharpe_ratio.toFixed(2)}
-                  subtext={m.sharpe_ratio >= 1 ? "Target met" : "Below 1.0 target"}
-                  color={m.sharpe_ratio >= 1 ? "green" : "yellow"}
-                />
-                <MetricCard
-                  label="Max Drawdown"
-                  value={`${(m.max_drawdown * 100).toFixed(1)}%`}
-                  color="red"
-                />
-                <MetricCard
-                  label="Kelly (Quarter)"
-                  value={`${(m.kelly_quarter * 100).toFixed(1)}%`}
-                  subtext="Position size"
-                  color="blue"
-                />
+            {/* Metrics table — Full / In-Sample / Out-of-Sample */}
+            {m && backtest && (
+              <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">
+                <div className="mb-3 flex items-start justify-between gap-4">
+                  <h2 className="text-sm font-medium tracking-wide text-[#8888a0] uppercase">
+                    Performance — Full / In-Sample / Out-of-Sample
+                  </h2>
+                  <p className="max-w-md text-right text-xs leading-snug text-[#8a8aa5]">
+                    IS = design window (through {backtest.train_end ?? "2022-12-31"}).
+                    OOS = held-out test (2023-01-01 onward), the number the validation gate actually checks.
+                  </p>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[#8a8aa5]">
+                      <th className="pb-2 text-left font-medium">Period</th>
+                      <th className="pb-2 text-right font-medium">CAGR</th>
+                      <th className="pb-2 text-right font-medium">MaxDD</th>
+                      <th className="pb-2 text-right font-medium">Calmar</th>
+                      <th className="pb-2 text-right font-medium">Sharpe</th>
+                      <th className="pb-2 text-right font-medium">Days</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([
+                      { key: "full", label: "Full sample", cagr: m.annualized_return, maxdd: m.max_drawdown, calmar: m.calmar_ratio, sharpe: m.sharpe_ratio, days: backtest.equity_curve.length, range: `${backtest.equity_curve[0]?.time} → ${backtest.equity_curve[backtest.equity_curve.length-1]?.time}` },
+                      backtest.is_metrics ? { key: "is", label: "In-sample (design)", cagr: backtest.is_metrics.cagr, maxdd: backtest.is_metrics.max_drawdown, calmar: backtest.is_metrics.calmar_ratio, sharpe: backtest.is_metrics.sharpe_ratio, days: backtest.is_metrics.n_days, range: `${backtest.is_metrics.period_start} → ${backtest.is_metrics.period_end}` } : null,
+                      backtest.oos_metrics ? { key: "oos", label: "Out-of-sample", cagr: backtest.oos_metrics.cagr, maxdd: backtest.oos_metrics.max_drawdown, calmar: backtest.oos_metrics.calmar_ratio, sharpe: backtest.oos_metrics.sharpe_ratio, days: backtest.oos_metrics.n_days, range: `${backtest.oos_metrics.period_start} → ${backtest.oos_metrics.period_end}` } : null,
+                    ].filter(Boolean) as Array<{key:string; label:string; cagr:number; maxdd:number; calmar:number; sharpe:number; days:number; range:string}>).map((row) => (
+                      <tr
+                        key={row.key}
+                        className={row.key === "oos" ? "border-t border-[#2a2a3e] font-semibold" : row.key === "is" ? "" : "border-b border-[#2a2a3e]/50"}
+                        title={row.range}
+                      >
+                        <td className="py-1.5 text-left text-[#c0c0d0]">{row.label}</td>
+                        <td className="py-1.5 text-right" style={{ color: row.cagr >= 0 ? "#00d4aa" : "#ff6b6b" }}>
+                          {row.cagr >= 0 ? "+" : ""}{(row.cagr * 100).toFixed(2)}%
+                        </td>
+                        <td className="py-1.5 text-right text-[#ff6b6b]">{(row.maxdd * 100).toFixed(2)}%</td>
+                        <td className="py-1.5 text-right text-[#c0c0d0]">{row.calmar.toFixed(2)}</td>
+                        <td className="py-1.5 text-right text-[#8888a0]">{row.sharpe.toFixed(2)}</td>
+                        <td className="py-1.5 text-right text-[#8a8aa5]">{row.days}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
@@ -171,6 +192,7 @@ function App() {
               <PortfolioChart
                 data={backtest.equity_curve}
                 spyData={backtest.spy_curve}
+                oosStart={backtest.oos_start ?? null}
                 title={`${backtest.strategy} — Equity Curve ($10k start)`}
               />
             )}

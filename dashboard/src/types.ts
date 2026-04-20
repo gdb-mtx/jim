@@ -14,6 +14,16 @@ export interface StrategyMetrics {
   validation_passed: boolean;
 }
 
+export interface SliceMetrics {
+  n_days: number;
+  period_start: string;
+  period_end: string;
+  cagr: number;
+  max_drawdown: number;
+  calmar_ratio: number;
+  sharpe_ratio: number;
+}
+
 export interface BacktestResult {
   strategy: string;
   equity_curve: EquityPoint[];
@@ -30,6 +40,10 @@ export interface BacktestResult {
     kelly_half: number;
     kelly_quarter: number;
   };
+  is_metrics?: SliceMetrics | null;
+  oos_metrics?: SliceMetrics | null;
+  oos_start?: string | null;
+  train_end?: string;
 }
 
 export interface AccountInfo {
@@ -87,8 +101,8 @@ export interface PerformanceEntry {
   account: number;
   label: string;
   return_pct: number;
-  spy_return_pct: number;
-  alpha_pct: number;
+  spy_return_pct: number | null;
+  alpha_pct: number | null;
 }
 
 export interface EquityHistoryResponse {
