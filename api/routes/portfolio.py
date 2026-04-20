@@ -162,9 +162,9 @@ async def create_snapshot(
 
 def _patch_today(curve: list[dict], live_equity: float) -> list[dict]:
     """Replace or append today's data point with live equity from Alpaca."""
-    from datetime import date
+    from data.trading_dates import today_et
 
-    today = date.today().isoformat()
+    today = today_et()
     if not curve:
         return [{"time": today, "value": round(live_equity, 2)}]
     if curve[-1]["time"] == today:

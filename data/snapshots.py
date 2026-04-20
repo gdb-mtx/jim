@@ -9,15 +9,18 @@ S3) and persisted via `write_parquet_atomic` (S2), so concurrent writers
 safely race without losing rows or leaving a partial parquet.
 """
 
+import logging
 import os
-from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
 
 from api.locks import file_snapshot_lock
 from data.pipeline import write_parquet_atomic
+from data.trading_dates import today_et, utc_ts_to_et_date
 from execution.alpaca_broker import AlpacaBroker
+
+logger = logging.getLogger(__name__)
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "processed")
 
@@ -80,7 +83,7 @@ def take_snapshot(account: int) -> dict:
     broker = AlpacaBroker(account=account)
     acct = broker.get_account()
     positions = broker.get_positions()
-    today = date.today().isoformat()
+    today = today_et()
 
     created = save_snapshot(
         account=account,
@@ -132,7 +135,7 @@ def backfill_from_alpaca(account: int) -> int:
         # Collect all new rows, then append in one batch
         new_rows = []
         for ts, equity, pl in zip(history.timestamp, history.equity, history.profit_loss):
-            dt = pd.Timestamp(datetime.fromtimestamp(ts).strftime("%Y-%m-%d")).normalize()
+            dt = pd.Timestamp(utc_ts_to_et_date(ts)).normalize()
             if equity is None or float(equity) == 0:
                 continue
             if dt in df.index:
@@ -229,7 +232,8 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
             {"time": idx.strftime("%Y-%m-%d"), "value": round(float(val), 2)}
             for idx, val in spy_normalized.items()
         ]
-    except Exception:
+    except Exception as e:
+        logger.warning("SPY benchmark fetch failed (%s) — returning empty series", e)
         return []
 
 
@@ -254,7 +258,10 @@ def get_performance_summary(
     all_start = 0.0
     all_current = 0.0
 
-    # Load SPY prices — fetch fresh data when comparing to live portfolio values
+    # Load SPY prices — fetch fresh data when comparing to live portfolio values.
+    # If fetch fails, surface it via None spy/alpha fields (D4) rather than
+    # rendering a misleading "0.00% SPY, +X% alpha" on the dashboard.
+    spy_available = True
     try:
         if live_equity:
             from data.pipeline import download_prices
@@ -264,11 +271,15 @@ def get_performance_summary(
             spy = download_and_cache(
                 ["SPY"], start="2025-01-01", cache_name="spy_filter"
             ).squeeze()
-    except Exception:
+    except Exception as e:
+        logger.warning("SPY fetch failed (%s) — performance summary will mark SPY/alpha as unavailable", e)
         spy = pd.Series(dtype=float)
+        spy_available = False
 
-    def _spy_return_from(start_date: pd.Timestamp) -> float:
-        """Compute SPY return from a given start date to latest available."""
+    def _spy_return_from(start_date: pd.Timestamp) -> float | None:
+        """SPY return from start_date to latest. Returns None if SPY is unavailable."""
+        if not spy_available:
+            return None
         if spy.empty or start_date is None:
             return 0.0
         spy_aligned = spy[spy.index >= start_date]
@@ -277,6 +288,9 @@ def get_performance_summary(
                 (float(spy_aligned.iloc[-1]) / float(spy_aligned.iloc[0]) - 1) * 100, 2
             )
         return 0.0
+
+    def _alpha(ret: float, spy_ret: float | None) -> float | None:
+        return None if spy_ret is None else round(ret - spy_ret, 2)
 
     # Load per-account snapshots and compute returns
     combined_start_date = None  # latest first date (when all accounts are live)
@@ -287,8 +301,8 @@ def get_performance_summary(
                 "account": acct,
                 "label": ACCOUNT_INFO[acct]["label"],
                 "return_pct": 0.0,
-                "spy_return_pct": 0.0,
-                "alpha_pct": 0.0,
+                "spy_return_pct": None if not spy_available else 0.0,
+                "alpha_pct": None if not spy_available else 0.0,
             })
             continue
 
@@ -308,7 +322,7 @@ def get_performance_summary(
             "label": ACCOUNT_INFO[acct]["label"],
             "return_pct": ret,
             "spy_return_pct": acct_spy_ret,
-            "alpha_pct": round(ret - acct_spy_ret, 2),
+            "alpha_pct": _alpha(ret, acct_spy_ret),
         })
 
         all_start += start_val
@@ -327,7 +341,7 @@ def get_performance_summary(
         "label": "Combined",
         "return_pct": combined_ret,
         "spy_return_pct": combined_spy_ret,
-        "alpha_pct": round(combined_ret - combined_spy_ret, 2),
+        "alpha_pct": _alpha(combined_ret, combined_spy_ret),
     })
 
     return results

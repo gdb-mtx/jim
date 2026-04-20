@@ -115,14 +115,17 @@ class StockMomentum(BaseStrategy):
         else:
             momentum = prices.pct_change(self.lookback_days)
 
-        # Rank stocks each day (higher rank = stronger momentum)
-        ranks = momentum.rank(axis=1, ascending=True, method="average")
+        # Rank stocks each day — rank 1 goes to strongest momentum. Descending
+        # rank with a direct `<= top_n` threshold is NaN-safe: tickers with
+        # NaN momentum (pre-IPO, not enough history in the slice) get NaN rank
+        # and are naturally excluded. The old pattern `ranks > (n_stocks -
+        # top_n)` broke when the universe contained partial-history columns:
+        # `n_stocks` counted every column, so the cutoff exceeded the actual
+        # max achievable rank and zero stocks got picked.
+        ranks = momentum.rank(axis=1, ascending=False, method="average")
         n_stocks = prices.shape[1]
-
-        # Select top N — dynamic cutoff based on available stocks
         effective_top_n = min(self.top_n, max(1, n_stocks // 10))
-        cutoff = n_stocks - effective_top_n
-        selected = (ranks > cutoff).astype(float)
+        selected = (ranks <= effective_top_n).astype(float)
 
         # Volatility scaling per stock
         rolling_vol = returns.rolling(self.vol_lookback_days).std() * np.sqrt(252)
