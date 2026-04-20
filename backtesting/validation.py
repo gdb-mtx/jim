@@ -4,16 +4,21 @@ Statistical Validation Framework — The overfitting defense system.
 This is the most critical module in the project. No strategy goes to paper
 trading without passing these tests. See PLAN.md Section 4.
 
-Validation checklist (all must pass):
-  - Walk-forward analysis: median Sharpe > 0.5 across rolling OOS windows
-  - Monte Carlo simulation with >70% of runs profitable
-  - Acceptable returns (> -2% annualized) in at least 3 of 4 market regimes
-  - Walk-forward windows include warmup data for momentum signal computation
+Two walk-forward flavors:
+  - `walk_forward_analysis` (legacy): rolling OOS evaluation with FIXED
+    parameters. Measures per-window performance but does not refit params.
+    Useful for detecting regime-driven failure of a fixed-default strategy.
+  - `walk_forward_refit_analysis`: per-window parameter selection. At each
+    window, sweep a parameter grid on the TRAIN slice, pick the best-scoring
+    config, evaluate that config on the TEST slice. This is the "walk-forward
+    optimization" sense — no design-time leakage at any evaluation point.
+    Also reports per-window picked params for stability analysis.
 """
 
+import itertools
 import numpy as np
 import pandas as pd
-from backtesting.metrics import sharpe_ratio, annualized_return, max_drawdown, full_report
+from backtesting.metrics import sharpe_ratio, annualized_return, max_drawdown, calmar_ratio, full_report
 
 
 def walk_forward_analysis(
@@ -118,6 +123,166 @@ def walk_forward_summary(results: list[dict]) -> dict:
         summary["reason"] = "All checks passed"
 
     return summary
+
+
+def walk_forward_refit_analysis(
+    prices: pd.DataFrame,
+    strategy_fn_factory,
+    param_grid: dict,
+    train_size: int = 756,   # ~3 years
+    test_size: int = 252,    # ~1 year
+    step_size: int = 126,    # ~6 months
+    warmup: int = 252,       # warmup days included before train slice
+    objective: str = "calmar",
+    periods_per_year: int = 252,
+) -> list[dict]:
+    """Walk-forward parameter refit — true OOS parameter selection.
+
+    At each window:
+      1. Slice into warmup + train + test.
+      2. For each config in `param_grid`, build the strategy and run it on
+         warmup+train only. Score it by `objective` on the train returns.
+      3. Pick the best-scoring config.
+      4. Run that config on warmup+train+test and report metrics on the
+         test-only returns.
+
+    No future data leaks into parameter selection at any window. Picked
+    params per window are reported so stability can be assessed.
+
+    Args:
+        prices: DataFrame of asset prices.
+        strategy_fn_factory: Callable(**params) -> Callable(prices) -> returns.
+            The factory takes parameter kwargs and returns a runner function
+            that mirrors the signature used by `walk_forward_analysis`.
+        param_grid: Dict mapping parameter name -> list of values to try.
+            Cartesian product is swept.
+        train_size: Trading days in train slice (parameter selection).
+        test_size: Trading days in test slice (OOS evaluation).
+        step_size: Days to roll forward between windows.
+        warmup: Days of data before train slice for signal warmup.
+        objective: Scoring metric for train-slice selection.
+            One of "calmar", "sharpe", "cagr".
+        periods_per_year: For CAGR/Sharpe annualization.
+
+    Returns:
+        List of dicts per window, including picked params + test metrics.
+    """
+    keys = list(param_grid.keys())
+    configs = [
+        dict(zip(keys, combo))
+        for combo in itertools.product(*[param_grid[k] for k in keys])
+    ]
+    if not configs:
+        return []
+
+    def _score(returns: pd.Series) -> float:
+        if len(returns) < 20 or returns.isna().all():
+            return -np.inf
+        r = returns.dropna()
+        if objective == "sharpe":
+            return float(sharpe_ratio(r, periods_per_year=periods_per_year))
+        if objective == "cagr":
+            return float(annualized_return(r, periods_per_year=periods_per_year))
+        # default: calmar
+        dd = max_drawdown(r)
+        if abs(dd) < 1e-9:
+            return -np.inf
+        return float(annualized_return(r, periods_per_year=periods_per_year) / abs(dd))
+
+    results = []
+    total_days = len(prices)
+    start = 0
+
+    while start + train_size + test_size <= total_days:
+        train_end = start + train_size
+        test_end = train_end + test_size
+
+        warmup_start = max(0, start - warmup)
+        # Strategy sees warmup+train for param selection; NO test data visible.
+        train_slice = prices.iloc[warmup_start:train_end]
+        # Full slice for final test evaluation (warmup+train+test).
+        full_slice = prices.iloc[warmup_start:test_end]
+        train_start_date = prices.index[start]
+        test_start_date = prices.index[train_end]
+        test_end_date = prices.index[min(test_end - 1, total_days - 1)]
+
+        # 1) Score every config on the train slice only
+        best_cfg = None
+        best_score = -np.inf
+        all_train_scores = []
+        for cfg in configs:
+            runner = strategy_fn_factory(**cfg)
+            train_returns = runner(train_slice)
+            train_returns = train_returns.loc[train_start_date:]
+            score = _score(train_returns)
+            all_train_scores.append((cfg, score))
+            if score > best_score:
+                best_score = score
+                best_cfg = cfg
+
+        # 2) Evaluate the winning config on the test slice
+        runner = strategy_fn_factory(**best_cfg)
+        all_returns = runner(full_slice)
+        test_returns = all_returns.loc[test_start_date:test_end_date]
+
+        if len(test_returns) < 20:
+            start += step_size
+            continue
+
+        test_returns = test_returns.dropna()
+        window_result = {
+            "window": len(results) + 1,
+            "train_start": prices.index[start],
+            "train_end": prices.index[train_end - 1],
+            "test_start": test_start_date,
+            "test_end": test_end_date,
+            "picked_params": best_cfg,
+            "train_score": float(best_score),
+            "train_objective": objective,
+            "test_cagr": float(annualized_return(test_returns, periods_per_year=periods_per_year)),
+            "test_maxdd": float(max_drawdown(test_returns)),
+            "test_calmar": float(calmar_ratio(test_returns, periods_per_year=periods_per_year)),
+            "test_sharpe": float(sharpe_ratio(test_returns, periods_per_year=periods_per_year)),
+            "test_periods": len(test_returns),
+            "n_configs_tried": len(configs),
+        }
+        results.append(window_result)
+        start += step_size
+
+    return results
+
+
+def walk_forward_refit_summary(results: list[dict]) -> dict:
+    """Summarize walk-forward-refit results: stability + OOS aggregate."""
+    if not results:
+        return {"n_windows": 0, "reason": "No windows"}
+
+    # Parameter stability: how often is each picked config chosen?
+    from collections import Counter
+    picks = [tuple(sorted(r["picked_params"].items())) for r in results]
+    counter = Counter(picks)
+    most_common_pick, most_common_count = counter.most_common(1)[0]
+    stability_pct = most_common_count / len(results)
+
+    cagrs = [r["test_cagr"] for r in results]
+    calmars = [r["test_calmar"] for r in results if np.isfinite(r["test_calmar"])]
+    sharpes = [r["test_sharpe"] for r in results]
+    profitable = sum(1 for c in cagrs if c > 0)
+
+    return {
+        "n_windows": len(results),
+        "median_cagr": float(np.median(cagrs)),
+        "mean_cagr": float(np.mean(cagrs)),
+        "median_calmar": float(np.median(calmars)) if calmars else 0.0,
+        "median_sharpe": float(np.median(sharpes)),
+        "profitable_windows": profitable,
+        "profitable_pct": profitable / len(results),
+        "most_common_pick": dict(most_common_pick),
+        "most_common_pick_count": most_common_count,
+        "stability_pct": stability_pct,
+        "unique_picks": len(counter),
+        "n_configs_tried": results[0]["n_configs_tried"],
+    }
 
 
 def monte_carlo_simulation(

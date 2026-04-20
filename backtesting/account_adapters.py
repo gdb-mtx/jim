@@ -44,10 +44,19 @@ class AccountAdapter:
     periods_per_year: int
     start: str
     full_returns: pd.Series
-    prices: pd.DataFrame | None  # None when walk-forward is not feasible
-    strategy_fn: callable | None  # None when walk-forward is not feasible
+    prices: pd.DataFrame | None  # None when rolling-OOS eval is not feasible
+    strategy_fn: callable | None  # None when rolling-OOS eval is not feasible
     warmup_days: int
     walk_forward_supported: bool
+    # Optional: inputs for Test 6 walk-forward REFIT. If all three are set,
+    # Test 6 runs a per-window grid search on `refit_prices` using
+    # `refit_strategy_factory(**params)` as the runner. For composite
+    # accounts (e.g., A2 = 30% MAT + 70% LV), set these to refer to the
+    # dominant or most-searchable leg; leave None to skip.
+    refit_prices: "pd.DataFrame | None" = None
+    refit_strategy_factory: "callable | None" = None
+    refit_param_grid: "dict | None" = None
+    refit_description: str = ""
 
 
 def _spy_filter_scalar_series() -> pd.Series:
@@ -58,9 +67,16 @@ def _spy_filter_scalar_series() -> pd.Series:
 def _build_account_1() -> AccountAdapter:
     """Account 1: Stock Momentum + SPY Filter.
 
-    Full walk-forward support: strategy_fn runs StockMomentum on the
-    sliced stock prices, with VIX injected from a precomputed closure,
-    and applies the SPY 200d filter to the final returns.
+    Strategy_fn runs StockMomentum (with hardcoded defaults) on the sliced
+    stock prices, with VIX injected from a precomputed closure, and applies
+    the SPY 200d filter to the final returns.
+
+    Note on "walk-forward": `walk_forward_supported=True` means this adapter
+    is compatible with the rolling-OOS harness in `walk_forward_analysis`.
+    That harness evaluates fixed-default params on rolling test windows — it
+    does NOT refit parameters per window. For true walk-forward refit, see
+    `walk_forward_refit_analysis` and the standalone scripts under
+    `scripts/walk_forward_refit_*.py`.
     """
     full_returns = run_portfolio("sm_filtered", start="2010-01-01")[1].dropna()
     prices = download_sp500_prices(start="2010-01-01")
@@ -74,6 +90,24 @@ def _build_account_1() -> AccountAdapter:
         spy_aligned = spy_scalar.reindex(raw.index).ffill().fillna(1.0)
         return raw * spy_aligned
 
+    # Test 6 (walk-forward REFIT) grid for A1 — small sweep over the two
+    # parameters most likely to move the needle. Kept modest so Test 6
+    # stays within ~15s per validation run. Expand in a standalone script
+    # for deeper exploration (see scripts/walk_forward_refit_a1.py).
+    def refit_factory(**params):
+        def runner(slice_prices):
+            s = StockMomentum(**params)
+            s.set_vix(vix)
+            raw = s.generate_returns(slice_prices)
+            spy_aligned = spy_scalar.reindex(raw.index).ffill().fillna(1.0)
+            return raw * spy_aligned
+        return runner
+
+    refit_grid = {
+        "lookback_days": [126, 189, 252],
+        "top_n": [10, 15, 20],
+    }
+
     return AccountAdapter(
         account=1,
         name="Stock Momentum + SPY Filter",
@@ -85,6 +119,10 @@ def _build_account_1() -> AccountAdapter:
         strategy_fn=strategy_fn,
         warmup_days=252,
         walk_forward_supported=True,
+        refit_prices=prices,
+        refit_strategy_factory=refit_factory,
+        refit_param_grid=refit_grid,
+        refit_description="StockMomentum over S&P 500 universe",
     )
 
 
@@ -92,10 +130,35 @@ def _build_account_2() -> AccountAdapter:
     """Account 2: 30% Multi-Asset Trend + 70% Low-Vol + SPY filter + vol-scaling.
 
     Two strategies on different universes (5 ETFs vs S&P 500 stocks).
-    Walk-forward with refitting is impractical here — we rely on rolling
-    Sharpe on the precomputed full-sample returns. Honest but simpler.
+    Rolling-OOS eval with a single combined strategy_fn is impractical here —
+    the account uses rolling Sharpe on the precomputed full-sample returns.
+
+    For Test 6 (walk-forward refit) we search the LowVolatility leg only
+    (70% weight, S&P 500 universe). The Multi-Asset Trend leg is 5 ETFs
+    with a tiny parameter surface and is not worth searching in the main
+    validation flow.
     """
     full_returns = run_portfolio("trend_lowvol", start="2010-01-01")[1].dropna()
+
+    # Test 6 refit inputs — search Low-Vol leg only
+    lv_prices = download_sp500_prices(start="2010-01-01")
+    lv_vix = download_vix()
+    lv_spy = compute_spy_trend_filter(start="2008-01-01", ma_period=200, reduction=0.5)
+
+    def refit_factory(**params):
+        def runner(slice_prices):
+            s = LowVolatility(**params)
+            s.set_vix(lv_vix)
+            raw = s.generate_returns(slice_prices)
+            spy_aligned = lv_spy.reindex(raw.index).ffill().fillna(1.0)
+            return raw * spy_aligned
+        return runner
+
+    refit_grid = {
+        "vol_lookback_days": [42, 63, 84],
+        "momentum_lookback_days": [126, 189, 252],
+        "top_n": [20, 30, 40],
+    }
 
     return AccountAdapter(
         account=2,
@@ -108,13 +171,19 @@ def _build_account_2() -> AccountAdapter:
         strategy_fn=None,
         warmup_days=0,
         walk_forward_supported=False,
+        refit_prices=lv_prices,
+        refit_strategy_factory=refit_factory,
+        refit_param_grid=refit_grid,
+        refit_description="LowVolatility leg only (70% of A2; Multi-Asset Trend leg not searched)",
     )
 
 
 def _build_account_3() -> AccountAdapter:
     """Account 3: 60% Short-Term Reversal + 40% Stock Momentum + SPY filter.
 
-    Both strategies run on S&P 500 stocks, so walk-forward is feasible.
+    Both strategies run on S&P 500 stocks, so rolling-OOS evaluation is
+    feasible. Like A1, this uses fixed-default params — no per-window
+    parameter refit; see `walk_forward_refit_analysis` for that mode.
     """
     full_returns = run_portfolio("reversal_blend", start="2010-01-01")[1].dropna()
     prices = download_sp500_prices(start="2010-01-01")
@@ -152,11 +221,14 @@ def _build_account_3() -> AccountAdapter:
 
 
 def _build_account_4() -> AccountAdapter:
-    """Account 4: Crypto Momentum Rotation + 150d BTC filter + vol-scaling.
+    """Account 4: Crypto Momentum Rotation + 125d BTC filter + vol-scaling.
 
-    Simplest walk-forward: single universe (9 coins), BTC prices injected
-    via closure. Vol-scaling applied to the returns after signal generation,
-    matching the portfolio config.
+    Single universe (9 coins), BTC prices injected via closure. Vol-scaling
+    applied to the returns after signal generation, matching the portfolio
+    config. Uses fixed-default params (picked one-time via
+    `scripts/crypto_robust_opt.py` on a 2-half train/test split with
+    min-Calmar objective); the validation-runner's rolling-OOS harness runs
+    these fixed params across windows — no per-window parameter refit.
     """
     full_returns = run_portfolio("crypto_momentum_filtered", start="2018-01-01")[1].dropna()
     prices = download_crypto_prices(start="2018-01-01")

@@ -75,11 +75,15 @@ Set 2026-04-18. Moving these is moving the goalposts.
 
 Train: earliest data through 2022-12-31. Test: 2023-01-01 through today. Full scorecard on each period. Report OOS/IS CAGR ratio. This is the single most important test.
 
-### Test 2 — Walk-forward (CAGR per window)
+### Test 2 — Rolling OOS with fixed parameters (CAGR per window)
 
-Uses existing `backtesting.validation.walk_forward_analysis` where the adapter supports it (Accounts 1, 3, 4). Accounts 2 falls back to rolling 1-year windows on precomputed returns since its sub-strategies span different universes (ETFs + stocks).
+**Name correction 2026-04-20:** this test was previously labeled `walk_forward_refit` in code and docs, which was misleading. It's **rolling out-of-sample evaluation with fixed default parameters** — not walk-forward optimization. At each window, the strategy runs with the same hardcoded params (`StockMomentum()` defaults, etc.); metrics are reported on the test slice. Nothing is refit.
 
-Windows: 3-year train, 1-year test, roll forward 6 months. Pass: median CAGR ≥ 10% AND ≥ 80% of windows profitable.
+Uses `backtesting.validation.walk_forward_analysis` where the adapter supports it (Accounts 1, 3, 4). Account 2 falls back to rolling 1-year windows on precomputed returns since its sub-strategies span different universes (ETFs + stocks).
+
+Windows: 3-year train*, 1-year test, roll forward 6 months. Pass: median CAGR ≥ 10% AND ≥ 80% of windows profitable.
+
+\* "train" is a misnomer here — the 3-year slice before the test window is just used for signal warmup (rolling momentum, vol estimates), not for fitting parameters. A proper walk-forward-refit harness is available separately via `backtesting.validation.walk_forward_refit_analysis` and the standalone scripts `scripts/walk_forward_refit_a1.py` / `_a2.py`. Running those on A1 and A2 (2026-04-20) confirmed literature-derived defaults are within noise of refit winners — no default changes needed.
 
 ### Test 3 — Parameter stability (crypto only)
 
@@ -98,6 +102,62 @@ For satellite accounts only (Account 4 currently). Add the candidate at 25% weig
 - Correlation to existing core
 
 Not gated — reported for judgment. A Δ Calmar > +0.1 means the satellite is doing its job.
+
+### Test 6 — Walk-forward REFIT vs fixed defaults (non-gating, added 2026-04-20)
+
+**Purpose:** answer the question "are the defaults we inherited from academic papers (or set by hand) any good for our specific universe?" — without replacing them unless there's a clear, stable improvement.
+
+**Mechanism:** any account that defines `refit_prices`, `refit_strategy_factory`, and `refit_param_grid` in its adapter gets a per-window parameter refit:
+
+1. Rolling (warmup + train + test) windows — 3-year train, 1-year test, step 6 months (same as Test 2).
+2. In each window, enumerate the grid and run every config on the **train slice only**. Score by train-window Calmar. Pick the winner.
+3. Run the winner on the test slice. Record picked params + test metrics.
+
+**Reports:** refit median CAGR / Calmar / Sharpe vs fixed-default baseline; parameter stability (how often each config is picked); per-window picks table.
+
+**Pass semantics (non-gating; PASS/REVIEW only, never FAIL):**
+
+| Refit vs default | Stability | Status |
+|---|---|---|
+| CAGR within ±10% | any | **PASS** — defaults robust |
+| Refit beats default by >20% | stable pick ≥40% of windows | **REVIEW** — consider updating defaults |
+| Refit underperforms by >10% | any | **PASS** — literature defaults more robust than honest search |
+| Anything in between | unstable picks | **PASS** — treat as noise |
+
+**Why it's non-gating:** honest walk-forward refit frequently *loses* to good literature defaults on factor strategies (narrow parameter surface, robust academic priors). Blocking on it would penalize robust defaults. The REVIEW flag surfaces the rare case where a stable, materially better config exists.
+
+**Strategy discovery use case:** this is the canonical process for evaluating a new strategy candidate going forward — instead of copying parameters from 15-year-old academic papers and hoping they generalize, run an honest walk-forward refit on the candidate and read the result as a forward estimate.
+
+**Recipe for a new candidate strategy:**
+
+1. **Write the strategy class** (inherit `BaseStrategy`, implement `generate_signals` + optional `generate_returns`). Place under `strategies/<candidate>.py`. Example templates: `strategies/stock_momentum.py`, `strategies/low_volatility.py`, `strategies/crypto_momentum.py`.
+
+2. **Pick an initial grid.** Sparse sweeps of the 2-4 parameters most likely to move the needle. Example for a momentum-style candidate:
+   ```python
+   grid = {
+       "lookback_days": [63, 126, 189, 252],
+       "top_n": [10, 15, 20, 25],
+   }
+   ```
+   Keep `len(grid)` × `n_windows` × per-config-runtime under a couple of minutes for iteration speed; expand later for the final pass.
+
+3. **Run a standalone walk-forward refit.** Clone `scripts/walk_forward_refit_a1.py` as a starting point. The script prints per-window picks, stability, and a side-by-side refit-vs-default comparison. Look for:
+   - **Median CAGR / Calmar** — the honest forward estimate.
+   - **Parameter stability** — if one config wins ≥40% of windows, the strategy has a real optimum. If picks scatter across many configs, the surface is noisy / regime-dependent and the refit number overstates forward performance.
+   - **Per-window consistency** — large variance across windows means regime-fragile; narrow variance means robust.
+
+4. **Decide.** If the refit median CAGR/Calmar meaningfully exceeds the current live book AND picks are stable AND the strategy has low correlation to existing accounts (Test 5 in a full validation run) → candidate worth promoting. Otherwise shelve or rework.
+
+5. **Wire it into an adapter.** Add `_build_account_N()` in `backtesting/account_adapters.py` with `refit_strategy_factory` + `refit_param_grid`. Run full `scripts/run_validation.py --account N`. Test 6 is now standardized and runs automatically alongside Tests 1-5.
+
+This is the same process `scripts/crypto_robust_opt.py` (2026-04-18) ran for A4 pre-launch — a 2-half train/test split with min-Calmar objective. Test 6 generalizes the pattern to any adapter with a grid, and makes it part of the validation gate instead of a one-off script.
+
+**Current coverage:**
+- **A1** — StockMomentum grid: `lookback_days × top_n` (9 configs).
+- **A2** — LowVolatility leg only (70% of A2): `vol_lookback_days × momentum_lookback_days × top_n` (27 configs).
+- **A3, A4** — no grid defined (A3 retired; A4 already went through `crypto_robust_opt.py`).
+
+**2026-04-20 results:** both A1 and A2 PASS. Refit cannot beat defaults; stability poor (most-picked ≤ 32%). See `data/validation_reports/` for the per-window picks.
 
 ---
 

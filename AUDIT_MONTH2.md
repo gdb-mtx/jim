@@ -5,7 +5,9 @@
 
 **TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode.
 
-**Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. Tier 3/4 remain open.
+**Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. **Tier 3 D1-D4 all fixed 2026-04-20** — ET trading-date helper (`data/trading_dates.py`), backfill/snapshot TZ-stable, SP500 ticker list on 7-day TTL (discovered the cached list was 998h old → refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings), SPY fetch failures now render "—" instead of misleading 0%. Tier 4 remains open.
+
+**Follow-up 2026-04-20 (beyond audit scope):** While validating the D3 refresh, noticed the 80%-since-2010 coverage gate was locking every post-2013 S&P addition out of the live universe. Changed to trailing-500d window ≥80% (`data/sp500.py`), exposing a latent bug in `strategies/stock_momentum.py` where `n_stocks = prices.shape[1]` included NaN columns → selection cutoff exceeded the actual max rank → zero picks on partial-history slices. Switched to NaN-safe descending-rank + `<= top_n`. Net effect: live universe 451 → 501 tickers; A1 OOS CAGR 20.9% → 27.3%, Calmar 1.89 → 2.77 (VRT, LITE now eligible); A2 essentially unchanged (16.9% vs 17.4%); combined 3-acct 28.3% → 30.3% CAGR, Calmar 3.75 → 4.31. A1/A2 both still PASS validation gate.
 
 ---
 
@@ -75,25 +77,28 @@
 
 ## Tier 3 — Data / correctness
 
-### 🟠 D1. `backfill_from_alpaca` uses naive local timezone
-**File:** `data/snapshots.py:121`
-**Finding:** `datetime.fromtimestamp(ts)` interprets Unix seconds in machine-local time; Alpaca sends UTC midnight → mis-dates backfilled snapshot rows by 1 day in ET. May be contributing to some correlation-matrix noise.
-**Fix:** `datetime.fromtimestamp(ts, tz=timezone.utc).date()` or an explicit ET trading-date helper.
+### ✅ D1. `backfill_from_alpaca` uses naive local timezone — FIXED 2026-04-20
+**Files:** `data/snapshots.py:135`, `data/trading_dates.py` (new)
+**Finding:** `datetime.fromtimestamp(ts)` interprets Unix seconds in machine-local time; Alpaca sends UTC midnight → mis-dates backfilled snapshot rows by 1 day in ET.
+**Fix applied:** new `data/trading_dates.py` with `utc_ts_to_et_date(ts)` (UTC→ET conversion via `zoneinfo`). `backfill_from_alpaca` uses it. Deterministic across server timezones; `TZ=UTC uv run` verified.
+**Verified:** existing snapshots on ET Mac were correctly dated (latent bug, only manifested on UTC servers). New helper bucket-tests confirm round-trip UTC-midnight → correct ET trading day.
 
-### 🟠 D2. `take_snapshot` uses `date.today()` (local)
-**File:** `data/snapshots.py:73`
-**Finding:** Runs fine on the current Mac at 4:30 PM ET. Would break if the server ever runs in UTC (cloud move) — after 8 PM ET `date.today()` flips to tomorrow, creating phantom rows and missing today. Also means backfilled rows (D1) can disagree with live rows by a day.
-**Fix:** explicit ET trading-date helper.
+### ✅ D2. `take_snapshot` / `_patch_today` use `date.today()` (local) — FIXED 2026-04-20
+**Files:** `data/snapshots.py:83`, `api/routes/portfolio.py:165-167`, `data/trading_dates.py` (new)
+**Finding:** `date.today()` returns machine-local date. On a UTC server after 8 PM ET, it flips to tomorrow — phantom rows + missed days. Also disagrees with D1-mis-dated backfill rows by a day.
+**Fix applied:** both call sites now use `today_et()` from `data/trading_dates.py`. `TZ=UTC` shell returns correct ET date.
 
-### 🟠 D3. `get_sp500_tickers()` never refreshes
-**File:** `data/sp500.py:32-55`
-**Finding:** Wikipedia list is pulled once and cached forever; S&P 500 changes ~4x/year. Delisted tickers silently drop out of the 80% coverage filter, hiding the rot. Compounds C3 survivorship bias.
-**Fix:** 7-day TTL on the ticker list with fallback to cached list if Wikipedia is unreachable.
+### ✅ D3. `get_sp500_tickers()` never refreshes — FIXED 2026-04-20
+**File:** `data/sp500.py:24-55`
+**Finding:** Wikipedia list pulled once and cached forever; S&P 500 changes ~4x/year. Delisted tickers silently drop through the 80% coverage filter.
+**Fix applied:** 7-day TTL via `stat().st_mtime` (matches the existing `download_sp500_prices` / `download_crypto_prices` pattern). Atomic `.tmp` + `replace` on cache write. On Wikipedia fetch failure, falls back to stale cached JSON with a warning log rather than breaking the download pipeline.
+**Verified:** stale cache on disk was 998.3h old (41 days) — refresh pulled **451 → 503 tickers**, confirming 52 delisted/added names were silently stale. Fallback verified by monkey-patching `requests.get` to raise.
 
-### 🟡 D4. `get_performance_summary` / `get_spy_benchmark` silently return 0% on yfinance failure
-**Files:** `data/snapshots.py:218-219, 253-254`
-**Finding:** Bare `except Exception: return []` / `spy = pd.Series(dtype=float)`. UI shows 0% SPY, 0% alpha → "we're beating the market" when really we just failed to fetch SPY.
-**Fix:** log + structured "unavailable" response the frontend renders as "—".
+### ✅ D4. Silent 0% on yfinance SPY failure — FIXED 2026-04-20
+**File:** `data/snapshots.py:207-236` (`get_spy_benchmark`), `236-340` (`get_performance_summary`), `dashboard/src/types.ts:86-92`, `dashboard/src/components/EquityHistoryChart.tsx:439-461`
+**Finding:** Bare `except Exception: return []` / `spy = pd.Series(...)` masked fetch failures. UI rendered "0.00% SPY, +X% alpha" → looked like beating the market when we'd actually failed to fetch SPY.
+**Fix applied:** module logger warns on fetch failure. `spy_return_pct` / `alpha_pct` become `None` (null) when SPY is unavailable (distinct from "new account with <2 rows" which still returns 0.0). `PerformanceEntry` types updated to `number | null`; the table renders "—" in neutral gray for null cells. `return_pct` remains real regardless of SPY state.
+**Verified:** monkey-patched yfinance → backend logs warning, all rows have `spy_return_pct=None, alpha_pct=None`, `return_pct` intact. Happy path unchanged (real numbers, real colors).
 
 ---
 
@@ -101,7 +106,7 @@
 
 | ID | File | Finding | Severity |
 |---|---|---|---|
-| R1 | `backtesting/account_adapters.py:100` | A2's walk-forward is unsupported — its "PASS" rests on single holdout split, not true walk-forward | Medium |
+| R1 | `backtesting/account_adapters.py:100`, `scripts/run_validation.py:160` | ~~A2's walk-forward is unsupported~~ — larger issue: the validation's Test 2 was labeled `walk_forward_refit` but never refit parameters. None of A1/A2/A3/A4 did true walk-forward optimization. Fixed 2026-04-20: label renamed to `rolling_oos_fixed_params`, adapter docstrings corrected, new `walk_forward_refit_analysis` + standalone refit scripts added. Refit run on A1 + A2 confirmed literature defaults are within noise of refit winners — no parameter changes, but the documentation now matches reality. | ~~Medium~~ Resolved |
 | R2 | `execution/validation_gate.py:64` | `FIRE_VALIDATION_OVERRIDE=1` is global — could accidentally unblock retired A3. Should reject `retired` unconditionally. | Medium |
 | R3 | `execution/rebalance.py:260` | Strategy-level circuit breakers (-10%/strategy) are dead code — never wired to the live path | Medium |
 | R4 | `api/routes/orders.py:204-222` | Journal entries lost if execute raises mid-flight. Wrap in try/finally. | Low |
@@ -142,10 +147,10 @@
 5. ✅ S2 + S3: `write_parquet_atomic` helper + `file_snapshot_lock` (blocking, internal to `save_snapshot`/`backfill_from_alpaca`).
 6. ✅ S4: `download_with_retry` helper; shared across `download_prices`, SP500 batch loop, crypto, BTC, VIX.
 
-**Session 3 — Clock / data correctness (Tier 3):**
-7. D1 + D2: UTC-aware timestamp handling + explicit ET trading-date helper.
-8. D3: SP500 tickers TTL.
-9. D4: Surface yfinance failures to the UI rather than hiding them as 0%.
+**Session 3 — Clock / data correctness (Tier 3):** ✅ COMPLETE 2026-04-20
+7. ✅ D1 + D2: `data/trading_dates.py` helper (`today_et`, `utc_ts_to_et_date`); `backfill_from_alpaca`, `take_snapshot`, `_patch_today` all use it. TZ-stable.
+8. ✅ D3: 7-day TTL + stale-cache fallback in `get_sp500_tickers`. Refresh pulled 451→503 tickers.
+9. ✅ D4: logger + nullable `spy_return_pct` / `alpha_pct`; dashboard renders "—" for unavailable SPY data.
 
 **Session 4 — Reporting hygiene (Tier 4):**
 10. R1: Relabel A2 validation as "holdout only" until walk-forward is implemented.

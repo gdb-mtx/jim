@@ -22,7 +22,13 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Backend**: Python + FastAPI
 - **Risk**: Fractional Kelly + 2% max loss + drawdown circuit breakers (-15% portfolio, -10% strategy)
 - **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION_PLAN.md`.
-- **Statistical validation**: Walk-forward, Monte Carlo block bootstrap, parameter stability, portfolio fit — all required before any live money, quarterly re-validation enforced via gate
+- **Statistical validation**: Six-test scorecard (all required before real money; quarterly re-validation enforced via gate):
+  - **Test 1** — OOS holdout (train 2010-2022, test 2023-today).
+  - **Test 2** — Rolling OOS with fixed parameters. (Previously mislabeled `walk_forward_refit`; corrected 2026-04-20 — no refit happens here.)
+  - **Test 3** — Parameter stability across half-A/half-B splits (crypto only; other accounts skip).
+  - **Test 4** — Block bootstrap CAGR p5/p50/p95 (gated: p5 ≥ 0%).
+  - **Test 5** — Portfolio fit (satellite marginal contribution; not gated).
+  - **Test 6** — Walk-forward REFIT vs defaults (added 2026-04-20, non-gating). Per-window grid search on adapter-defined `refit_param_grid`; PASS if defaults within 10% of refit or better, REVIEW only if refit stably beats defaults by >20%. A1 + A2 currently PASS — literature defaults are not demonstrably suboptimal and a true parameter search cannot beat them. See `VALIDATION_PLAN.md`. Strategy-discovery pattern: new candidates get dropped in as `refit_strategy_factory` + grid on an adapter or run via `scripts/walk_forward_refit_*.py`.
 - **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
 
 ### Three-Account Live Architecture (post-2026-04-20 A3 retirement)
@@ -43,8 +49,8 @@ Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 
 Combined OOS (2023-01-03 → 2026-04-17; equity trading calendar, A4 compounded Fri→Mon, ppy=252):
 
-- Equity core (A1+A2 at 50/50): **CAGR +19.5%, MaxDD -8.8%, Calmar 2.21**
-- 3-account live book (A1+A2+A4 at 1/3 each): **CAGR +28.3%, MaxDD -7.6%, Calmar 3.75**
+- Equity core (A1+A2 at 50/50): **CAGR +22.3%, MaxDD -7.7%, Calmar 2.88**
+- 3-account live book (A1+A2+A4 at 1/3 each): **CAGR +30.3%, MaxDD -7.0%, Calmar 4.31**
 
 *C1 fix applied 2026-04-20: the old union-calendar+fillna(0)+ppy=365 convention gave essentially the same numbers (28.09%/-7.56%/3.71) — the audit's "biased HIGH" magnitude claim did not materialize. Code migrated anyway for cleaner semantics.*
 
@@ -72,11 +78,11 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | UPI | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|---|
-| **Live book (A1+A2+A4 @ 1/3)** | — | **+28.3%** | **-7.6%** | **3.75** | — | — | — | — |
-| **Equity core (A1+A2 @ 50/50)** | — | **+19.5%** | **-8.8%** | **2.21** | — | — | — | *1.87* |
+| **Live book (A1+A2+A4 @ 1/3)** | — | **+30.3%** | **-7.0%** | **4.31** | — | — | — | *2.68* |
+| **Equity core (A1+A2 @ 50/50)** | — | **+22.3%** | **-7.7%** | **2.88** | — | — | — | *2.12* |
 | **Crypto Momentum (Acct 4)** | PASS | **+45.2%** | **-11.4%** | **3.98** | 3.98 | 8.68 | 2.18 | *1.90* |
-| **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+20.9%** | **-11.1%** | **1.89** | 1.89 | 5.39 | 1.63 | *1.65* |
-| **Trend + Low-Vol (Acct 2)** | PASS | **+17.4%** | **-10.7%** | **1.62** | 1.62 | 5.42 | 1.35 | *1.42* |
+| **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+27.3%** | **-9.8%** | **2.77** | 2.77 | — | 2.11 | *2.05* |
+| **Trend + Low-Vol (Acct 2)** | PASS | **+16.9%** | **-10.7%** | **1.57** | 1.57 | — | 1.38 | *1.38* |
 | *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — | — |
 
 All three active accounts pass the CAGR ≥ 15%, Calmar ≥ 1.0, OOS/IS ratio ≥ 70% gates on fresh data. A4's headline numbers dropped slightly (47.1% → 45.2% CAGR; 4.15 → 3.98 Calmar) with fresh-data window extension — small move, still strong. A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
@@ -98,7 +104,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
 - **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
-- **Stock Universe**: 451 S&P 500 stocks (cached parquet, survivorship bias noted)
+- **Stock Universe**: 501 S&P 500 stocks (cached parquet, survivorship bias noted). Coverage gate is **trailing 500 trading days ≥80% non-NaN** — was previously "≥80% of all days since 2010," which locked out every post-2013 IPO / recent S&P addition. The new gate lets recent adds like VRT and LITE enter the live rotation once they have ~2y of history, without corrupting backtests (pre-IPO NaN rows propagate to NaN ranks → excluded from selection for periods before the ticker existed). Fixed 2026-04-20.
 - **Crypto Universe**: 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP)
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007)
@@ -145,6 +151,7 @@ data/pipeline.py          — yfinance ETF data download & caching
 data/sp500.py             — S&P 500 stock universe + VIX data
 data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping)
 data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
+data/trading_dates.py     — ET trading-date helpers (today_et, utc_ts_to_et_date) — TZ-stable
 data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
 strategies/base.py        — Abstract strategy interface
 strategies/trend_following.py — Time-Series & Multi-Timeframe Momentum
@@ -156,7 +163,7 @@ strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
 strategies/crypto_momentum.py — Crypto momentum rotation (21-day, top 3, BTC filter)
 strategies/portfolio.py   — Portfolio combiner + SPY/BTC filter + vol-scaling + combined portfolios
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
-backtesting/validation.py — Walk-forward, Monte Carlo, regime tests
+backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests; + walk_forward_refit_analysis (true per-window param refit, added 2026-04-20)
 backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION_PLAN Test 4)
 backtesting/account_adapters.py — Per-account (returns, prices, strategy_fn) bundles for the validation runner
 execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
@@ -185,6 +192,8 @@ scripts/start.sh         — Start backend + frontend (recommended)
 scripts/filter_check.py  — Daily filter monitor — auto-rebalances on SPY/BTC filter change
 scripts/run_validation.py — VALIDATION_PLAN Tests 1-5 runner; updates data/risk_state/validation_state.json
 scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config 2026-04-18
+scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
+scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
 scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
 
 # Mode 2: PEAD / Informational Alpha
@@ -212,7 +221,10 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
 - **Backend only**: `uv run uvicorn api.main:app --reload` (from project root)
 - **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5173
-- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs OOS holdout, walk-forward, parameter stability (crypto), and block bootstrap. Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION_PLAN.md`.
+- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6 (OOS holdout, rolling OOS, parameter stability for crypto, block bootstrap, portfolio fit, walk-forward REFIT). Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION_PLAN.md`.
+  - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
+  - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` (StockMomentum) and `walk_forward_refit_a2.py` (LowVolatility leg). Support `--grid small|medium|large`.
+  - **Strategy-discovery workflow** — how to evaluate a new candidate strategy instead of copying paper defaults: see `VALIDATION_PLAN.md` → "Test 6 → Recipe for a new candidate strategy" (5-step process: write class → pick grid → run standalone refit → decide → wire into adapter). This replaces the old practice of lifting 15-year-old academic parameters wholesale.
 - **Filter monitor**: Runs automatically via launchd at 4:30 PM ET daily (no server needed)
   - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
   - Check status: `launchctl list | grep fire`
@@ -231,15 +243,15 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 ### Current Phase & Next Steps
 
 **Mode 1 (Structural Alpha):** Post-month-2 audit, 3-account live book (A1+A2+A4) at 1/3 each, A3 retired.
-  - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 20.9%
-  - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 17.4%
+  - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.3% (was 20.9% before 2026-04-20 universe-filter fix)
+  - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 16.9%
   - Account 3: RETIRED 2026-04-20. Slot preserved. See `DECISIONS_RESOLVED.md`.
   - Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 robust-opt production, OOS CAGR 45.2%, Calmar 3.98. Currently 100% cash (BTC below 125d MA since launch).
   - Live-tracking clock reset to **2026-04-20** — Mar 10 → Apr 17 window was compromised by stale-data bug. A4 33%→40% upgrade clock counts from here (and only counts signal-trading days, not cash-on-filter days).
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
 
-**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. **Tier 2 S1-S4 all fixed 2026-04-20** — `dual_rebalance_lock`, `write_parquet_atomic`, `file_snapshot_lock`, `download_with_retry` live in `api/locks.py` and `data/pipeline.py`; all live-path rebalance and yfinance calls go through them. Tier 3 (D1-D4) clock/data correctness and Tier 4 (R1-R11) reporting hygiene remain open — none block paper or real-money operation.
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. **Tier 2 S1-S4 all fixed 2026-04-20** — `dual_rebalance_lock`, `write_parquet_atomic`, `file_snapshot_lock`, `download_with_retry` live in `api/locks.py` and `data/pipeline.py`; all live-path rebalance and yfinance calls go through them. **Tier 3 D1-D4 all fixed 2026-04-20** — `data/trading_dates.py` (TZ-stable ET helpers) used by snapshot backfill + `_patch_today`; SP500 ticker list on 7-day TTL with stale-cache fallback (refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings); SPY fetch failures now log + surface as nullable `spy_return_pct`/`alpha_pct` rendered as "—" on the dashboard. Tier 4 (R1-R11) reporting hygiene remains open — none block paper or real-money operation.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -261,7 +273,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Mode 1 priority:** C1 + C2 + Tier 2 S1-S4 all fixed 2026-04-20. C1 non-material (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. S1 A/B/C verified end-to-end. C3 disclosure remains; Tier 3/4 items remain as lower-priority cleanup.
+- **Mode 1 priority:** Tier 1 (C1, C2) + Tier 2 (S1-S4) + Tier 3 (D1-D4) all fixed 2026-04-20. C1 non-material (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. S1 A/B/C verified end-to-end. D3 refresh caught 52 stale tickers (451→503). C3 survivorship disclosure remains; Tier 4 reporting hygiene remains as lower-priority cleanup.
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.

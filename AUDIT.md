@@ -50,7 +50,7 @@ This is a remarkable amount of work for ~36 hours. The system went from a 6-year
 
 **What's genuinely impressive:**
 - Factor diversification across 4 accounts is the right approach. Most retail quants over-optimize a single strategy.
-- The validation framework (walk-forward + Monte Carlo + regime testing) is professional-grade.
+- The validation framework (rolling-OOS evaluation + block-bootstrap Monte Carlo + scorecard across market regimes) is solid for a solo-builder setup. **Correction 2026-04-20:** the original claim called this "professional-grade walk-forward" which overstated it. What's built is rolling out-of-sample evaluation with FIXED default parameters — not walk-forward *optimization* with per-window refit. A true walk-forward-refit harness was added 2026-04-20 (`backtesting/validation.walk_forward_refit_analysis`, `scripts/walk_forward_refit_a1.py` / `_a2.py`); running it on A1 and A2 confirmed the literature-derived defaults are within noise of the refit winners, so no default changes were needed. See `AUDIT_MONTH2.md` R1 and the 2026-04-20 follow-up note.
 - Circuit breaker persistence, per-account concurrency locks, and structured rebalance logging are the kind of safety infrastructure that many production systems skip.
 - SDD.md documenting architectural patterns shows mature engineering instincts.
 - The 2020 proposal mentioned Larry Hite's "no single bet losing more than 2% of total capital" — and that rule is actually implemented in `risk_manager.py`. The system stayed true to its founding principles.

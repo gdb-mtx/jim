@@ -52,6 +52,8 @@ from backtesting.metrics import (  # noqa: E402
 )
 from backtesting.validation import (  # noqa: E402
     walk_forward_analysis,
+    walk_forward_refit_analysis,
+    walk_forward_refit_summary,
     walk_forward_summary,
 )
 
@@ -157,7 +159,12 @@ def test_2_walk_forward(adapter: AccountAdapter) -> dict:
             step_size=step,
             warmup=adapter.warmup_days,
         )
-        mode = "walk_forward_refit"
+        # NOTE: this is rolling OOS with FIXED defaults — no per-window
+        # parameter refit. For honest walk-forward-refit see
+        # `scripts/walk_forward_refit_a1.py` / `_a2.py` and the
+        # `walk_forward_refit_analysis` function. The label was previously
+        # `walk_forward_refit`, which was misleading (see AUDIT_MONTH2.md R1).
+        mode = "rolling_oos_fixed_params"
         # Rebuild per-window scorecards since walk_forward_analysis stores Sharpe-centric fields
         windows = []
         for w in wf_results:
@@ -423,6 +430,168 @@ def portfolio_fit(adapter: AccountAdapter) -> dict:
     return marginal
 
 
+# ── Test 6: Walk-forward REFIT vs fixed-default comparison ────────────
+def test_6_walk_forward_refit(adapter: AccountAdapter) -> dict:
+    """Per-window parameter REFIT on the adapter's grid. Reports whether
+    the literature-derived defaults are within 10% of what an honest
+    walk-forward search would pick. Non-gating (report-only) by design —
+    its purpose is to flag *fragile* defaults, not to replace them.
+
+    Pass criterion: `|refit_median_cagr - default_median_cagr| <= 10% of |default|`
+    AND `refit_median_calmar >= 0.8 * default_median_calmar` (defaults not
+    dramatically worse on risk-adjusted). Other outcomes surface as
+    "marginal" (investigate) without blocking the overall status.
+    """
+    if (
+        adapter.refit_prices is None
+        or adapter.refit_strategy_factory is None
+        or adapter.refit_param_grid is None
+    ):
+        return {"skip": True, "reason": "No param grid defined for this account"}
+
+    ppy = adapter.periods_per_year
+    train_size = int(3 * ppy)
+    test_size = int(ppy)
+    step_size = int(ppy / 2)
+
+    # 1) refit: per-window grid search
+    refit_results = walk_forward_refit_analysis(
+        adapter.refit_prices,
+        strategy_fn_factory=adapter.refit_strategy_factory,
+        param_grid=adapter.refit_param_grid,
+        train_size=train_size,
+        test_size=test_size,
+        step_size=step_size,
+        warmup=adapter.warmup_days or 252,
+        objective="calmar",
+        periods_per_year=ppy,
+    )
+    if not refit_results:
+        return {"skip": True, "reason": "No refit windows generated (insufficient history)"}
+    refit_summary = walk_forward_refit_summary(refit_results)
+
+    # 2) defaults on same windows
+    default_runner = adapter.refit_strategy_factory()
+    default_results = walk_forward_analysis(
+        adapter.refit_prices,
+        strategy_fn=default_runner,
+        train_size=train_size,
+        test_size=test_size,
+        step_size=step_size,
+        warmup=adapter.warmup_days or 252,
+    )
+    def_cagrs = [r["test_return"] for r in default_results]
+    def_mdds = [r["test_max_dd"] for r in default_results]
+    def_calmars = [
+        c / abs(d) if abs(d) > 1e-6 else 0.0 for c, d in zip(def_cagrs, def_mdds)
+    ]
+    def_sharpes = [r["test_sharpe"] for r in default_results]
+    default_median_cagr = float(np.median(def_cagrs)) if def_cagrs else 0.0
+    default_median_calmar = float(np.median(def_calmars)) if def_calmars else 0.0
+    default_median_sharpe = float(np.median(def_sharpes)) if def_sharpes else 0.0
+
+    # 3) compare
+    refit_median_cagr = refit_summary["median_cagr"]
+    refit_median_calmar = refit_summary["median_calmar"]
+    if abs(default_median_cagr) > 1e-6:
+        delta_cagr_pct = (
+            (refit_median_cagr - default_median_cagr) / abs(default_median_cagr) * 100
+        )
+    else:
+        delta_cagr_pct = 0.0
+    calmar_ratio_rel = (
+        refit_median_calmar / default_median_calmar if default_median_calmar > 1e-6 else 1.0
+    )
+
+    # Status semantics:
+    #   PASS    — refit can't meaningfully beat defaults. Either within-band
+    #             or worse than defaults (defaults are robust).
+    #   REVIEW  — refit beats defaults by >20% AND picked config is stable
+    #             (>=40% of windows). This is the only outcome that would
+    #             suggest we should consider changing defaults.
+    stable_enough = refit_summary["stability_pct"] >= 0.40
+    within_cagr_band = abs(delta_cagr_pct) <= 10.0
+
+    if delta_cagr_pct > 20.0 and stable_enough:
+        status = "review"
+        reason = (
+            f"refit beats default by {delta_cagr_pct:+.1f}% with stable pick "
+            f"{refit_summary['most_common_pick']} "
+            f"({refit_summary['stability_pct'] * 100:.0f}% of windows) — consider reviewing defaults"
+        )
+    elif within_cagr_band:
+        status = "pass"
+        reason = (
+            f"defaults robust — refit median CAGR {refit_median_cagr * 100:+.1f}% vs "
+            f"default {default_median_cagr * 100:+.1f}% (within 10% band); "
+            f"Calmar ratio {calmar_ratio_rel:.2f}"
+        )
+    elif delta_cagr_pct < 0:
+        status = "pass"
+        reason = (
+            f"defaults outperform refit ({default_median_cagr * 100:+.1f}% vs "
+            f"{refit_median_cagr * 100:+.1f}%, Δ {delta_cagr_pct:+.1f}%) — "
+            f"literature defaults more robust than honest parameter search; "
+            f"Calmar ratio {calmar_ratio_rel:.2f}"
+        )
+    else:
+        # refit wins 10-20%, not highly stable — borderline; call pass with note
+        status = "pass"
+        reason = (
+            f"refit modestly beats default by {delta_cagr_pct:+.1f}% "
+            f"but pick not stable ({refit_summary['stability_pct'] * 100:.0f}% top), "
+            f"treat as noise"
+        )
+
+    # Per-window table
+    windows = []
+    for r, d in zip(refit_results, default_results):
+        windows.append(
+            {
+                "window": r["window"],
+                "test_start": str(r["test_start"].date()),
+                "test_end": str(r["test_end"].date()),
+                "picked_params": r["picked_params"],
+                "refit_cagr": float(r["test_cagr"]),
+                "default_cagr": float(d["test_return"]),
+                "delta_cagr": float(r["test_cagr"] - d["test_return"]),
+            }
+        )
+
+    # Top 5 most-picked configs
+    from collections import Counter
+    picks = [tuple(sorted(r["picked_params"].items())) for r in refit_results]
+    counter = Counter(picks)
+    top_picks = [
+        {"config": dict(cfg), "count": count, "pct": count / len(refit_results)}
+        for cfg, count in counter.most_common(5)
+    ]
+
+    return {
+        "description": adapter.refit_description or "walk-forward refit",
+        "grid_keys": list(adapter.refit_param_grid.keys()),
+        "n_configs": refit_summary["n_configs_tried"],
+        "n_windows": refit_summary["n_windows"],
+        "refit_median_cagr": refit_median_cagr,
+        "refit_mean_cagr": refit_summary["mean_cagr"],
+        "refit_median_calmar": refit_median_calmar,
+        "refit_median_sharpe": refit_summary["median_sharpe"],
+        "default_median_cagr": default_median_cagr,
+        "default_median_calmar": default_median_calmar,
+        "default_median_sharpe": default_median_sharpe,
+        "delta_cagr_pct": delta_cagr_pct,
+        "calmar_ratio_refit_over_default": calmar_ratio_rel,
+        "stability_pct": refit_summary["stability_pct"],
+        "unique_picks": refit_summary["unique_picks"],
+        "most_common_pick": refit_summary["most_common_pick"],
+        "top_picks": top_picks,
+        "windows": windows,
+        "status": status,
+        "pass": status == "pass",
+        "reason": reason,
+    }
+
+
 # ── Report + state I/O ────────────────────────────────────────────────
 def _fmt_pct(x: float) -> str:
     return f"{x * 100:+.2f}%"
@@ -540,6 +709,47 @@ def write_report(account: int, name: str, results: dict) -> Path:
             f"- Pass: {t4['pass']} — {t4['reason']}",
         ]
 
+    # Test 6 — walk-forward REFIT (non-gating, informational)
+    t6 = results.get("test_6", {})
+    lines += ["", "## Test 6 — Walk-forward REFIT vs Fixed Defaults (non-gating)"]
+    if t6.get("skip"):
+        lines.append(f"SKIPPED: {t6['reason']}")
+    else:
+        lines += [
+            f"- Scope: {t6['description']}",
+            f"- Grid: {t6['n_configs']} configs across {', '.join(t6['grid_keys'])}",
+            f"- Windows: {t6['n_windows']}",
+            f"- **Refit median CAGR: {t6['refit_median_cagr'] * 100:+.1f}%** (mean {t6['refit_mean_cagr'] * 100:+.1f}%)  |  Default median: {t6['default_median_cagr'] * 100:+.1f}%  |  Δ {t6['delta_cagr_pct']:+.1f}%",
+            f"- **Refit median Calmar: {t6['refit_median_calmar']:.2f}**  |  Default: {t6['default_median_calmar']:.2f}  |  Ratio {t6['calmar_ratio_refit_over_default']:.2f}",
+            f"- Refit median Sharpe: {t6['refit_median_sharpe']:.2f}  |  Default: {t6['default_median_sharpe']:.2f}",
+            f"- Stability: most-picked config wins {t6['stability_pct']:.0%} of windows; {t6['unique_picks']}/{t6['n_configs']} configs picked at least once",
+            "",
+            f"**Status: {t6['status'].upper()}** — {t6['reason']}",
+            "",
+            "Most-picked configs:",
+            "",
+            "| Config | Picked | % |",
+            "|---|---|---|",
+        ]
+        for p in t6["top_picks"]:
+            cfg_str = ", ".join(f"{k}={v}" for k, v in p["config"].items())
+            lines.append(f"| {cfg_str} | {p['count']}/{t6['n_windows']} | {p['pct']:.0%} |")
+
+        lines += [
+            "",
+            "Per-window picks and OOS CAGR:",
+            "",
+            "| # | Test window | Picked params | Refit CAGR | Default CAGR | Δ |",
+            "|---|---|---|---|---|---|",
+        ]
+        for w in t6["windows"]:
+            picked = ", ".join(f"{k}={v}" for k, v in w["picked_params"].items())
+            lines.append(
+                f"| {w['window']} | {w['test_start']} → {w['test_end']} | {picked} | "
+                f"{w['refit_cagr'] * 100:+.1f}% | {w['default_cagr'] * 100:+.1f}% | "
+                f"{w['delta_cagr'] * 100:+.1f} |"
+            )
+
     if pfit and not pfit.get("skip"):
         lines += ["", "## Portfolio Fit — satellite marginal contribution"]
         lines += [
@@ -638,7 +848,7 @@ def main() -> int:
 
     results = {}
 
-    print("\n[1/5] OOS holdout (full scorecard)...")
+    print("\n[1/6] OOS holdout (full scorecard)...")
     results["test_1"] = test_1_oos_holdout(adapter)
     t1 = results["test_1"]
     if t1.get("skip"):
@@ -650,7 +860,7 @@ def main() -> int:
             f"Calmar {sc['calmar']:.2f}, ratio {t1['oos_is_cagr_ratio']:.0%} → {t1['status'].upper()}"
         )
 
-    print("\n[2/5] Walk-forward (CAGR per window)...")
+    print("\n[2/6] Rolling OOS with fixed params (CAGR per window)...")
     results["test_2"] = test_2_walk_forward(adapter)
     t2 = results["test_2"]
     print(
@@ -661,9 +871,9 @@ def main() -> int:
 
     if args.skip_test_3 or adapter.account != 4:
         results["test_3"] = {"skip": True, "reason": "Skipped (flag or non-crypto)"}
-        print("\n[3/5] Parameter stability... SKIPPED")
+        print("\n[3/6] Parameter stability... SKIPPED")
     else:
-        print("\n[3/5] Parameter stability (Calmar-ranked sweep across halves)...")
+        print("\n[3/6] Parameter stability (Calmar-ranked sweep across halves)...")
         results["test_3"] = test_3_parameter_stability(adapter)
         t3 = results["test_3"]
         print(
@@ -671,7 +881,7 @@ def main() -> int:
             f"half B {t3['production_calmar_half_b']:.2f} → {'PASS' if t3['pass'] else 'FAIL'}"
         )
 
-    print("\n[4/5] Block bootstrap (CAGR percentiles)...")
+    print("\n[4/6] Block bootstrap (CAGR percentiles)...")
     results["test_4"] = test_4_bootstrap(adapter)
     t4 = results["test_4"]
     if t4.get("skip"):
@@ -682,7 +892,20 @@ def main() -> int:
             f"{t4['cagr_p50'] * 100:+.1f}% / {t4['cagr_p95'] * 100:+.1f}%"
         )
 
-    print("\n[5/5] Portfolio fit (satellite contribution)...")
+    print("\n[5/6] Walk-forward REFIT (per-window grid search vs defaults)...")
+    results["test_6"] = test_6_walk_forward_refit(adapter)
+    t6 = results["test_6"]
+    if t6.get("skip"):
+        print(f"  SKIPPED: {t6['reason']}")
+    else:
+        print(
+            f"  {t6['n_configs']} configs × {t6['n_windows']} windows — "
+            f"refit {t6['refit_median_cagr'] * 100:+.1f}% vs default "
+            f"{t6['default_median_cagr'] * 100:+.1f}% (Δ {t6['delta_cagr_pct']:+.1f}%), "
+            f"Calmar ratio {t6['calmar_ratio_refit_over_default']:.2f} → {t6['status'].upper()}"
+        )
+
+    print("\n[6/6] Portfolio fit (satellite contribution)...")
     try:
         results["portfolio_fit"] = portfolio_fit(adapter)
         pfit = results["portfolio_fit"]

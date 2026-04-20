@@ -399,13 +399,13 @@ A proper React frontend with TradingView's Lightweight Charts gives us:
 - [x] Build S&P 500 stock universe pipeline: Wikipedia scrape, batch download, parquet cache (`data/sp500.py`) — 451 stocks, 4069 trading days
 - [x] Build VIX data pipeline for regime filtering
 - [x] Implement performance metrics: Sharpe, max drawdown, win rate, Kelly (full/half/quarter), Calmar, profit factor (`backtesting/metrics.py`)
-- [x] Build validation framework: walk-forward analysis, Monte Carlo simulation, regime testing (`backtesting/validation.py`)
+- [x] Build validation framework: rolling-OOS evaluation, block-bootstrap Monte Carlo, regime scorecard (`backtesting/validation.py`). **Clarification 2026-04-20:** the "walk-forward" in this pipeline is rolling OOS with fixed default parameters, not walk-forward *optimization*. A proper walk-forward-refit harness was added (`walk_forward_refit_analysis` + `scripts/walk_forward_refit_a1.py` / `_a2.py`); running it on A1 and A2 confirmed literature defaults are within noise of refit winners. See `AUDIT_MONTH2.md` R1.
 - [x] Implement risk manager: fractional Kelly + 2% max loss rule + drawdown circuit breakers (`execution/risk_manager.py`)
 
 ### Phase 2: First Strategies ✅ COMPLETE
 - [x] Time-Series Momentum (Moskowitz, Ooi, Pedersen 2012) — 0.85 Sharpe, 6.2% return
 - [x] Multi-Timeframe Momentum — 0.67 Sharpe, 4.1% return
-- [x] Walk-forward validation with warmup data (fixed test windows to include lookback warmup)
+- [x] Rolling-OOS validation with warmup data (test windows include lookback warmup). *Was labeled "walk-forward" before the 2026-04-20 correction — see PLAN note above.*
 - [x] Monte Carlo simulation (1,000 iterations)
 - [x] Regime testing across COVID crash, 2022 bear market, 2024-25 bull
 
