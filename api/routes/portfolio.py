@@ -307,14 +307,47 @@ async def reset_circuit_breaker(
     """Manually clear the catastrophe halt after review.
 
     WARNING: Only do this after investigating the drawdown cause.
-    The -10% alert_active flag is also cleared — a manual reset is an
-    explicit human decision to re-engage.
+
+    Audit trail (R5): appends an entry to `data/rebalance_log.jsonl` with
+    `source="halt_reset"` so the reset is visible alongside rebalance events
+    in the journal. `was_halted` indicates whether the reset actually did
+    something vs. was a no-op.
     """
+    import logging
+    from execution.rebalance_log import log_rebalance
+    log = logging.getLogger("fire.risk")
+
     def _compute():
         rm = RiskManager(account=account)
+        was_halted = rm.halted
+
+        # Best-effort equity pull for the audit record. Reset intent
+        # trumps audit detail, so a broker failure doesn't block the reset.
+        equity = 0.0
+        try:
+            broker = _get_broker(account)
+            equity = float(broker.get_portfolio_value())
+        except Exception as e:
+            log.warning(f"halt_reset: could not pull equity for account {account}: {e}")
+
         rm.reset_halt()
+
+        try:
+            log_rebalance(
+                account=account,
+                strategy_id="(halt reset)",
+                portfolio_value=equity,
+                orders_submitted=0,
+                orders_failed=0,
+                order_details=[],
+                source="halt_reset",
+            )
+        except Exception as e:
+            log.warning(f"halt_reset: journal append failed for account {account}: {e}")
+
         return {
             "account": account,
+            "was_halted": was_halted,
             "can_trade": rm.can_trade(),
         }
 
