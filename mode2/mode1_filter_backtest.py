@@ -1,7 +1,7 @@
 """
 Breakthrough #1 Test — Can Claude concentrate Mode 1 alpha as a filter?
 
-Test design (from BREAKTHROUGH.md):
+Test design (from HUNT_APR2026.md):
 1. For each monthly rebalance date, rank S&P 500 stocks by 9-month momentum
    (skip last month) and take the top 30.
 2. Pull the most recent pre-rebalance earnings transcript for each name.

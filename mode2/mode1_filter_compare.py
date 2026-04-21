@@ -119,7 +119,7 @@ def main():
     print(f"  Excess (C - M):                    {avg_excess:+.2%}/month")
 
     # Decision
-    print(f"\nDECISION (from BREAKTHROUGH.md):")
+    print(f"\nDECISION (from HUNT_APR2026.md):")
     if avg_excess >= 0.015:
         print(f"  BUILD filter layer. C-M = {avg_excess:+.2%} meets >=1.5% threshold.")
     elif avg_excess >= 0.005:

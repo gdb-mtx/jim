@@ -1,6 +1,28 @@
-# Breakthrough Hunt — April 2026
+# Hunt — April 2026
 
-**Status:** Updated 2026-04-18 with test results. Breakthrough #1 was tested and killed. Breakthrough #2 is paused pending validation of the underlying crypto Sharpe (which turned out to be in-sample optimized, not out-of-sample verified). The next concrete work is in `VALIDATION_PLAN.md`.
+**Archived 2026-04-21 (renamed from `BREAKTHROUGH.md` — no breakthroughs were found, but the hunt cascaded into a massive audit + sim/live parity rebuild that did more than any of the proposed breakthroughs would have).** See `AUDIT_MONTH2.md` for the full story of what the negative results triggered.
+
+## How it resolved
+
+- **Breakthrough #1 (Claude as Mode-1 filter):** Killed 2026-04-17 per the decision tree in this doc (-1.68%/month excess, not just below the kill line but deep into negative). Claude-as-single-name-filter thesis disproven.
+- **Breakthrough #2 (Narrative-aware crypto, Candidate A):** Dead on arrival by the same logic — Claude-as-filter-on-top-of-quant doesn't work.
+- **Breakthrough #2 Candidates B + C:** Still interesting. Both deferred post-audit. Neither requires Claude, both are standard quant work if/when we pick up the A4-class strategy research vector.
+  - **Candidate B** (dynamic crypto universe by narrative) — needs historical narrative reconstruction (messy but tractable).
+  - **Candidate C** (macro liquidity overlay via WALCL + DXY + M2 through FRED) — lowest risk, lowest Claude dependency. Likely the first follow-on if we revisit.
+- **The cascading discovery:** running Breakthrough #2 required sanity-checking A4's Sharpe 2.01. That turned out to be in-sample tuned — which triggered:
+  - `VALIDATION_PLAN.md` v2 (CAGR-first scorecard, six-test gate, enforcement via `validation_state.json`).
+  - `AUDIT_MONTH2.md` — 20+ bugs / sim-live gaps found and fixed across four sessions (C1-C7 + S1-S5 + D1-D4 + most R-items).
+  - Live vol-scaling (C4), transaction-cost model (C6), snapshot-derived drawdown monitor (C5), catastrophe halt-only at -35%, validation-gate retired-unconditional (R2), bootstrap adaptive block size (R9), and more.
+- **A4 post-validation + post-audit numbers (2026-04-21):** OOS CAGR 40.4%, MaxDD -12.7%, Calmar 3.18, Sharpe 1.76 (all post-C4+C6, bootstrap p5 CAGR +20.9% on 40d blocks). The crypto base **holds up** OOS — it's lower than the in-sample 45.6% / Sharpe 2.01 this doc cited, but still passes the validation gate cleanly.
+- **Meta-finding (revalidated):** Claude's commercial application in this system is as a **discipline layer**, not an alpha source. The discipline layer paid for itself many times over in the audit that followed — and that's the real "breakthrough" this hunt produced, even though nothing in the original two hypotheses panned out.
+
+**This doc is a time-capsule of what we believed on 2026-04-18 and what the tests taught us through 2026-04-21. The body below is preserved as-written; point anyone asking about "is Mode 2 alive?" at this file.**
+
+---
+
+## Original doc follows
+
+**Status (as of 2026-04-18):** Breakthrough #1 was tested and killed. Breakthrough #2 is paused pending validation of the underlying crypto Sharpe (which turned out to be in-sample optimized, not out-of-sample verified). The next concrete work is in `VALIDATION_PLAN.md`.
 
 **Context for a fresh session:** Read `PLAN_MODE2.md` first for the strategic frame. Then `CLAUDE.md` for the current system state. Then this doc (especially the "Update — 2026-04-18" section below) for what we learned. Then `VALIDATION_PLAN.md` for what we do next.
 
