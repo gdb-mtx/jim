@@ -4,14 +4,21 @@ Validation Gate — Blocks rebalance execution on unvalidated accounts.
 Reads `data/risk_state/validation_state.json` and checks three things
 before a rebalance proceeds:
   1. A validation record exists for the account.
-  2. The record's status is "pass".
+  2. The record's status is "pass" or "marginal" (marginal allowed for paper).
   3. The record's `expires` date is in the future (quarterly re-validation).
+
+Status "retired" is an UNCONDITIONAL block — no override can bypass it.
+This is deliberate: a retired account should never trade again under any
+circumstance, and an accidental `FIRE_VALIDATION_OVERRIDE=1` must not
+unblock it (R2, AUDIT_MONTH2).
 
 If any check fails, raise ValidationGateError. Callers translate to a
 403 (HTTP) or a graceful abort (scheduled jobs / filter monitor).
 
-Override: set `FIRE_VALIDATION_OVERRIDE=1` to bypass. Intentional
-friction — the dashboard should show a warning banner when set.
+Overrides (for FAIL / unvalidated / expired only — never for retired):
+  - `FIRE_VALIDATION_OVERRIDE=1` — global (all active accounts).
+  - `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` — scoped to account N (1-4).
+Either granting an override surfaces a WARNING log line.
 """
 
 from __future__ import annotations
@@ -26,7 +33,18 @@ from pathlib import Path
 log = logging.getLogger("fire.validation_gate")
 
 STATE_PATH = Path(__file__).resolve().parents[1] / "data" / "risk_state" / "validation_state.json"
-OVERRIDE_ENV = "FIRE_VALIDATION_OVERRIDE"
+OVERRIDE_ENV = "FIRE_VALIDATION_OVERRIDE"  # global
+OVERRIDE_PER_ACCT_PREFIX = "FIRE_VALIDATION_OVERRIDE_ACCT"  # + str(N)
+
+
+def _override_for(account: int) -> bool:
+    """True if either the global or the per-account override is set."""
+    truthy = ("1", "true", "True")
+    if os.environ.get(OVERRIDE_ENV, "") in truthy:
+        return True
+    if os.environ.get(f"{OVERRIDE_PER_ACCT_PREFIX}{account}", "") in truthy:
+        return True
+    return False
 
 
 class ValidationGateError(RuntimeError):
@@ -61,9 +79,19 @@ def check(account: int) -> GateResult:
     Caller decides how to surface the block. The endpoint raises HTTPException,
     the scheduler logs and returns, etc.
     """
-    override = os.environ.get(OVERRIDE_ENV, "") in ("1", "true", "True")
+    override = _override_for(account)
     state = _load_state()
     record = state.get(f"account_{account}")
+
+    # RETIRED is an unconditional block — override cannot bypass it.
+    # Deliberate: retired accounts must never trade regardless of env flags.
+    if record is not None and record.get("status") == "retired":
+        msg = (
+            f"Account {account} is RETIRED "
+            f"(reason: {record.get('retired_reason') or record.get('reason', 'n/a')}). "
+            "Retired accounts cannot be overridden — rebalance blocked unconditionally."
+        )
+        return GateResult(allowed=False, reason=msg, override_active=override, record=record)
 
     if record is None:
         msg = f"Account {account} has no validation record — run scripts/run_validation.py --account {account}"

@@ -126,3 +126,79 @@ def test_require_validated_returns_on_allow(tmp_path):
         result = require_validated(1)
         assert isinstance(result, GateResult)
         assert result.allowed is True
+
+
+# ── R2: retired is unconditional; per-account override scope ────────────
+
+
+def test_retired_blocks_without_override(tmp_path):
+    state = {
+        "account_3": {
+            "status": "retired",
+            "retired_reason": "overlap with A1",
+        }
+    }
+    path = _write_state(tmp_path, state)
+    with patch.object(validation_gate, "STATE_PATH", path):
+        r = check(3)
+        assert r.allowed is False
+        assert "RETIRED" in r.reason
+
+
+def test_retired_blocks_even_with_global_override(tmp_path, monkeypatch):
+    """Global FIRE_VALIDATION_OVERRIDE=1 must NOT unblock retired accounts."""
+    state = {
+        "account_3": {
+            "status": "retired",
+            "retired_reason": "overlap with A1",
+        }
+    }
+    path = _write_state(tmp_path, state)
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE", "1")
+    with patch.object(validation_gate, "STATE_PATH", path):
+        r = check(3)
+        assert r.allowed is False
+        assert "unconditionally" in r.reason.lower()
+
+
+def test_retired_blocks_even_with_per_account_override(tmp_path, monkeypatch):
+    """Per-account FIRE_VALIDATION_OVERRIDE_ACCT3=1 must NOT unblock retired either."""
+    state = {
+        "account_3": {
+            "status": "retired",
+            "retired_reason": "overlap with A1",
+        }
+    }
+    path = _write_state(tmp_path, state)
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE_ACCT3", "1")
+    with patch.object(validation_gate, "STATE_PATH", path):
+        r = check(3)
+        assert r.allowed is False
+
+
+def test_per_account_override_scoped_to_that_account(tmp_path, monkeypatch):
+    """FIRE_VALIDATION_OVERRIDE_ACCT1=1 allows acct 1 but not acct 2."""
+    state = {
+        "account_1": {"status": "fail", "reason": "x"},
+        "account_2": {"status": "fail", "reason": "y"},
+    }
+    path = _write_state(tmp_path, state)
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE_ACCT1", "1")
+    with patch.object(validation_gate, "STATE_PATH", path):
+        r1 = check(1)
+        r2 = check(2)
+        assert r1.allowed is True
+        assert r1.override_active is True
+        assert r2.allowed is False
+        assert r2.override_active is False
+
+
+def test_global_override_still_works_for_non_retired(tmp_path, monkeypatch):
+    """Existing FIRE_VALIDATION_OVERRIDE=1 behavior preserved for fail status."""
+    state = {"account_1": {"status": "fail", "reason": "x"}}
+    path = _write_state(tmp_path, state)
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE", "1")
+    with patch.object(validation_gate, "STATE_PATH", path):
+        r = check(1)
+        assert r.allowed is True
+        assert r.override_active is True

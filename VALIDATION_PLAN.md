@@ -170,12 +170,18 @@ This is the same process `scripts/crypto_robust_opt.py` (2026-04-18) ran for A4 
 
 **MARGINAL status now allows paper rebalancing** (changed 2026-04-18) — the original plan intended MARGINAL as a "paper OK, not for real money" state, but the first implementation blocked both. The gate's job is to catch unvalidated or failed strategies, not to police the marginal band.
 
-Override: `FIRE_VALIDATION_OVERRIDE=1` environment variable (intentional friction). Wired into:
+Overrides (intentional friction, WARNING-logged when active):
+- `FIRE_VALIDATION_OVERRIDE=1` — global (all active accounts).
+- `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` — scoped to account N (1-4).
+
+Override covers FAIL, unvalidated, and expired. **Retired accounts are an unconditional block** — no override can bypass them (AUDIT_MONTH2 R2, 2026-04-21).
+
+Gate wired into:
 - `POST /api/orders/rebalance/execute` → 403
 - `scripts/filter_check.py` auto-rebalance → skip + log
 - APScheduler daily crypto job → skip + log
 
-Tests in `tests/test_validation_gate.py` (9 cases).
+Tests in `tests/test_validation_gate.py` (14 cases).
 
 ---
 
