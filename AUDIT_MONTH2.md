@@ -3,7 +3,7 @@
 **Date opened:** 2026-04-20
 **Context:** Mid-session we discovered (a) data caches had no staleness check → 41 days frozen, (b) `download_sp500_prices` silently wrote a 91/451 truncated cache after its batch-download recovery path swallowed errors. Spawned three adversarial reviewers to see what else we'd missed. This doc consolidates their findings, ranks them, and is the pick-up point for the next session.
 
-**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode.
+**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode. **Session 4 (2026-04-21) added a new failure-mode category:** *plausibly-shaped but wrong-values data* (S5 — yfinance returned a 4099-row DatetimeIndexed series under "BTC-USD" whose values were clearly not BTC). Our Tier 2 defenses (S2 atomic writes, S4 retry helper) protect against *missing/partial* data; they don't catch *values that look like a valid timeseries but aren't the right asset*. This class of bug needs a separate defensive layer — value-plausibility sanity checks per asset class. Partial fix landed for BTC (S5); see S5 follow-ups for the broader pattern.
 
 **Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. **Tier 3 D1-D4 all fixed 2026-04-20** — ET trading-date helper (`data/trading_dates.py`), backfill/snapshot TZ-stable, SP500 ticker list on 7-day TTL (discovered the cached list was 998h old → refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings), SPY fetch failures now render "—" instead of misleading 0%. Tier 4 remains open.
 
@@ -272,12 +272,16 @@ Portfolio-level drawdown halt + manual reset has substantive problems beyond the
 - There was no price-plausibility sanity check.
 
 **Fix applied:** added a minimal sanity assertion in `download_btc_prices` — if `btc.max() < 1000`, raise `RuntimeError` instead of caching. BTC has not traded below $1,000 since late 2017, so any series with max < $1k is definitively not BTC. Loud failure on next retry beats silent bad cache.
-**Follow-ups to consider (not done yet):**
-- Same sanity check for other critical tickers (SPY > $50, ETH > $10).
-- Cross-validate the cached last-close against Alpaca's live price on read (divergence > 5% = flag). Would catch this class of bug at *read* time, not just *write* time.
-- Add a dashboard alert when `/api/portfolio/filters` values look implausibly out-of-band vs. Alpaca live prices.
 
-**Status:** ✅ Write-side defense in place. Read-side cross-check with Alpaca deferred to Tier 4.
+**Broader framing — this is a NEW failure-mode category for the audit:** the existing Tier 2 defenses (S2 atomic writes, S3 snapshot locks, S4 retry helper) all guard against *missing/partial* data — the pattern that caused the 91/451 SP500 corruption and the Mar→Apr cache freeze. S5 is a different shape: **data that's structurally valid (right columns, right dtype, right DatetimeIndex, full coverage) but semantically wrong (values from a different asset).** None of S1-S4 catch this; they're built around the wrong threat model.
+
+**Follow-ups — treat as a mini Tier 2+ workstream for a future session:**
+- **Per-ticker value-plausibility layer.** Not just BTC. At minimum: SPY (max > $50 since ~2010), ETH (max > $100 since ~2018), SHY (floor/cap around $60-$90 historically), VIX (range $8-$90). Wrap in a helper (e.g., `assert_plausible(series, ticker)`) and call from each `download_*` function before `write_parquet_atomic`.
+- **Cross-validate cached last-close against Alpaca live on read.** When `download_btc_prices()` serves from cache, compare the last cached close to `broker.get_latest_price("BTC/USD")`. Divergence > 5% = flag and refresh instead of serving. Catches this class at *read* time, not just *write* time.
+- **Dashboard alert when `/api/portfolio/filters` values look out-of-band.** If the MA is < 1% or > 1000% of the live price, surface a red banner with "data looks wrong — investigate" rather than rendering the number as if it's trustworthy.
+- **Schema-level contract.** Consider a typed wrapper (`AssetPriceSeries(ticker="BTC-USD", min_val=1000, start="2014-09-17")`) that every downloader returns and every reader verifies. Heavier change but forecloses a whole class of latent bugs.
+
+**Status:** ✅ Write-side defense in place for BTC specifically. **Broader "value-plausibility" layer across all cached tickers is a NEW workstream** — flagged in the TL;DR. Not blocking paper trading but would have prevented this bug and the next one in this family.
 
 ### ✅ S4. `download_prices` has no retry — FIXED 2026-04-20
 **Files:** `data/pipeline.py` (helper), `data/sp500.py`, `data/crypto.py`
