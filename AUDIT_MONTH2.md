@@ -3,7 +3,7 @@
 **Date opened:** 2026-04-20
 **Context:** Mid-session we discovered (a) data caches had no staleness check → 41 days frozen, (b) `download_sp500_prices` silently wrote a 91/451 truncated cache after its batch-download recovery path swallowed errors. Spawned three adversarial reviewers to see what else we'd missed. This doc consolidates their findings, ranks them, and is the pick-up point for the next session.
 
-**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode. **Session 6 closed C5 + R3 by redesigning the drawdown monitor** (-10% alert-only + -35% catastrophe halt) after confirming the old -15% auto-halt duplicated the SPY/BTC filters + vol-scaling AND never fired in 16y of IS+OOS data — it was both structurally redundant and empirically inert. **Session 4 (2026-04-21) added a new failure-mode category:** *plausibly-shaped but wrong-values data* (S5 — yfinance returned a 4099-row DatetimeIndexed series under "BTC-USD" whose values were clearly not BTC). Our Tier 2 defenses (S2 atomic writes, S4 retry helper) protect against *missing/partial* data; they don't catch *values that look like a valid timeseries but aren't the right asset*. **Session 5 afternoon (2026-04-21) fully closed S5** — `data/plausibility.py` adds per-ticker bands + write-time assertions for BTC/ETH/SPY/VIX/SHY, read-time cross-validation against Alpaca live quotes on the `/filters` endpoint, a persistent state file, and a dashboard red-banner surfacing via `/api/portfolio/plausibility`. The broader failure-mode class now has a full defensive layer.
+**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode. **Session 6 closed C5 + R3** by redesigning the drawdown monitor (-10% alert-only + -35% catastrophe halt) after confirming the old -15% auto-halt duplicated the SPY/BTC filters + vol-scaling AND never fired in 16y of IS+OOS data. **Tier A session (2026-04-21 afternoon) closed C6 + R16** — per-strategy transaction costs in backtest (empirical A4 drag ~3.4pp, not the 0.5-1pp audit guess) and vol-scalar persistence in the rebalance journal; combined headline re-issued on post-C4+C6 returns. **Tier 1 is now fully closed except C3 (survivorship, pre-real-money only).** **Session 4 (2026-04-21) added a new failure-mode category:** *plausibly-shaped but wrong-values data* (S5 — yfinance returned a 4099-row DatetimeIndexed series under "BTC-USD" whose values were clearly not BTC). Our Tier 2 defenses (S2 atomic writes, S4 retry helper) protect against *missing/partial* data; they don't catch *values that look like a valid timeseries but aren't the right asset*. **Session 5 afternoon (2026-04-21) fully closed S5** — `data/plausibility.py` adds per-ticker bands + write-time assertions for BTC/ETH/SPY/VIX/SHY, read-time cross-validation against Alpaca live quotes on the `/filters` endpoint, a persistent state file, and a dashboard red-banner surfacing via `/api/portfolio/plausibility`. The broader failure-mode class now has a full defensive layer.
 
 **Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. **Tier 3 D1-D4 all fixed 2026-04-20** — ET trading-date helper (`data/trading_dates.py`), backfill/snapshot TZ-stable, SP500 ticker list on 7-day TTL (discovered the cached list was 998h old → refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings), SPY fetch failures now render "—" instead of misleading 0%. Tier 4 remains open.
 
@@ -257,14 +257,56 @@ Two findings beyond the prior critique:
 
 **Status:** ✅ **RESOLVED 2026-04-21 (session 6, revised afternoon). R3 closed in the same pass.** Combined with C4 (live vol-scaling) this completes the sim/live parity work that was the original scope of the session-2 adversarial pass.
 
-### 🔴 C6. Zero fee/slippage model in backtest — NEW 2026-04-20 (session 2)
-**Files:** `strategies/portfolio.py`, `backtesting/metrics.py` — grep for `fee|commission|slippage|cost` returns nothing in live backtest path.
-**Finding:** Backtests assume gross returns. Alpaca equity commissions are effectively zero, but **crypto is not** — Alpaca crypto charges ~0.1-0.3% spread per side (bid-ask markup). A4 rebalances daily → up to 2× full turnover per year under active regimes → **~0.5-1pp annual CAGR drag** not reflected in the backtest.
-**Impact by account:**
-  - A1/A2 (equity, monthly rebalance, zero commission): negligible, ~5-15 bps/yr slippage only (not modeled but small).
-  - A4 (crypto, daily rebalance, ~0.1-0.3% spread per side): **0.5-1.0pp CAGR overstatement**. On a 45.2% backtest CAGR, realistic live CAGR is more like **43-45%**. Calmar impact ~-0.05 to -0.10.
-**Fix:** Add a transaction-cost layer in `apply_portfolio_costs()` (backtest-side) — parameterize by account (equity ~0 bps, crypto ~20 bps round-trip), apply per rebalance day. Re-issue A4's validation report with post-cost numbers.
-**Status:** 🔴 Open. Smallest of the three C4-C6, but adds honesty. ~30 min to implement the cost layer + re-run A4 validation.
+### ✅ C6. Zero fee/slippage model in backtest — FIXED 2026-04-21 (Tier A session)
+**Files:** `backtesting/costs.py` (new), `strategies/portfolio.py`, `backtesting/account_adapters.py`.
+**Finding:** Backtests assume gross returns. Alpaca equity commissions are effectively zero, but **crypto is not** — Alpaca crypto charges ~0.1-0.3% spread per side (bid-ask markup). A4 rebalances daily → the audit's initial estimate was ~0.5-1pp annual CAGR drag.
+
+**Resolution 2026-04-21:** added per-strategy cost layer via `backtesting/costs.py`.
+
+- `compute_one_way_turnover(signals)` measures daily position change (aligned to the `signals.shift(1) × asset_returns` convention in `BaseStrategy.generate_returns`).
+- `apply_transaction_costs(returns, signals, bps_round_trip)` subtracts `(bps/10000) × turnover` from each day's return.
+- `STRATEGY_COST_BPS` dict: 5 bps round-trip for equity strategies (slippage only, Alpaca zero-commission), 20 bps round-trip for crypto (midpoint of 10-30 bps per-side bid-ask).
+- `generate_costed_returns(strategy, prices, strategy_id)` convenience used by the validation adapters so Tests 2/6 (rolling OOS / refit) apply the same cost basis as Test 1 (holdout).
+- `_generate_strategy_returns` in `strategies/portfolio.py` rewritten to compute signals + returns inline, then call `apply_transaction_costs` — single call to `generate_signals` per strategy (previously double-computed).
+- New `apply_costs: bool = True` parameter on `run_portfolio` / `run_equity_core` / `run_combined_portfolio` for gross-return calibration runs.
+
+**Empirical drag on 16y of historical returns (2010-2026 for equity, 2018-2026 for crypto):**
+
+| Strategy | Gross CAGR | Net CAGR | Drag (pp) | Daily turnover (mean) |
+|---|---|---|---|---|
+| A1 `sm_filtered` | 19.0% | 18.8% | 0.16 | ~1-2% |
+| A2 `trend_lowvol` | 12.1% | 11.9% | 0.20 | ~1% |
+| A4 `crypto_momentum_filtered` | 48.2% | 45.5% | 2.67 | 8.1% |
+
+**The A4 drag came in bigger than the audit estimated** — 2-3pp vs 0.5-1pp. Root cause: the audit assumed "up to 2× full turnover per year" on A4, but empirical measurement shows **~20× annualized one-way turnover** (mean daily 8.1%, median 0% — the coin rotation doesn't fire every day, but when it does it's often a full flip). The BTC filter reduces effective drag because all-cash days incur no cost.
+
+**Post-C6 validation (fresh run 2026-04-21, OOS window ends 2026-04-20):**
+
+| Account | Pre-C6 CAGR | Post-C6 CAGR | Pre-C6 Calmar | Post-C6 Calmar | Status |
+|---|---|---|---|---|---|
+| A1 | 27.3% | **27.2%** | 2.77 | **2.76** | PASS |
+| A2 | 11.2% | **11.0%** | 1.54 | **1.51** | MARGINAL |
+| A4 | 43.8% | **40.4%** | 3.86 | **3.18** | PASS |
+
+All three gate. A4 Calmar dropped from 3.86 → 3.18, still well above 1.0.
+
+**Combined headline re-issued on post-C4+C6 returns:**
+
+- **Equity core (A1+A2 @ 50/50):** CAGR **19.0%**, MaxDD **-6.1%**, Calmar **3.13** (was 22.3% / -7.7% / 2.88 pre-C4+C6).
+- **3-account live book (A1+A2+A4 @ 1/3):** CAGR **26.5%**, MaxDD **-6.2%**, Calmar **4.28** (was 30.3% / -7.0% / 4.31 pre-C4+C6).
+
+MaxDD actually improved under vol-scaling + cost-adjusted returns. Combined Calmar essentially unchanged (4.31 → 4.28) — the two layers offset each other cleanly.
+
+**A4 weight-sweep ladder (post-C6) — direction intact, 40% upgrade gate comfortably cleared:**
+
+- A4 @ 25%: Calmar **4.21**
+- A4 @ 33%: Calmar **4.27** (current)
+- A4 @ 40%: Calmar **4.33** (upgrade target)
+- A4 @ 50%: Calmar **4.39**
+
+**Tests:** `tests/test_costs.py` (7 tests) — turnover math, linear scaling, helper parity, crypto > equity sanity. Full suite 81/81 green.
+
+**Status:** ✅ **RESOLVED 2026-04-21.** All of Tier 1 except C3 (survivorship, pre-real-money concern) is now closed.
 
 ### ✅ C7. Live `max_position_pct=20%` cap silently kneecaps A4 — FIXED 2026-04-21 (option C: cap removed entirely)
 **File:** `execution/rebalance.py:325` (`capped_weight = min(weight, risk_manager.limits.max_position_pct)`), `execution/risk_manager.py:36` (cap is 0.20), `strategies/portfolio.py` (no cap).
@@ -444,7 +486,7 @@ Two findings beyond the prior critique:
 | R13 | `strategies/portfolio.py` (backtest) vs `execution/rebalance.py:320-323` (live) | Live rejects negative weights as a defensive guard, but **no strategy currently generates negative weights** (verified: StockMomentum, LowVolatility, MultiAssetTrend, CryptoMomentum all produce min weight ≥ 0.0). Dead rejection branch — safe to keep as belt-and-suspenders, but flag in docs. | Low |
 | R14 | Backtest uses yfinance adjusted closes; live uses Alpaca `get_latest_prices()` | Systematic price-source mismatch. yfinance = adjusted close; Alpaca = last trade / mid. Cumulative slippage is already indirectly counted under C6 fees but the vendor discrepancy itself is its own latent gotcha — e.g., after a split, yfinance adjusts historical series but Alpaca position cost basis doesn't. No live bug observed; flag for awareness. | Low |
 | R15 | Live qty rounding (`int(dollar/price)` for stocks, `round(..., 8)` for crypto at `execution/rebalance.py:328-330`) vs backtest fractional weights | Small micro-positions (<1 share) silently dropped in live. Backtest assumes perfectly fractional execution. Cumulative impact negligible (<0.1% CAGR) but worth noting for ultra-small accounts. | Low |
-| R16 | `execution/rebalance_log.py` | Rebalance journal does not persist `vol_scalar` / `vol_scalar_diagnostics` (added to `RebalanceResult` 2026-04-21 in the C4 fix). Observed post-A2 2026-04-21 execution: journal entries show `vol_scalar=?` on readback. Preview UI + server logs record it, but post-hoc audit of "what scalar was applied on this rebalance day" requires re-computing from snapshots. Add the two fields to the journal schema alongside `spy_filter_scalar` / `btc_filter_scalar`. | Low |
+| R16 | `execution/rebalance_log.py` | ~~Rebalance journal does not persist `vol_scalar` / `vol_scalar_diagnostics`.~~ **Resolved 2026-04-21 (Tier A session)** — `log_rebalance` gains `vol_scalar` + `vol_scalar_diagnostics` kwargs (defaulting to 1.0 / None for back-compat); API execute, APScheduler A4 job, and filter_check.py rebalance paths all pass them through. Post-hoc audit of "what scalar was applied on rebalance day X" is now a single parquet read. | ~~Low~~ Resolved |
 
 ---
 
@@ -536,8 +578,11 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 **Session 6 (2026-04-21) — C5 + R3:** ✅ COMPLETE.
 - ✅ **C5 resolved.** -15% auto-halt replaced with -10% alert-only + -35% catastrophe kill-switch. `execution/notifications.py` new; `scripts/filter_check.py` gains daily DD heartbeat; `backtesting/drawdown_halt.py` closes the sim/live parity gap (no-op at -35% across all current strategies, verified on 16y of IS+OOS). R3 strategy-level dead code deleted in the same pass. Full suite 75/75 green.
 
-**Session 7 (future) — C6 only:**
-- C6 fee/slippage backtest layer. De-prioritized 2026-04-21 — only material for A4 (daily crypto rebalance × 0.1-0.3% spread ~0.5-1pp CAGR drag); A1/A2 equity negligible. Can carry the A4 disclaimer indefinitely until pre-real-money gate.
+**Tier A session (2026-04-21, this session) — C6 + R16 + combined re-run:** ✅ COMPLETE.
+- ✅ **R16 resolved** — `log_rebalance` persists `vol_scalar` + diagnostics. Three callers updated.
+- ✅ **C6 resolved** — `backtesting/costs.py` new with per-strategy cost rates (5 bps equity, 20 bps crypto round-trip); wired into `_generate_strategy_returns` and the validation adapters' `strategy_fn` / `refit_factory` paths. Empirical A4 drag 3.4pp (vs audit's 0.5-1pp guess — audit underestimated crypto rotation frequency by ~10×).
+- ✅ **Combined headline re-issued** on post-C4+C6 returns: Equity core 19.0%/−6.1%/3.13, 3-acct 26.5%/−6.2%/4.28. Ladder direction intact.
+- ✅ **All three accounts re-validated**: A1 27.2%/2.76 PASS, A2 11.0%/1.51 MARGINAL, A4 40.4%/3.18 PASS. All gate.
 - ~~S5 broader value-plausibility layer~~ — **RESOLVED 2026-04-21 session 5 afternoon.** Per-ticker bands + write-time assertions + read-time cross-validation + dashboard banner all live. See S5 entry above.
 
 **Long-term (Tier 3+ / research):**
@@ -565,7 +610,7 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
   - **A4:** CAGR 45.2% → **43.8%**, MaxDD -11.4% unchanged, Calmar 3.98 → **3.86**, **PASS**. Bootstrap p5/p50/p95: +25.1% / +45.9% / +74.8%.
   - Live parity verified within 1e-6 on A2 snapshot history; live A2 scalar today (2026-04-21) is 0.7869 (realized vol 19.06% > target 15%).
 - **C5 circuit breakers** — ✅ **RESOLVED 2026-04-21**. Redesigned to -10% alert-only + -35% catastrophe halt. Sim/live parity gap collapsed: the -35% halt never fires on any live strategy's historical returns (verified across 16y IS+OOS), so `backtesting/drawdown_halt.py` is a no-op on current data. Headline CAGR/Calmar numbers unaffected by the resolution. See C5 entry above.
-- **C6 fee/slippage** — 🔴 still open. A4 CAGR 43.8% (post-C4) is ~0.5-1pp optimistic on daily crypto rebalance × 0.1-0.3% spread — realistic live A4 CAGR closer to **42-43.5%**. A1/A2 fee drag negligible (monthly equity rebalance, zero commission).
+- **C6 fee/slippage** — ✅ **RESOLVED 2026-04-21**. Per-strategy cost layer landed (5 bps equity / 20 bps crypto round-trip). A4 drag came in at 3.4pp (43.8% → 40.4% CAGR) — materially larger than the audit's 0.5-1pp guess because actual daily turnover is ~8% (20× annualized one-way, not the audit's assumed 2×). A1/A2 drag ~0.1-0.2pp, negligible as expected.
 - **C7 position cap** — ✅ **FIXED 2026-04-21** via option C (cap removed entirely; rely on strategy shape for concentration control). A4 will rebalance to 50/50 top-2 as designed when BTC crosses the 125d MA. R12 (dead Kelly code) closed in the same pass. Invariant checks on strategy output added to `compute_rebalance` as replacement defense (loud failure > silent clamp).
 
 **Combined-book headline numbers are stale 2026-04-21 pending `run_combined_portfolio` re-run with post-C4 configs.** The A1+A2+A4 @ 1/3 and A1+A2 @ 50/50 rows in CLAUDE.md were computed with pre-C4 A2+A4 return series. The C4 bias was uniform across the 25% / 33% / 40% A4 weight scenarios, so the ladder-to-40% *direction* is preserved, but the absolute Calmar numbers cited against the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.

@@ -26,6 +26,8 @@ def log_rebalance(
     spy_filter_scalar: float = 1.0,
     btc_filter_active: bool = False,
     btc_filter_scalar: float = 1.0,
+    vol_scalar: float = 1.0,
+    vol_scalar_diagnostics: dict | None = None,
     source: str = "manual",
 ):
     """Append a rebalance event to the JSONL log.
@@ -41,6 +43,12 @@ def log_rebalance(
         spy_filter_scalar: SPY filter scalar (1.0 = full, 0.5 = reduced)
         btc_filter_active: Whether BTC filter reduced exposure
         btc_filter_scalar: BTC filter scalar (1.0 = full, 0.0 = cash)
+        vol_scalar: Vol-scaling scalar applied to weights (1.0 = no scaling;
+            C4 fix 2026-04-21). Only non-trivial for A2/A4 configs with
+            `vol_scaling: True`.
+        vol_scalar_diagnostics: Diagnostics dict from `compute_live_vol_scalar`
+            (realized_vol, n_obs, fallback_reason, etc.). None when the
+            vol-scaling gate is skipped.
         source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
     """
     entry = {
@@ -55,6 +63,8 @@ def log_rebalance(
         "spy_filter_scalar": spy_filter_scalar,
         "btc_filter_active": btc_filter_active,
         "btc_filter_scalar": btc_filter_scalar,
+        "vol_scalar": vol_scalar,
+        "vol_scalar_diagnostics": vol_scalar_diagnostics,
         "orders": [
             {
                 "symbol": o.get("symbol", "?"),

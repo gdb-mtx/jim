@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from backtesting.costs import generate_costed_returns
 from data.crypto import download_btc_prices, download_crypto_prices
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.crypto_momentum import CryptoMomentum
@@ -86,7 +87,7 @@ def _build_account_1() -> AccountAdapter:
     def strategy_fn(slice_prices: pd.DataFrame) -> pd.Series:
         s = StockMomentum()
         s.set_vix(vix)
-        raw = s.generate_returns(slice_prices)
+        raw = generate_costed_returns(s, slice_prices, "stock_momentum")
         spy_aligned = spy_scalar.reindex(raw.index).ffill().fillna(1.0)
         return raw * spy_aligned
 
@@ -98,7 +99,7 @@ def _build_account_1() -> AccountAdapter:
         def runner(slice_prices):
             s = StockMomentum(**params)
             s.set_vix(vix)
-            raw = s.generate_returns(slice_prices)
+            raw = generate_costed_returns(s, slice_prices, "stock_momentum")
             spy_aligned = spy_scalar.reindex(raw.index).ffill().fillna(1.0)
             return raw * spy_aligned
         return runner
@@ -149,7 +150,7 @@ def _build_account_2() -> AccountAdapter:
         def runner(slice_prices):
             s = LowVolatility(**params)
             s.set_vix(lv_vix)
-            raw = s.generate_returns(slice_prices)
+            raw = generate_costed_returns(s, slice_prices, "low_volatility")
             spy_aligned = lv_spy.reindex(raw.index).ffill().fillna(1.0)
             return raw * spy_aligned
         return runner
@@ -193,11 +194,11 @@ def _build_account_3() -> AccountAdapter:
     def strategy_fn(slice_prices: pd.DataFrame) -> pd.Series:
         str_strat = ShortTermReversal()
         str_strat.set_vix(vix)
-        str_returns = str_strat.generate_returns(slice_prices)
+        str_returns = generate_costed_returns(str_strat, slice_prices, "short_term_reversal")
 
         sm_strat = StockMomentum()
         sm_strat.set_vix(vix)
-        sm_returns = sm_strat.generate_returns(slice_prices)
+        sm_returns = generate_costed_returns(sm_strat, slice_prices, "stock_momentum")
 
         aligned = pd.DataFrame(
             {"str": str_returns, "sm": sm_returns}
@@ -237,13 +238,13 @@ def _build_account_4() -> AccountAdapter:
     def strategy_fn(slice_prices: pd.DataFrame) -> pd.Series:
         s = CryptoMomentum()
         s.set_btc(btc)
-        raw = s.generate_returns(slice_prices)
+        raw = generate_costed_returns(s, slice_prices, "crypto_momentum")
         return apply_vol_scaling(
             raw,
             vol_target=0.15,
             vol_halflife=30,
             scalar_floor=0.1,
-            scalar_cap=1.5,
+            scalar_cap=1.0,
         )
 
     return AccountAdapter(

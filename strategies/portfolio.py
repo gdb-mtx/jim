@@ -150,21 +150,39 @@ def _generate_strategy_returns(
     vix: pd.Series | None = None,
     crypto_prices: pd.DataFrame | None = None,
     btc_prices: pd.Series | None = None,
+    apply_costs: bool = True,
 ) -> pd.Series:
-    """Generate returns for a single strategy."""
+    """Generate returns for a single strategy, net of transaction costs.
+
+    C6 fix 2026-04-21: computes signals + returns inline (instead of calling
+    `strategy.generate_returns`) so the signal DataFrame is available to
+    price-in per-rebalance slippage / bid-ask via `apply_transaction_costs`.
+    Set `apply_costs=False` to recover the pre-C6 gross-return behavior
+    (useful for calibration / stress tests).
+    """
     if strategy_id in CRYPTO_STRATEGIES:
         strategy = CRYPTO_STRATEGIES[strategy_id]()
         if btc_prices is not None:
             strategy.set_btc(btc_prices)
-        returns = strategy.generate_returns(crypto_prices)
+        prices_df = crypto_prices
     elif strategy_id in STOCK_STRATEGIES:
         strategy = STOCK_STRATEGIES[strategy_id]()
         if vix is not None:
             strategy.set_vix(vix)
-        returns = strategy.generate_returns(stock_prices)
+        prices_df = stock_prices
     else:
         strategy = ETF_STRATEGIES[strategy_id]()
-        returns = strategy.generate_returns(etf_prices)
+        prices_df = etf_prices
+
+    signals = strategy.generate_signals(prices_df)
+    asset_returns = prices_df.pct_change()
+    returns = (signals.shift(1) * asset_returns).sum(axis=1).dropna()
+
+    if apply_costs:
+        from backtesting.costs import apply_transaction_costs, cost_bps_for_strategy
+        returns = apply_transaction_costs(
+            returns, signals, cost_bps_for_strategy(strategy_id)
+        )
 
     # Trim warmup
     non_zero = returns[returns != 0]
@@ -294,6 +312,7 @@ def run_portfolio(
     portfolio_id: str,
     start: str = "2010-01-01",
     end: str | None = None,
+    apply_costs: bool = True,
 ) -> tuple[str, pd.Series]:
     """Run a combined portfolio and return (name, returns Series).
 
@@ -301,6 +320,9 @@ def run_portfolio(
         portfolio_id: Key into PORTFOLIOS dict
         start: Backtest start date
         end: Backtest end date (optional)
+        apply_costs: Apply per-strategy transaction costs (C6 fix 2026-04-21).
+            Default True — sim/live parity. Set False for gross-return
+            calibration runs.
 
     Returns:
         Tuple of (portfolio_name, combined_returns_series)
@@ -332,7 +354,8 @@ def run_portfolio(
     strategy_returns = {}
     for strategy_id in weights:
         strategy_returns[strategy_id] = _generate_strategy_returns(
-            strategy_id, etf_prices, stock_prices, vix, crypto_prices, btc_prices
+            strategy_id, etf_prices, stock_prices, vix, crypto_prices, btc_prices,
+            apply_costs=apply_costs,
         )
 
     # Align to common dates and compute weighted blend
@@ -368,6 +391,7 @@ EQUITY_CORE_STRATEGIES = ["sm_filtered", "trend_lowvol"]
 def run_equity_core(
     start: str = "2010-01-01",
     end: str | None = None,
+    apply_costs: bool = True,
 ) -> tuple[str, pd.Series]:
     """Run the equity-only core (A1 + A2) at 50/50 on the equity calendar.
 
@@ -376,7 +400,7 @@ def run_equity_core(
     """
     account_returns = {}
     for pid in EQUITY_CORE_STRATEGIES:
-        _, returns = run_portfolio(pid, start=start, end=end)
+        _, returns = run_portfolio(pid, start=start, end=end, apply_costs=apply_costs)
         account_returns[pid] = returns
 
     aligned = pd.DataFrame(account_returns).dropna()
@@ -387,6 +411,7 @@ def run_equity_core(
 def run_combined_portfolio(
     start: str = "2010-01-01",
     end: str | None = None,
+    apply_costs: bool = True,
 ) -> tuple[str, pd.Series]:
     """Run the full live book: A1 + A2 + A4 at 1/3 each on the equity calendar.
 
@@ -397,7 +422,7 @@ def run_combined_portfolio(
     """
     account_returns = {}
     for pid in LIVE_ACCOUNT_STRATEGIES:
-        _, returns = run_portfolio(pid, start=start, end=end)
+        _, returns = run_portfolio(pid, start=start, end=end, apply_costs=apply_costs)
         non_zero = returns[(returns != 0) & returns.notna()]
         if len(non_zero):
             returns = returns.loc[non_zero.index[0]:]
