@@ -1,9 +1,17 @@
 """Tests for rebalance logic — order generation, sell-before-buy, etc."""
 
 from unittest.mock import MagicMock, patch
+
+import pandas as pd
+
 from execution.rebalance import compute_rebalance, RebalanceResult, check_price_staleness
 from execution.alpaca_broker import OrderRequest
 from execution.risk_manager import RiskManager
+
+
+def _snapshots(equity_values: list[float]) -> pd.DataFrame:
+    idx = pd.bdate_range(start="2026-03-01", periods=len(equity_values))
+    return pd.DataFrame({"equity": equity_values}, index=idx)
 
 
 def _mock_broker(
@@ -74,16 +82,15 @@ def test_rebalance_generates_sells(mock_signals):
     assert any(o.symbol == "MSFT" for o in sell_orders)
 
 
+@patch("data.snapshots.load_snapshots")
 @patch("execution.rebalance.get_current_signals")
-def test_circuit_breaker_halts_rebalance(mock_signals):
-    """When circuit breaker is active, rebalance returns empty orders."""
+def test_catastrophe_halt_latches_and_blocks_rebalance(mock_signals, mock_load):
+    """Snapshots show peak $100k; live equity $60k = -40% DD → halt latches, orders empty."""
     mock_signals.return_value = {"AAPL": 0.10}
+    mock_load.return_value = _snapshots([100_000, 95_000, 80_000])
 
-    broker = _mock_broker(positions={}, value=100_000)
+    broker = _mock_broker(positions={}, value=60_000)
     rm = RiskManager(persist=False)
-    # Trip the circuit breaker
-    rm.check_circuit_breakers(100_000)
-    rm.check_circuit_breakers(84_000)
 
     result = compute_rebalance(
         broker=broker,
@@ -92,7 +99,56 @@ def test_circuit_breaker_halts_rebalance(mock_signals):
     )
 
     assert result.orders == []
-    assert result.risk_check["portfolio_halted"] is True
+    assert result.risk_check["halted"] is True
+    assert rm.halted is True
+
+
+@patch("data.snapshots.load_snapshots")
+@patch("execution.rebalance.get_current_signals")
+def test_drawdown_alert_does_not_block_rebalance(mock_signals, mock_load):
+    """Snapshots peak $100k; live $88k = -12% DD → alert_active but NOT halted; orders flow."""
+    mock_signals.return_value = {"AAPL": 0.10}
+    mock_load.return_value = _snapshots([100_000, 95_000])
+
+    broker = _mock_broker(
+        positions={},
+        value=88_000,
+        prices={"AAPL": 100.0},
+    )
+    rm = RiskManager(persist=False)
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="test_strategy",
+        risk_manager=rm,
+    )
+
+    assert result.risk_check["halted"] is False
+    assert result.risk_check["alert_active"] is True
+    assert result.risk_check["drawdown"] < -0.10
+    assert len(result.orders) > 0
+
+
+@patch("data.snapshots.load_snapshots")
+@patch("execution.rebalance.get_current_signals")
+def test_prelatched_halt_blocks_even_if_dd_recovered(mock_signals, mock_load):
+    """Once the halt is latched, recovered equity still can't trade until manual reset."""
+    mock_signals.return_value = {"AAPL": 0.10}
+    mock_load.return_value = _snapshots([100_000])
+
+    broker = _mock_broker(positions={}, value=99_000)
+    rm = RiskManager(persist=False)
+    # Simulate a prior latch (e.g., last run hit -40% before recovery)
+    rm.check_and_latch_halt(drawdown=-0.40, equity_peak=100_000, current_equity=60_000)
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="test_strategy",
+        risk_manager=rm,
+    )
+
+    assert result.orders == []
+    assert result.risk_check["halted"] is True
 
 
 @patch("execution.rebalance.get_current_signals")

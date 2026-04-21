@@ -107,13 +107,9 @@ export async function fetchRiskStatus() {
   );
 }
 
-export async function resetCircuitBreaker(
-  account: number,
-  strategy?: string
-) {
+export async function resetCircuitBreaker(account: number) {
   const params = new URLSearchParams({ account: String(account) });
-  if (strategy) params.set("strategy", strategy);
-  return fetchJSON<{ account: number; reset: string; can_trade: boolean }>(
+  return fetchJSON<{ account: number; can_trade: boolean }>(
     `${BASE_URL}/portfolio/risk/reset?${params}`,
     { method: "POST" }
   );

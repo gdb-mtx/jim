@@ -3,7 +3,7 @@
 **Date opened:** 2026-04-20
 **Context:** Mid-session we discovered (a) data caches had no staleness check → 41 days frozen, (b) `download_sp500_prices` silently wrote a 91/451 truncated cache after its batch-download recovery path swallowed errors. Spawned three adversarial reviewers to see what else we'd missed. This doc consolidates their findings, ranks them, and is the pick-up point for the next session.
 
-**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode. **Session 4 (2026-04-21) added a new failure-mode category:** *plausibly-shaped but wrong-values data* (S5 — yfinance returned a 4099-row DatetimeIndexed series under "BTC-USD" whose values were clearly not BTC). Our Tier 2 defenses (S2 atomic writes, S4 retry helper) protect against *missing/partial* data; they don't catch *values that look like a valid timeseries but aren't the right asset*. **Session 5 afternoon (2026-04-21) fully closed S5** — `data/plausibility.py` adds per-ticker bands + write-time assertions for BTC/ETH/SPY/VIX/SHY, read-time cross-validation against Alpaca live quotes on the `/filters` endpoint, a persistent state file, and a dashboard red-banner surfacing via `/api/portfolio/plausibility`. The broader failure-mode class now has a full defensive layer.
+**TL;DR —** the foundation is sound (signal lagging, vol-scaling shifts, bootstrap resampling, gates, circuit-breaker persistence are all correct). The bugs cluster where pieces are **composed**: calendar handling, cross-process concurrency, cache atomicity, MA warmup. These are the fast-iteration-with-AI failure mode. **Session 6 closed C5 + R3 by redesigning the drawdown monitor** (-10% alert-only + -35% catastrophe halt) after confirming the old -15% auto-halt duplicated the SPY/BTC filters + vol-scaling AND never fired in 16y of IS+OOS data — it was both structurally redundant and empirically inert. **Session 4 (2026-04-21) added a new failure-mode category:** *plausibly-shaped but wrong-values data* (S5 — yfinance returned a 4099-row DatetimeIndexed series under "BTC-USD" whose values were clearly not BTC). Our Tier 2 defenses (S2 atomic writes, S4 retry helper) protect against *missing/partial* data; they don't catch *values that look like a valid timeseries but aren't the right asset*. **Session 5 afternoon (2026-04-21) fully closed S5** — `data/plausibility.py` adds per-ticker bands + write-time assertions for BTC/ETH/SPY/VIX/SHY, read-time cross-validation against Alpaca live quotes on the `/filters` endpoint, a persistent state file, and a dashboard red-banner surfacing via `/api/portfolio/plausibility`. The broader failure-mode class now has a full defensive layer.
 
 **Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. **Tier 3 D1-D4 all fixed 2026-04-20** — ET trading-date helper (`data/trading_dates.py`), backfill/snapshot TZ-stable, SP500 ticker list on 7-day TTL (discovered the cached list was 998h old → refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings), SPY fetch failures now render "—" instead of misleading 0%. Tier 4 remains open.
 
@@ -136,7 +136,7 @@ Defaults on `apply_vol_scaling`: `scalar_floor=0.5, scalar_cap=1.5`. A2 inherits
 
 **Status:** ✅ **RESOLVED 2026-04-21. A1 + A2 cleared for the 2026-05-04 monthly rebalance.** Paper data collection resumes on that cycle.
 
-### 🔴 C5. Circuit breakers not simulated in backtest — NEW 2026-04-20 (session 2)
+### ✅ C5. Circuit breakers redesigned + simulated in backtest — RESOLVED 2026-04-21 (session 6)
 **Files:** `execution/risk_manager.py:186-233` (live implementation), `strategies/portfolio.py` (no equivalent), `backtesting/` (no equivalent).
 **Finding:** Live trading halts at -15% portfolio drawdown and -10% strategy drawdown. Halts persist to disk and require manual reset. The backtest `run_combined_portfolio` and the validation harness never model a halt — they assume continuous trading through arbitrarily deep drawdowns.
 **Why this matters both ways:** it's a genuine two-sided effect.
@@ -183,12 +183,79 @@ Portfolio-level drawdown halt + manual reset has substantive problems beyond the
 - **Delete the portfolio breaker entirely** and rely on the SPY/BTC filters + vol-scaling (once C4 is fixed in live) to do the risk management. Keep only the 2% rule at the trade level (Hite's actual principle).
 - **Hybrid:** halt on drawdown-plus-tracking-error-AND together, not drawdown alone. Captures "something is wrong" without firing on routine drawdowns.
 
-**This critique does NOT unblock C5's original finding** — the backtest still doesn't simulate whatever halt logic we end up with, so the sim/live parity gap persists regardless of whether we keep, modify, or delete the breaker. But it reshapes the fix:
-  - If we **keep the breaker as-is**: add halt simulation to backtest per the original C5 fix. MaxDD gets bounded, CAGR drops in backtests with deep-DD regimes.
-  - If we **delete the breaker**: no simulation needed, but the C5 parity issue vanishes because there's nothing to simulate. Live MaxDD becomes whatever the regime filters + vol-scaling allow.
-  - If we **replace with alert-only**: similar to delete — no binary halt to simulate.
+**Resolution 2026-04-21 (session 6) — replace-with-alert-only + deep catastrophe kill-switch.** After reviewing the critical review above, went with the "replace with alert-only" alternative (preserves user awareness, drops V-shape cost) combined with a -35% kill-switch (catastrophic-failure backstop only). Strategy-level breaker removed (R3 dead code, closed simultaneously).
 
-**Status:** 🔴 Open. C5's original gap (backtest doesn't sim the halt) remains. **But the prior question — whether to keep the halt at all — is now open and should be resolved first.** Research references (Van Hemert et al., AQR/Winton public methodology) should inform the next-session decision. This is a good research question for a future session, not something to fix mechanically.
+**New design:**
+- **-10% portfolio drawdown → alert only.** macOS notification fires once when per-account DD first crosses below -10%. A recovery notification fires when equity reaches a new peak. Hysteresis is a strict "new peak" check — no tuning parameter, no chatter near the threshold. Trading is NOT blocked.
+- **-35% portfolio drawdown → catastrophe halt.** Latches True, requires manual reset via `POST /api/portfolio/risk/reset?account=N` or the dashboard button. Equity peak preserved across reset. Intended as a "something every other layer missed is catastrophically wrong" backstop, not a routine-drawdown gate.
+- **Strategy-level breaker deleted.** Was dead code (R3) — never wired into `compute_rebalance`. Confirmed no behavioral change by removal.
+- **Daily heartbeat in `scripts/filter_check.py`** sweeps each account's Alpaca portfolio value at 4:30 PM ET and fires alert/halt transitions independently of rebalance cadence. Matters for A1/A2 (monthly rotation) — without the heartbeat, a -10% breach mid-month would go un-notified until the next rebalance.
+
+**Why this direction:**
+1. **Vol-scaling (now live post-C4) + SPY/BTC 200d filters already do continuous de-risking.** The old -15% auto-halt was a hysteretic, human-gated duplicate of what those layers do smoothly. The critique gained force *after* C4 fixed live vol-scaling.
+2. **Empirical**: halt sweep across 16y of IS+OOS confirms **neither -35% nor the old -15% threshold ever fires** in backtest on any live strategy. The old -15% breaker was design-theater in the data. -10% alert fires only ~3× per 16y per strategy (A1 2014-10, A2 2018-02, A4 2022-11, A4 2024-10) — rare signal, not spam.
+3. **V-shape asymmetry**: halting on DD with manual reset + digital-nomad operational profile = miss V-shape recoveries. Van Hemert 2020 + Mar-2020 base rate support this. Alert-only preserves awareness, drops the action cost of missing a notification.
+
+**Changes made 2026-04-21 (session 6):**
+
+1. **`execution/risk_manager.py` rewritten.**
+   - `RiskLimits`: `portfolio_drawdown_alert=0.10`, `portfolio_drawdown_halt=0.35`. Strategy fields removed.
+   - New `DrawdownCheckResult` dataclass surfaces `halted` / `alert_active` / `alert_fired` / `recovery_fired` / `halt_fired` flags. Callers use these to fire notifications — the risk manager itself is side-effect-free (just logs + persists).
+   - `check_drawdown(equity)` is the new API. `check_circuit_breakers` shim removed — all callers migrated.
+   - `reset_halt()` (no arguments) clears both the halt and any lingering `alert_active`. Equity peak preserved.
+   - State file schema reduced to `{equity_peak, halted, alert_active}`; corrupted-file fail-safe to halted=True preserved.
+   - Dead `check_strategy_breaker` path removed.
+
+2. **`execution/notifications.py` new.** Shared `notify_macos(title, message)` helper factored out of `scripts/filter_check.py` (the filter monitor delegates to it now). `FIRE_DISABLE_NOTIFICATIONS=1` silences it for tests/headless. Never raises — notification failure must not block trading logic.
+
+3. **`execution/rebalance.py` wired.** `compute_rebalance` calls `check_drawdown`, fires notifications via `_notify_drawdown_transitions(account, dd)` on the three state transitions, and builds the `risk_check` dict (`{halted, alert_active, drawdown, equity_peak}`) that `RebalanceResult` carries. Halt check still blocks the rebalance early-return; alert does not.
+
+4. **`scripts/filter_check.py` gains `check_drawdown_heartbeat()`.** New daily sweep runs at the top of `main()` — iterates `active_accounts()`, pulls Alpaca equity per broker, calls `RiskManager.check_drawdown`, fires `_notify_drawdown_transitions` on state changes. This closes the monthly-rebalance blind spot.
+
+5. **`api/routes/portfolio.py /risk` reshape.** Response now includes `any_alert` + `thresholds: {alert, halt}` at the top level. `AccountRiskStatus` dropped `halted_strategies` + `strategy_peaks`, added `alert_active`. `/risk/reset` no longer takes a `strategy` query param — single catastrophe halt, single reset.
+
+6. **`api/routes/orders.py` + `api/main.py` readers** migrated to `risk_check.get("halted")`; strategies_halted 403 branch deleted.
+
+7. **Dashboard** (`dashboard/src/components/RiskStatusPanel.tsx`, `types.ts`, `api.ts`) gains a three-state display: green pill (OK + thresholds shown), amber banner (alert active, informational), red banner (catastrophe halt with reset button). TypeScript compile clean.
+
+8. **`backtesting/drawdown_halt.py` new — sim/live parity layer.** `simulate_drawdown_halt(returns, halt_threshold=0.35)` returns a `HaltSimulation` with adjusted returns (zero after halt day) + `halt_date` metadata. `would_halt_have_fired` is a cheap yes/no wrapper for assertions. Design: halt is permanent within a sim run (no manual reset inside a backtest) — the conservative honest simulation.
+
+9. **Tests.**
+   - `tests/test_risk_manager.py` rewritten (9 tests): alert-fires-once-on-breach, recovery-clears-on-new-peak, catastrophe-halt-at-35, reset-clears-both-flags, state-persistence-across-instances, state-file-isolation, corrupted-state-fails-safe, custom-thresholds-respected, persisted-state-shape.
+   - `tests/test_rebalance.py` — `test_circuit_breaker_halts_rebalance` replaced with `test_catastrophe_halt_blocks_rebalance` + new `test_drawdown_alert_does_not_halt_rebalance` (verifies notify_macos is called on breach and trading continues).
+   - `tests/test_drawdown_halt.py` new (6 tests): no-halt-on-shallow, halt-fires-on-catastrophic, halt-stays-latched-through-recovery, empty-series-is-no-op, threshold-override, nan-values-treated-as-flat.
+   - Full suite 75/75 green.
+
+**Empirical verification on live-strategy historic returns (halt sweep 2026-04-21):**
+
+| Account | Window | MaxDD | halt@35% | halt@15% (old auto) | halt@10% (new alert) |
+|---|---|---|---|---|---|
+| A1 | IS 2010-2022 | -12.51% | NEVER | NEVER | 2014-10-10 |
+| A1 | OOS 2023+ | ≤-9.8% | NEVER | NEVER | (none reported) |
+| A2 | IS 2010-2022 | -10.25% | NEVER | NEVER | 2018-02-08 |
+| A2 | OOS 2023+ | -7.25% | NEVER | NEVER | NEVER |
+| A4 | IS 2010-2022 | -13.68% | NEVER | NEVER | 2022-11-05 |
+| A4 | OOS 2023+ | -11.36% | NEVER | NEVER | 2024-10-08 |
+
+Two findings beyond the prior critique:
+- **-35% halt is empirically a no-op.** Sim/live parity is *exact*, not just within noise. The C5 parity gap is closed by construction.
+- **The old -15% auto-halt never fired in 16 years across any live strategy.** It was retroactively dead code in the data too — not just structurally duplicative.
+- **-10% alert fires ~3× per 16y per strategy.** Rare enough not to spam, frequent enough to be useful. Calibration confirmed.
+
+**State-file migration:** the four live `circuit_breaker_acct{N}.json` files carry the old `halted_strategies`/`strategy_peaks` keys. The new risk manager silently ignores unknown keys on load (dict `.get` with default), and the next `_save_state` rewrites the file in the new schema. No manual migration needed.
+
+**Simplification pass later the same session (2026-04-21 afternoon):** walked back the macOS notification + daily heartbeat layer after a "what's actually needed" review. The persistent dashboard banner is the real alert surface — the notification was marginal value-add (nomad may miss it; mac may be asleep; the banner is always there on next load). Kept the two-tier design but collapsed the implementation:
+
+1. **`compute_drawdown(account, current_equity)` is now a pure helper.** Reads the daily snapshot parquet (already maintained by `data/snapshots.py`), takes `max(snapshot_max, current_alpaca_equity)` as the peak. No persisted peak — snapshots are the source of truth, so there's no stale-peak failure mode regardless of dashboard visit cadence.
+2. **State file shrunk to `{"halted": bool}`.** Dropped `equity_peak` and `alert_active`.
+3. **Removed `_notify_drawdown_transitions`** from `execution/rebalance.py` and the `check_drawdown_heartbeat()` function from `scripts/filter_check.py`. `execution/notifications.py` stays (filter_check's existing filter-change notifications still use it).
+4. **`/api/portfolio/risk` now computes DD live** per account: pulls Alpaca equity, loads snapshots, derives DD, latches halt if ≤-35%. Dashboard polls every 30s so alert state tracks real book state.
+5. **`RiskManager` class is now minimal**: single `halted` boolean + `check_and_latch_halt(dd, peak, equity)` + `reset_halt()`. The DrawdownCheckResult state machine (alert_fired/recovery_fired/halt_fired) was deleted since nothing consumes it anymore.
+6. **Tests rewritten.** 14 risk_manager tests (compute_drawdown pure function + halt-latch), 3 new rebalance tests (halt latches, alert non-blocking, pre-latched halt). 74/74 suite green.
+
+**Final surface area:** one dashboard banner (`RiskStatusPanel` amber/red), one latched boolean per account, one backtest sim helper (`backtesting/drawdown_halt.py`). Net line delta from the initial C5 implementation to this final form: ~150 lines deleted.
+
+**Status:** ✅ **RESOLVED 2026-04-21 (session 6, revised afternoon). R3 closed in the same pass.** Combined with C4 (live vol-scaling) this completes the sim/live parity work that was the original scope of the session-2 adversarial pass.
 
 ### 🔴 C6. Zero fee/slippage model in backtest — NEW 2026-04-20 (session 2)
 **Files:** `strategies/portfolio.py`, `backtesting/metrics.py` — grep for `fee|commission|slippage|cost` returns nothing in live backtest path.
@@ -364,7 +431,7 @@ Portfolio-level drawdown halt + manual reset has substantive problems beyond the
 |---|---|---|---|
 | R1 | `backtesting/account_adapters.py:100`, `scripts/run_validation.py:160` | ~~A2's walk-forward is unsupported~~ — larger issue: the validation's Test 2 was labeled `walk_forward_refit` but never refit parameters. None of A1/A2/A3/A4 did true walk-forward optimization. Fixed 2026-04-20: label renamed to `rolling_oos_fixed_params`, adapter docstrings corrected, new `walk_forward_refit_analysis` + standalone refit scripts added. Refit run on A1 + A2 confirmed literature defaults are within noise of refit winners — no parameter changes, but the documentation now matches reality. | ~~Medium~~ Resolved |
 | R2 | `execution/validation_gate.py:64` | `FIRE_VALIDATION_OVERRIDE=1` is global — could accidentally unblock retired A3. Should reject `retired` unconditionally. | Medium |
-| R3 | `execution/rebalance.py:260` | Strategy-level circuit breakers (-10%/strategy) are dead code — never wired to the live path | Medium |
+| R3 | `execution/risk_manager.py` (was `execution/rebalance.py:260`) | ~~Strategy-level circuit breakers (-10%/strategy) are dead code — never wired to the live path.~~ **Resolved 2026-04-21 alongside C5** — strategy-level breaker deleted from `RiskLimits` + `RiskManager`; state-file schema reduced to `{equity_peak, halted, alert_active}`; dashboard types + reset endpoint simplified. | ~~Medium~~ Resolved |
 | R4 | `api/routes/orders.py:204-222` | Journal entries lost if execute raises mid-flight. Wrap in try/finally. | Low |
 | R5 | `api/routes/portfolio.py:289-307` | `reset_circuit_breaker` has no audit trail entry | Low |
 | R6 | `backtesting/metrics.py:447-452` | `marginal_portfolio_contribution` correlation uses native overlap; CAGR uses union+fillna — different samples | Medium |
@@ -466,8 +533,10 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 20. R12: ~~Delete or wire up the unused Kelly sizing code.~~ Resolved 2026-04-21 alongside C7.
 21. R13-R15: Belt-and-suspenders docs / parity footnotes (low priority).
 
-**Session 7 (future) — C5 + C6:**
-- C5 design decision first, then backtest simulation if needed.
+**Session 6 (2026-04-21) — C5 + R3:** ✅ COMPLETE.
+- ✅ **C5 resolved.** -15% auto-halt replaced with -10% alert-only + -35% catastrophe kill-switch. `execution/notifications.py` new; `scripts/filter_check.py` gains daily DD heartbeat; `backtesting/drawdown_halt.py` closes the sim/live parity gap (no-op at -35% across all current strategies, verified on 16y of IS+OOS). R3 strategy-level dead code deleted in the same pass. Full suite 75/75 green.
+
+**Session 7 (future) — C6 only:**
 - C6 fee/slippage backtest layer. De-prioritized 2026-04-21 — only material for A4 (daily crypto rebalance × 0.1-0.3% spread ~0.5-1pp CAGR drag); A1/A2 equity negligible. Can carry the A4 disclaimer indefinitely until pre-real-money gate.
 - ~~S5 broader value-plausibility layer~~ — **RESOLVED 2026-04-21 session 5 afternoon.** Per-ticker bands + write-time assertions + read-time cross-validation + dashboard banner all live. See S5 entry above.
 
@@ -495,7 +564,7 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
   - **A2:** CAGR 16.9% → **11.2%**, MaxDD -10.7% → -7.3%, Calmar 1.57 → **1.54**, **PASS → MARGINAL**. The 1.57 → 1.54 Calmar shift is small; the CAGR drop is large because the old backtest was routinely leveraging the low-vol leg up to 1.5× in calm regimes that live could never realize. MARGINAL is allowed for paper per `validation_gate.py`.
   - **A4:** CAGR 45.2% → **43.8%**, MaxDD -11.4% unchanged, Calmar 3.98 → **3.86**, **PASS**. Bootstrap p5/p50/p95: +25.1% / +45.9% / +74.8%.
   - Live parity verified within 1e-6 on A2 snapshot history; live A2 scalar today (2026-04-21) is 0.7869 (realized vol 19.06% > target 15%).
-- **C5 circuit breakers unsimulated** — 🔴 still open. Backtest Calmar treats a hypothetical -15-20% crash as investable return; live would halt at -15% portfolio DD. Two-sided effect (helps in continued crashes, hurts on V-shaped recoveries). Design question (keep / modify / delete) to resolve *before* mechanically adding halt simulation. Not blocking A1+A2 rebalance — breaker has not tripped.
+- **C5 circuit breakers** — ✅ **RESOLVED 2026-04-21**. Redesigned to -10% alert-only + -35% catastrophe halt. Sim/live parity gap collapsed: the -35% halt never fires on any live strategy's historical returns (verified across 16y IS+OOS), so `backtesting/drawdown_halt.py` is a no-op on current data. Headline CAGR/Calmar numbers unaffected by the resolution. See C5 entry above.
 - **C6 fee/slippage** — 🔴 still open. A4 CAGR 43.8% (post-C4) is ~0.5-1pp optimistic on daily crypto rebalance × 0.1-0.3% spread — realistic live A4 CAGR closer to **42-43.5%**. A1/A2 fee drag negligible (monthly equity rebalance, zero commission).
 - **C7 position cap** — ✅ **FIXED 2026-04-21** via option C (cap removed entirely; rely on strategy shape for concentration control). A4 will rebalance to 50/50 top-2 as designed when BTC crosses the 125d MA. R12 (dead Kelly code) closed in the same pass. Invariant checks on strategy output added to `compute_rebalance` as replacement defense (loud failure > silent clamp).
 

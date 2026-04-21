@@ -57,8 +57,8 @@ async def _daily_crypto_rebalance():
                         log.error(f"Crypto rebalance skipped — missing prices: {result.missing_prices}")
                         return
 
-                    if result.risk_check.get("portfolio_halted"):
-                        log.warning("Crypto rebalance skipped — circuit breaker active")
+                    if result.risk_check.get("halted"):
+                        log.warning("Crypto rebalance skipped — catastrophe halt active")
                         return
 
                     # Price staleness guard — re-fetch and block on >2% drift

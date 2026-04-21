@@ -21,7 +21,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Backtesting**: vectorbt
 - **Frontend**: React + TypeScript + TradingView Lightweight Charts (v5)
 - **Backend**: Python + FastAPI
-- **Risk**: Equal-weight top-N position sizing (at strategy layer) + SPY/BTC trend filters + drawdown circuit breakers (-15% portfolio, -10% strategy — design under review, see AUDIT_MONTH2 C5). Historical "Fractional Kelly + 2% rule + 20% position cap" were wired in naming only: Kelly/2% rule were dead code, and the 20% cap silently conflicted with A4's top-2 crypto design — all three removed 2026-04-21 (AUDIT_MONTH2 C7 + R12 cleanup).
+- **Risk**: Equal-weight top-N position sizing (at strategy layer) + SPY/BTC trend filters + vol-scaling overlay + a two-tier drawdown monitor (**-10% dashboard alert**, **-35% catastrophe halt with manual reset**). The old -15% auto-halt + -10% strategy-level breaker were retired 2026-04-21 (AUDIT_MONTH2 C5 resolution): the halt duplicated the SPY/BTC filters + vol-scaling, systematically exited V-shape recoveries, and never fired in 16y of IS+OOS data anyway. The -10% tier is a dashboard banner only (computed live from snapshots + current equity) — no push notifications, no heartbeat daemon, not persisted. The -35% tier is the only persisted state (`{"halted": bool}`). Historical "Fractional Kelly + 2% rule + 20% position cap" were wired in naming only — all three removed 2026-04-21 (AUDIT_MONTH2 C7 + R12).
 - **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION_PLAN.md`.
 - **Statistical validation**: Six-test scorecard (all required before real money; quarterly re-validation enforced via gate):
   - **Test 1** — OOS holdout (train 2010-2022, test 2023-today).
@@ -136,19 +136,20 @@ Risk controls are checked at two levels:
 
 The dashboard's RiskStatusPanel and FilterStatusBanner show current status. FilterStatusBanner also shows the filter monitor's last check time and any recent auto-rebalances.
 
-**What happens when a circuit breaker trips?**
-- The system **freezes positions** — it does not liquidate. Hold what you've got, don't dig deeper.
-- `POST /api/orders/rebalance/execute` returns **403** and refuses to trade on that account/strategy.
-- The dashboard shows a red alert banner with the breaker details.
-- Breaker state **persists to disk** (`data/risk_state/circuit_breaker_acct{N}.json`), so a server restart doesn't silently clear it.
+**Drawdown monitor — two tiers (AUDIT_MONTH2 C5 resolution, 2026-04-21):**
 
-**How to resume after a halt:**
-- Manual reset only — dashboard reset button or `POST /api/portfolio/risk/reset?account=N`.
-- Reset sets the equity peak to the current value and unhalts.
-- This is intentional: forces you to review before resuming, not blindly restart.
+- **-10% dashboard alert** — computed live in `/api/portfolio/risk` from current Alpaca equity + the daily snapshot history. Renders as an amber banner in `RiskStatusPanel`. Not persisted, no push notifications, no heartbeat. Reaction time = next dashboard poll (30s) or next rebalance preview. The SPY/BTC filters + vol-scaling are already de-risking continuously; the alert is a heads-up, not a gate.
+- **-35% catastrophe halt** — per-account kill-switch. Latches on first breach seen by either the `/risk` endpoint or a rebalance preview. `POST /api/orders/rebalance/execute` returns **403** while latched; manual reset via dashboard button or `POST /api/portfolio/risk/reset?account=N`.
+- **Peak is derived from snapshots, not stored.** `data/snapshots.py` writes one equity row per trading day per account; `compute_drawdown()` takes `max(snapshot_max, current_alpaca_equity)`. Removes the stale-peak failure mode entirely — no matter how long between dashboard visits or rebalances, the peak is always accurate.
 
-**Why hold instead of sell?**
-A -15% drawdown means something unusual is happening. Rebalancing into more risk is dangerous, but panic-selling at the bottom is also bad. Freezing forces a human decision.
+**What the -35% threshold is and isn't:**
+- Deepest OOS MaxDD observed across live strategies: A1 -9.8%, A2 -7.3%, A4 -11.4%, combined -7.0%. Deepest IS MaxDD: A4 -13.68% (2022 crypto winter, filter trimmed it). -35% sits ~3× deeper than any observed event.
+- A test sweep across 16y of IS+OOS confirms **neither -35% nor the old -15% threshold ever fires** in backtest. The old -15% auto-halt was structurally redundant AND empirically inert.
+- -10% alert would fire ~3× per 16y per strategy in backtest (A1 Oct-14, A2 Feb-18, A4 Nov-22 + Oct-24) — rare signal, not spam.
+
+**Breaker state** persists to disk (`data/risk_state/circuit_breaker_acct{N}.json`) — schema: `{"halted": bool}`. That's it. Corrupted file → fail-safe `halted=True` until manual reset.
+
+**Backtest parity:** `backtesting/drawdown_halt.py` provides `simulate_drawdown_halt(returns, halt_threshold=0.35)` — a post-hoc halt-and-hold layer. For the -35% threshold it's a no-op on every current strategy's historical returns (sim/live parity exact), but the scaffolding exists for stress-test scenarios or future threshold experiments.
 
 ### Architecture
 ```
@@ -173,7 +174,9 @@ backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests; + walk_forward_refit_analysis (true per-window param refit, added 2026-04-20)
 backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION_PLAN Test 4)
 backtesting/account_adapters.py — Per-account (returns, prices, strategy_fn) bundles for the validation runner
-execution/risk_manager.py — Circuit breakers (portfolio + strategy level). Kelly/2% rule deleted 2026-04-21 per C7+R12 cleanup.
+execution/risk_manager.py — Halt-latch + pure `compute_drawdown(account, equity, ...)` helper. State file is `{"halted": bool}` only. Strategy-level breaker + Kelly + 2% rule all removed 2026-04-21 (C5/C7/R12).
+execution/notifications.py — Shared macOS notification helper (osascript) used by `scripts/filter_check.py` for filter-change alerts. `FIRE_DISABLE_NOTIFICATIONS=1` silences for tests/headless.
+backtesting/drawdown_halt.py — Post-hoc halt-and-hold layer (AUDIT_MONTH2 C5 parity). No-op at -35% across all current strategies.
 execution/vol_scaling.py  — Live vol-scaling scalar (AUDIT_MONTH2 C4 fix, 2026-04-21). Mirrors backtest `apply_vol_scaling` math on snapshot equity.
 execution/validation_gate.py — Rebalance gate; blocks accounts without a passing validation record
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
@@ -259,7 +262,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
 
-**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. **Tier 1: C1 + C2 + C4 + C7 fixed**, C3 remains as acknowledged survivorship caveat, **C5 (circuit-breaker design) and C6 (fees/slippage in backtest) still open**. C4 fix (2026-04-21, option B): live vol-scaling via `execution/vol_scaling.compute_live_vol_scalar`, `scalar_cap=1.0` in both live and backtest for sim/live parity; A2 dropped PASS → MARGINAL (still allowed for paper), A4 remains PASS. **Tier 2 S1-S4 all fixed 2026-04-20**; **S5 fully resolved 2026-04-21** — `data/plausibility.py` adds per-ticker value-plausibility bands + write-time assertions + read-time cache-vs-live cross-validation on `/filters`; state surfaced via `/api/portfolio/plausibility` + red warning banner in `FilterStatusBanner.tsx`. What started as "one ticker defended" (inline BTC check 2026-04-21 morning) is now a full defensive layer across BTC/ETH/SPY/VIX/SHY. **Tier 3 D1-D4 all fixed 2026-04-20**. **Tier 4 R11 fixed 2026-04-21** — `check_price_staleness` now flags unfetchable symbols as drifted with `reason="unfetchable"` instead of silently skipping; unit-tested. Tier 4 R2-R9 remain open — none block paper or real-money operation.
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. **Tier 1: C1 + C2 + C4 + C5 + C7 fixed**, C3 remains as acknowledged survivorship caveat, **C6 (fees/slippage in backtest) still open**. C5 resolved 2026-04-21 — the -15% auto-halt replaced with a -10% alert-only + -35% catastrophe kill-switch (see Risk Controls section above). C4 fix (2026-04-21, option B): live vol-scaling via `execution/vol_scaling.compute_live_vol_scalar`, `scalar_cap=1.0` in both live and backtest for sim/live parity; A2 dropped PASS → MARGINAL (still allowed for paper), A4 remains PASS. **Tier 2 S1-S4 all fixed 2026-04-20**; **S5 fully resolved 2026-04-21** — `data/plausibility.py` adds per-ticker value-plausibility bands + write-time assertions + read-time cache-vs-live cross-validation on `/filters`; state surfaced via `/api/portfolio/plausibility` + red warning banner in `FilterStatusBanner.tsx`. What started as "one ticker defended" (inline BTC check 2026-04-21 morning) is now a full defensive layer across BTC/ETH/SPY/VIX/SHY. **Tier 3 D1-D4 all fixed 2026-04-20**. **Tier 4 R11 fixed 2026-04-21** — `check_price_staleness` now flags unfetchable symbols as drifted with `reason="unfetchable"` instead of silently skipping; unit-tested. Tier 4 R2-R9 remain open — none block paper or real-money operation.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -281,7 +284,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Mode 1 priority:** Tier 1 (C1, C2, C4, C7) + Tier 2 (S1-S4) + Tier 3 (D1-D4) + Tier 4 (R11, R12) all fixed. **C4 fix 2026-04-21 cleared the path for A1 + A2 May 4 rebalance** — live vol-scaling now wired in `compute_rebalance` with `scalar_cap=1.0`; backtest aligned. A2 dropped PASS → MARGINAL (CAGR 16.9% → 11.2%) but allowed for paper. A4 stayed PASS (45.2% → 43.8%). Live/backtest scalar parity verified within 1e-6. **C5 (drawdown-halt design decision + backtest sim)** and **C6 (fee/slippage in backtest)** remain open — neither blocks paper rebalancing. Tier 4 R2-R9 reporting hygiene remain as lower-priority cleanup.
+- **Mode 1 priority:** Tier 1 (C1, C2, C4, C5, C7) + Tier 2 (S1-S5) + Tier 3 (D1-D4) + Tier 4 (R3, R11, R12) all fixed. **C5 resolved 2026-04-21** — -15% auto-halt replaced with -10% alert + -35% catastrophe halt; R3 strategy-level dead code removed in the same pass; backtest parity layer lives in `backtesting/drawdown_halt.py` (no-op at -35% across all current strategies, verified empirically on 16y of IS+OOS). **C6 (fee/slippage in backtest)** remains open — only material for A4 (~0.5-1pp CAGR drag on daily crypto rebalance); doesn't block paper. Tier 4 R2, R4-R9 reporting hygiene remain as lower-priority cleanup.
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.

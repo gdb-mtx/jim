@@ -14,7 +14,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -27,6 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from api.locks import file_rebalance_lock
 from data.snapshots import take_snapshot
 from execution.alpaca_broker import ACCOUNT_INFO, AlpacaBroker
+from execution.notifications import notify_macos
 from execution.rebalance import (
     check_price_staleness,
     compute_rebalance,
@@ -106,18 +106,8 @@ def compute_filters() -> dict:
 
 
 def notify(title: str, message: str):
-    """Send macOS notification."""
-    try:
-        subprocess.run(
-            [
-                "osascript",
-                "-e",
-                f'display notification "{message}" with title "{title}"',
-            ],
-            timeout=5,
-        )
-    except Exception as e:
-        log.warning(f"Notification failed: {e}")
+    """Thin wrapper — delegates to the shared `execution.notifications` helper."""
+    notify_macos(title, message)
 
 
 def rebalance_account(account: int, dry_run: bool = False) -> dict:
@@ -148,8 +138,8 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                 risk_manager=risk_mgr,
             )
 
-            if result.risk_check.get("portfolio_halted"):
-                log.warning(f"  Account {account}: circuit breaker active — skipping")
+            if result.risk_check.get("halted"):
+                log.warning(f"  Account {account}: catastrophe halt active — skipping")
                 return {"account": account, "status": "halted", "orders": 0}
 
             if result.price_error:

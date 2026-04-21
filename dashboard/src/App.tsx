@@ -28,6 +28,14 @@ function App() {
           if (!cancelled) {
             setStrategies(data);
             setApiError(false);
+            // Default Backtest tab to the combined 3-account strategy so the
+            // chart renders on first load. Only seed if the user hasn't
+            // picked anything yet.
+            setSelected((prev) => {
+              if (prev) return prev;
+              const hasCombined = data.some((s) => (s.id ?? s.name) === "combined_3account");
+              return hasCombined ? "combined_3account" : (data[0]?.id ?? data[0]?.name ?? null);
+            });
           }
           return;
         } catch (e) {

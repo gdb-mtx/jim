@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO, active_accounts
-from execution.risk_manager import RiskManager, STATE_DIR
+from execution.risk_manager import RiskManager, RiskLimits, compute_drawdown
 from data.snapshots import (
     take_snapshot,
     take_all_snapshots,
@@ -241,47 +241,61 @@ async def correlation_data():
 
 @router.get("/risk")
 async def risk_status():
-    """Get circuit breaker state for all accounts.
+    """Drawdown / halt state for all active accounts.
 
-    Reads persisted state files — no Alpaca API calls needed.
+    Computes drawdown live — pulls current Alpaca equity per account and
+    derives the peak from the daily snapshot history (`compute_drawdown`).
+    Latches the catastrophe halt here too, so the dashboard stays accurate
+    between scheduled rebalances.
+
+    Response schema:
+      - halted: bool          — catastrophe halt (-35% DD) latched
+      - alert_active: bool    — current DD below -10%
+      - drawdown: float       — current DD (negative), e.g. -0.08
+      - equity_peak: float    — max(snapshot_history, current_equity)
+      - thresholds: {alert, halt}
     """
-    accounts = {}
-    any_halted = False
+    limits = RiskLimits()
+    thresholds = {
+        "alert": limits.portfolio_drawdown_alert,
+        "halt": limits.portfolio_drawdown_halt,
+    }
 
-    for acct_num in active_accounts():
-        state_file = STATE_DIR / f"circuit_breaker_acct{acct_num}.json"
-        if state_file.exists():
-            try:
-                data = json.loads(state_file.read_text())
-                halted = data.get("halted", False)
-                if halted:
-                    any_halted = True
-                accounts[acct_num] = {
-                    "account": acct_num,
-                    "label": ACCOUNT_INFO[acct_num]["label"],
-                    "halted": halted,
-                    "equity_peak": data.get("equity_peak", 0),
-                    "halted_strategies": data.get("halted_strategies", []),
-                    "strategy_peaks": data.get("strategy_peaks", {}),
-                }
-            except (json.JSONDecodeError, OSError):
-                accounts[acct_num] = {
-                    "account": acct_num,
-                    "label": ACCOUNT_INFO[acct_num]["label"],
-                    "halted": False,
-                    "error": "Could not read state file",
-                }
-        else:
-            accounts[acct_num] = {
-                "account": acct_num,
-                "label": ACCOUNT_INFO[acct_num]["label"],
+    def _per_account(acct_num: int) -> dict:
+        base = {"account": acct_num, "label": ACCOUNT_INFO[acct_num]["label"]}
+        try:
+            broker = _get_broker(acct_num)
+            equity = broker.get_portfolio_value()
+            dd = compute_drawdown(acct_num, equity, limits)
+            rm = RiskManager(account=acct_num, limits=limits)
+            rm.check_and_latch_halt(dd.drawdown, dd.equity_peak, equity)
+            return {
+                **base,
+                "halted": rm.halted,
+                "alert_active": dd.alert_active,
+                "drawdown": dd.drawdown,
+                "equity_peak": dd.equity_peak,
+            }
+        except Exception as e:
+            return {
+                **base,
                 "halted": False,
-                "equity_peak": 0,
-                "halted_strategies": [],
+                "alert_active": False,
+                "drawdown": 0.0,
+                "equity_peak": 0.0,
+                "error": f"Could not compute: {e}",
             }
 
+    accts = active_accounts()
+    results = await asyncio.gather(
+        *(asyncio.to_thread(_per_account, a) for a in accts)
+    )
+    accounts = {r["account"]: r for r in results}
+
     return {
-        "any_halted": any_halted,
+        "any_halted": any(r["halted"] for r in results),
+        "any_alert": any(r["alert_active"] for r in results),
+        "thresholds": thresholds,
         "accounts": accounts,
     }
 
@@ -289,19 +303,19 @@ async def risk_status():
 @router.post("/risk/reset")
 async def reset_circuit_breaker(
     account: int = Query(ge=1, le=4, description="Account number (1-4)"),
-    strategy: Optional[str] = Query(default=None, description="Strategy name to reset, or omit for portfolio-level"),
 ):
-    """Manually reset a circuit breaker after review.
+    """Manually clear the catastrophe halt after review.
 
     WARNING: Only do this after investigating the drawdown cause.
+    The -10% alert_active flag is also cleared — a manual reset is an
+    explicit human decision to re-engage.
     """
     def _compute():
         rm = RiskManager(account=account)
-        rm.reset_halt(strategy)
+        rm.reset_halt()
         return {
             "account": account,
-            "reset": strategy or "portfolio",
-            "can_trade": rm.can_trade(strategy),
+            "can_trade": rm.can_trade(),
         }
 
     return await asyncio.to_thread(_compute)

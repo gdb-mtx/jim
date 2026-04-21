@@ -17,7 +17,7 @@ import logging
 import pandas as pd
 from dataclasses import dataclass, field
 from execution.alpaca_broker import AlpacaBroker, OrderRequest
-from execution.risk_manager import RiskManager, RiskLimits
+from execution.risk_manager import RiskManager, compute_drawdown
 
 log = logging.getLogger("fire.rebalance")
 from strategies.portfolio import (
@@ -258,8 +258,18 @@ def compute_rebalance(
     portfolio_value = broker.get_portfolio_value()
     current_positions = broker.get_position_map()
 
-    # 2. Check portfolio-level circuit breaker
-    risk_check = risk_manager.check_circuit_breakers(portfolio_value)
+    # 2. Drawdown check — peak derived from snapshots; -35% latches the
+    #    catastrophe halt (blocks trading, manual reset required). The -10%
+    #    alert is surfaced in `risk_check` for the dashboard banner but
+    #    does not block. See AUDIT_MONTH2 C5 for the design rationale.
+    dd = compute_drawdown(broker.account, portfolio_value, risk_manager.limits)
+    risk_manager.check_and_latch_halt(dd.drawdown, dd.equity_peak, portfolio_value)
+    risk_check = {
+        "halted": risk_manager.halted,
+        "alert_active": dd.alert_active,
+        "drawdown": dd.drawdown,
+        "equity_peak": dd.equity_peak,
+    }
     if not risk_manager.can_trade():
         return RebalanceResult(
             strategy_id=strategy_id,

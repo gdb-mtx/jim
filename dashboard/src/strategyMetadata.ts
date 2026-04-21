@@ -125,7 +125,7 @@ export const SECTION_CONFIG: Record<
   { title: string; defaultExpanded: boolean; collapsible: boolean }
 > = {
   live: { title: "Live Accounts", defaultExpanded: true, collapsible: false },
-  portfolio: { title: "Portfolio Blends", defaultExpanded: true, collapsible: true },
+  portfolio: { title: "Portfolio Blends", defaultExpanded: false, collapsible: true },
   building_block: { title: "Building Blocks", defaultExpanded: false, collapsible: true },
   solo_wrapper: { title: "Solo + Filter", defaultExpanded: false, collapsible: true },
 };

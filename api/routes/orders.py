@@ -172,18 +172,12 @@ async def _execute_under_lock(account: int, strategy_id: str):
             detail=f"Missing prices for: {', '.join(result.missing_prices)}. Cannot execute.",
         )
 
-    # Don't execute if circuit breaker tripped (portfolio or strategy level)
-    if result.risk_check.get("portfolio_halted"):
+    # Don't execute if the catastrophe halt (-35% DD) is active.
+    # -10% alert is non-blocking and handled by the notification path.
+    if result.risk_check.get("halted"):
         raise HTTPException(
             status_code=403,
-            detail="Portfolio circuit breaker active — trading halted",
-        )
-    strategies_halted = result.risk_check.get("strategies_halted", {})
-    halted_names = [name for name, halted in strategies_halted.items() if halted]
-    if halted_names:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Strategy circuit breaker active for: {', '.join(halted_names)} — trading halted",
+            detail="Catastrophe halt active (DD <= -35%) — trading halted until manual reset",
         )
 
     # Price staleness guard — re-fetch and compare

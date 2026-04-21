@@ -123,19 +123,23 @@ export interface CorrelationReport {
   backtest_expected: Record<string, number>;
 }
 
-// Risk / Circuit Breaker types
+// Risk / drawdown types. Schema reshape 2026-04-21 (AUDIT_MONTH2 C5):
+//   - halted: catastrophe halt at -35% (manual reset)
+//   - alert_active: -10% drawdown alert (non-blocking)
+//   - strategy-level fields removed (was dead code per R3)
 export interface AccountRiskStatus {
   account: number;
   label: string;
   halted: boolean;
+  alert_active: boolean;
   equity_peak: number;
-  halted_strategies: string[];
-  strategy_peaks?: Record<string, number>;
   error?: string;
 }
 
 export interface RiskStatusResponse {
   any_halted: boolean;
+  any_alert: boolean;
+  thresholds: { alert: number; halt: number };
   accounts: Record<string, AccountRiskStatus>;
 }
 
