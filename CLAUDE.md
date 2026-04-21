@@ -7,7 +7,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 
 ### Key Documents
 - **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
-- `DECISIONS_RESOLVED.md` — record of the April 2026 portfolio-architecture decisions (A3 retired, A4 at 33% with 40% upgrade ladder). Formerly DECISIONS_PENDING.md; renamed after both decisions executed.
+- `DECISIONS_RESOLVED.md` — record of the April 2026 portfolio-architecture decisions (A3 retired, A4 at 33% with a pre-committed upgrade plan to 40% — manual decision framework, not an automated rule). Formerly DECISIONS_PENDING.md; renamed after both decisions executed.
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
 - `PLAN_MODE2.md` — Two-mode architecture: Mode 1 (structural alpha, existing) + Mode 2 (informational alpha, PEAD + event-driven + macro regime). The strategic plan for compounding $50K over the bridge to 59½.
 - `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
@@ -61,7 +61,7 @@ A4 weight sweep (OOS 2023-01-03 → 2026-04-20, post C4+C6):
 - A4 @ 40% / equity 60%: CAGR +28.0% / MaxDD −6.5% / Calmar **4.33** (upgrade target)
 - A4 @ 50% / equity 50%: CAGR +30.2% / MaxDD −6.9% / Calmar **4.39**
 
-Ladder direction intact. The 40% upgrade gate (Calmar ≥ 2.0) is cleared with wide margin.
+Weight-sweep ordering intact (higher A4 → higher Calmar, monotonic across 25/33/40/50). The 40% upgrade gate (Calmar ≥ 2.0) is cleared with wide margin in backtest.
 
 **Forward-looking haircut on the combined Calmar 4.28:** this number is mathematically correct (low pairwise correlations — A1↔A2 0.32, A1↔A4 0.13, A2↔A4 0.05 — and time-offset drawdowns mean each account's worst day falls on a different date) but probably optimistic for real-money projections. The 3.3-year OOS window is mostly benign (no 2008-style synchronized-bear, no LUNA-style crypto flash crash) and contains two regimes (2023-2024 AI-led US large-cap momentum, mixed crypto) that were generous to our factor mix. Correlations spike in crises — the live 29-day A1↔A3 correlation of 0.84 vs backtest 0.38 is a cautionary example (even acknowledging A1/A3 had structural overlap). Expect a realistic live Calmar closer to **2.5-3.5** over a multi-year period once you account for: (a) one stress-event correlation spike, (b) potential filter whipsaw on A4, (c) C3 survivorship ~1-2pp of A1 CAGR. The 2.0 upgrade gate is conservative by design — 4.28 clears it ~2×, which is the right margin, but don't cite 4.28 as "what we'll realize." The live-tracking clock (reset 2026-04-20) is the only thing that will settle this; expect the gap to show up in the A1↔A2 live correlation first.
 

@@ -57,7 +57,7 @@ The live 29-day correlation (0.84) was observed during the stale-data window and
 
 - **Simplicity:** one fewer account to maintain (A3 retired), weekly rebalance cadence gone, lower cognitive overhead for Mode 2 build
 - **Material CAGR lift vs status quo:** projected ~3.5pp on paper (C1 fix 2026-04-20 confirmed this is not meaningfully biased)
-- **Leaves room to scale:** 33% → 40% ladder preserves upside once live data confirms
+- **Leaves room to scale:** a pre-committed 33% → 40% upgrade plan (gated on live evidence — see below) preserves upside without baking the bigger bet in now
 - **Concentration comfort:** 33% A4 at worst-case -30% crypto-only drawdown = -10% combined, vs -12% at 40%. Psychologically manageable.
 
 ### What was done (2026-04-20)
@@ -78,7 +78,7 @@ Effective live-clock reset date: **2026-04-20** (post-cache-fix, post-A3-retirem
 
 ### Caveats from the Tier-1 audit
 
-- **C1 (weekend-zero bias) — FIXED 2026-04-20:** `run_combined_portfolio` was migrated from union calendar + fillna(0) + ppy=365 to equity-calendar + A4 Fri→Mon compound + ppy=252. Predicted "biased HIGH" effect did not materialize — empirical delta ≤ 0.3pp CAGR / 0.05 Calmar. Corrected weight-sweep confirms 33% A4 → Calmar 3.76 (vs. prior claim 3.79), with 40% at Calmar 3.94 and 50% at 4.20 — ladder direction intact.
+- **C1 (weekend-zero bias) — FIXED 2026-04-20:** `run_combined_portfolio` was migrated from union calendar + fillna(0) + ppy=365 to equity-calendar + A4 Fri→Mon compound + ppy=252. Predicted "biased HIGH" effect did not materialize — empirical delta ≤ 0.3pp CAGR / 0.05 Calmar. Corrected weight-sweep confirms 33% A4 → Calmar 3.76 (vs. prior claim 3.79), with 40% at Calmar 3.94 and 50% at 4.20 — weight-sweep ordering intact (monotonic higher-weight → higher-Calmar).
 - **C2 (BTC MA warmup):** SMA-125/top2's Test-3 half-A Calmar (2.89) — the primary robust-opt gate — is partly flattered by `min_periods=1`. The A4 production config may not survive a clean recompute.
 
 Before scaling to 40%, C2 should be fixed and the A4 robust-opt config re-verified. The 33% weight choice itself does not need revisiting — it's dominated by 25% on any reasonable correction.

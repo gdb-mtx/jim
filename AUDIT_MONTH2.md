@@ -40,7 +40,7 @@
 **Finding:** On crypto weekends A1 and A2 have no observation; `fillna(0.0)` then `df.mean(axis=1)` treats them as zero returns, so realized weights drift from advertised 33/33/33 toward ~23/23/54 over a year. Crypto's contribution is overstated.
 **Impact (predicted):** Every "3-acct + A4 at W%" row biased high; "drop-A3 + 33% A4: Calmar 3.79 / CAGR 28.5%" decision on biased numbers.
 **Fix applied:** `run_combined_portfolio` migrated to equity trading calendar with A4 compounded Fri→Mon (ppy=252). `marginal_portfolio_contribution` follows the same convention. Callers in `api/routes/strategies.py`, `api/routes/backtests.py`, `scripts/run_validation.py` updated to ppy=252.
-**Empirical result:** predicted bias **did not materialize**. Old vs new: CAGR +28.09%/-7.56%/3.71 → +28.33%/-7.56%/3.75 (Δ ≤ 0.3pp CAGR, ≤ 0.05 Calmar). Total cumulative return preserved within 0.15pp (126.15% → 126.30%). `mean(axis=1)` with fillna(0) implicitly rebalances daily to 1/3 and the weekend-compound math is near-algebraically equivalent for small daily returns. Code migrated anyway for cleaner semantics. Corrected weight-sweep still dominates 25% (33% Calmar 3.76 vs 25% Calmar 3.50), with 40% at 3.94 — ladder direction intact.
+**Empirical result:** predicted bias **did not materialize**. Old vs new: CAGR +28.09%/-7.56%/3.71 → +28.33%/-7.56%/3.75 (Δ ≤ 0.3pp CAGR, ≤ 0.05 Calmar). Total cumulative return preserved within 0.15pp (126.15% → 126.30%). `mean(axis=1)` with fillna(0) implicitly rebalances daily to 1/3 and the weekend-compound math is near-algebraically equivalent for small daily returns. Code migrated anyway for cleaner semantics. Corrected weight-sweep still dominates 25% (33% Calmar 3.76 vs 25% Calmar 3.50), with 40% at 3.94 — weight-sweep ordering intact.
 
 ### ✅ C2. BTC MA warmup bias — FIXED 2026-04-20
 **Files:** `strategies/crypto_momentum.py:89`, `mode2/crypto_autoresearch.py:92/96/100/101`, `api/routes/portfolio.py:350`
@@ -132,7 +132,7 @@ Defaults on `apply_vol_scaling`: `scalar_floor=0.5, scalar_cap=1.5`. A2 inherits
 - A2 `/rebalance/preview?strategy_id=trend_lowvol`: `vol_scalar=0.7868663819…` (exact match to parity-script output), full diag with `realized_vol=0.19063`. 34 target positions.
 - A4 `/rebalance/preview?strategy_id=crypto_momentum_filtered`: `vol_scalar=1.0`, `fallback_reason="zero_variance"`, `n_obs=31`. Empty target_weights (BTC-below-125d-MA strategy filter) — scalar fallback is correct by construction.
 
-**Combined-book headline numbers** (A1+A2+A4 @ 1/3, Equity core @ 50/50) **are stale and need a `run_combined_portfolio` re-run** against post-C4 configs. The 33%→40% A4 upgrade ladder direction is preserved (C4 bias was uniform across the 25%/33%/40% weight scenarios), but the absolute Calmar numbers for the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
+**Combined-book headline numbers** (A1+A2+A4 @ 1/3, Equity core @ 50/50) **are stale and need a `run_combined_portfolio` re-run** against post-C4 configs. The 33%→40% A4 upgrade ordering is preserved (C4 bias was uniform across the 25%/33%/40% weight scenarios), but the absolute Calmar numbers for the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
 
 **Status:** ✅ **RESOLVED 2026-04-21. A1 + A2 cleared for the 2026-05-04 monthly rebalance.** Paper data collection resumes on that cycle.
 
@@ -297,7 +297,7 @@ All three gate. A4 Calmar dropped from 3.86 → 3.18, still well above 1.0.
 
 MaxDD actually improved under vol-scaling + cost-adjusted returns. Combined Calmar essentially unchanged (4.31 → 4.28) — the two layers offset each other cleanly.
 
-**A4 weight-sweep ladder (post-C6) — direction intact, 40% upgrade gate comfortably cleared:**
+**A4 weight sweep (post-C6) — ordering intact, 40% upgrade gate comfortably cleared:**
 
 - A4 @ 25%: Calmar **4.21**
 - A4 @ 33%: Calmar **4.27** (current)
@@ -328,7 +328,7 @@ MaxDD actually improved under vol-scaling + cost-adjusted returns. Combined Calm
 - **A4 CAGR is MUCH worse than backtest claims.** Backtest-expected when invested: 50/50 × coin returns. Live-actual: 20/20 × coin returns + 60% × 0. The "when invested" CAGR drops by ~60% from what the backtest assumes. A4 backtest CAGR 45.2% translates to a rough live expectation of ~18-20% (invested fraction 0.4 × full-book return). **This is a bigger effect than C4 (vol-scaling) and C6 (fees) combined.**
 - **A4 MaxDD is better than backtest claims** (60% cash cushion), but only because exposure is chopped — not a free benefit.
 - **Calmar is lower in both directions.** Can't estimate without a re-run.
-- The A4 weight decision (33% of combined book, ladder to 40%) was sized on pre-cap numbers. The 40% Calmar threshold in CLAUDE.md's upgrade ladder will never be hit on the live book's actual behavior.
+- The A4 weight decision (33% of combined book, with pre-committed 40% upgrade plan) was sized on pre-cap numbers. The 40% Calmar threshold in CLAUDE.md's upgrade gates will never be hit on the live book's actual behavior.
 
 **Design origin (traced 2026-04-20, session 3):**
 - Committed in the initial FIRE build (`175c234 Add complete FIRE quantitative trading system`) inside `RiskLimits` dataclass, comment: `# No single position > 20% of portfolio`.
@@ -504,13 +504,13 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 
 **Where Kelly-adjacent math IS being used, just not called "Kelly":**
 - **Vol-scaling overlay** (`apply_vol_scaling`) — `scalar = vol_target / realized_vol` is literally Kelly-on-leverage in continuous form (f* = μ/σ²). Moreira & Muir 2017 is the academic basis. C4 is "this should also apply in live, not just backtest."
-- **Cross-account weight sweep** (A1/A2/A4 at 1/3 each, ladder-to-40% for A4, see `DECISIONS_RESOLVED.md`) — Kelly-adjacent portfolio optimization with a Calmar objective instead of log-wealth.
+- **Cross-account weight sweep** (A1/A2/A4 at 1/3 each, pre-committed upgrade plan to 40% for A4, see `DECISIONS_RESOLVED.md`) — Kelly-adjacent portfolio optimization with a Calmar objective instead of log-wealth.
 - **Robust-opt on crypto** (`scripts/crypto_robust_opt.py`: SMA-125/top-2 via `min(Calmar_A, Calmar_B)`) — picks concentration + lookback that maximize risk-adjusted return under regime-robustness, a more conservative cousin of Kelly.
 - **`kelly_criterion()` in `backtesting/metrics.py`** — shown on the validation scorecard as a *sanity check* ("if this were a simple up/down bet, Kelly would suggest X%"). Diagnostic only. Never wired to sizing.
 
 **Could explicit Kelly meaningfully improve CAGR/Calmar? Probably not:**
 - **Leverage sizing:** Kelly-on-leverage would push A4 toward ~2-3× leverage. Alpaca crypto is spot-only. Moot.
-- **Allocation between accounts:** Kelly would push MORE into A4 (highest CAGR) at the cost of deeper drawdowns. Our Calmar-first sweep already picked 33% + ladder-to-40% — *more* conservative than Kelly. Moving to Kelly here would worsen Calmar for marginal CAGR gain.
+- **Allocation between accounts:** Kelly would push MORE into A4 (highest CAGR) at the cost of deeper drawdowns. Our Calmar-first sweep already picked 33% + pre-committed upgrade to 40% — *more* conservative than Kelly. Moving to Kelly here would worsen Calmar for marginal CAGR gain.
 - **Concentration (top-N):** Already handled by robust-opt. Explicit Kelly redundant.
 
 **What we ARE missing from the Kelly-adjacent family:**
@@ -581,7 +581,7 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 **Tier A session (2026-04-21 afternoon) — C6 + R16 + combined re-run:** ✅ COMPLETE.
 - ✅ **R16 resolved** — `log_rebalance` persists `vol_scalar` + diagnostics. Three callers updated.
 - ✅ **C6 resolved** — `backtesting/costs.py` new with per-strategy cost rates (5 bps equity, 20 bps crypto round-trip); wired into `_generate_strategy_returns` and the validation adapters' `strategy_fn` / `refit_factory` paths. Empirical A4 drag 3.4pp (vs audit's 0.5-1pp guess — audit underestimated crypto rotation frequency by ~10×).
-- ✅ **Combined headline re-issued** on post-C4+C6 returns: Equity core 19.0%/−6.1%/3.13, 3-acct 26.5%/−6.2%/4.28. Ladder direction intact.
+- ✅ **Combined headline re-issued** on post-C4+C6 returns: Equity core 19.0%/−6.1%/3.13, 3-acct 26.5%/−6.2%/4.28. Weight-sweep ordering intact.
 - ✅ **All three accounts re-validated**: A1 27.2%/2.76 PASS, A2 11.0%/1.51 MARGINAL, A4 40.4%/3.18 PASS. All gate.
 - ~~S5 broader value-plausibility layer~~ — **RESOLVED 2026-04-21 session 5 afternoon.** Per-ticker bands + write-time assertions + read-time cross-validation + dashboard banner all live. See S5 entry above.
 
@@ -621,11 +621,11 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 - **C6 fee/slippage** — ✅ **RESOLVED 2026-04-21**. Per-strategy cost layer landed (5 bps equity / 20 bps crypto round-trip). A4 drag came in at 3.4pp (43.8% → 40.4% CAGR) — materially larger than the audit's 0.5-1pp guess because actual daily turnover is ~8% (20× annualized one-way, not the audit's assumed 2×). A1/A2 drag ~0.1-0.2pp, negligible as expected.
 - **C7 position cap** — ✅ **FIXED 2026-04-21** via option C (cap removed entirely; rely on strategy shape for concentration control). A4 will rebalance to 50/50 top-2 as designed when BTC crosses the 125d MA. R12 (dead Kelly code) closed in the same pass. Invariant checks on strategy output added to `compute_rebalance` as replacement defense (loud failure > silent clamp).
 
-**Combined-book headline numbers are stale 2026-04-21 pending `run_combined_portfolio` re-run with post-C4 configs.** The A1+A2+A4 @ 1/3 and A1+A2 @ 50/50 rows in CLAUDE.md were computed with pre-C4 A2+A4 return series. The C4 bias was uniform across the 25% / 33% / 40% A4 weight scenarios, so the ladder-to-40% *direction* is preserved, but the absolute Calmar numbers cited against the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
+**Combined-book headline numbers are stale 2026-04-21 pending `run_combined_portfolio` re-run with post-C4 configs.** The A1+A2+A4 @ 1/3 and A1+A2 @ 50/50 rows in CLAUDE.md were computed with pre-C4 A2+A4 return series. The C4 bias was uniform across the 25% / 33% / 40% A4 weight scenarios, so the upgrade-to-40% *ordering* is preserved, but the absolute Calmar numbers cited against the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
 
-**The A3 retirement / A4 weight decisions are not affected by C4-C7** — those decisions compared *relative* Calmar across weight configurations, and all four findings bias the backtest numbers in consistent directions across the 25% / 33% / 40% A4 weight scenarios. The ladder-to-40% direction stands.
+**The A3 retirement / A4 weight decisions are not affected by C4-C7** — those decisions compared *relative* Calmar across weight configurations, and all four findings bias the backtest numbers in consistent directions across the 25% / 33% / 40% A4 weight scenarios. The upgrade-to-40% ordering stands.
 
-The **retired/kept/weight decisions themselves** (A3 retired, A4 at 33%) stood on the Tier 1 predictions; post-fix numbers **confirm** they remain the right calls (corrected weight-sweep: 33% → Calmar 3.76, 25% → 3.50, 40% → 3.94). Ladder to 40% direction intact. **However**, the absolute Calmar numbers in that sweep need to be re-issued post C4/C5/C6 fixes before using them to argue for the 40% upgrade — the 2.0 Calmar threshold in CLAUDE.md's upgrade gate is stated on pre-fix numbers.
+The **retired/kept/weight decisions themselves** (A3 retired, A4 at 33%) stood on the Tier 1 predictions; post-fix numbers **confirm** they remain the right calls (corrected weight-sweep: 33% → Calmar 3.76, 25% → 3.50, 40% → 3.94). Upgrade-to-40% ordering intact. **However**, the absolute Calmar numbers in that sweep need to be re-issued post C4/C5/C6 fixes before using them to argue for the 40% upgrade — the 2.0 Calmar threshold in CLAUDE.md's upgrade gate is stated on pre-fix numbers.
 
 ---
 
