@@ -13,6 +13,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `RATE_VOL_SCOPE.md` — Account 5 candidate scoping (MOVE-conditional TLT reversal)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
+- `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions
@@ -20,7 +21,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Backtesting**: vectorbt
 - **Frontend**: React + TypeScript + TradingView Lightweight Charts (v5)
 - **Backend**: Python + FastAPI
-- **Risk**: Fractional Kelly + 2% max loss + drawdown circuit breakers (-15% portfolio, -10% strategy)
+- **Risk**: Equal-weight top-N position sizing (at strategy layer) + SPY/BTC trend filters + drawdown circuit breakers (-15% portfolio, -10% strategy — design under review, see AUDIT_MONTH2 C5). Historical "Fractional Kelly + 2% rule + 20% position cap" were wired in naming only: Kelly/2% rule were dead code, and the 20% cap silently conflicted with A4's top-2 crypto design — all three removed 2026-04-21 (AUDIT_MONTH2 C7 + R12 cleanup).
 - **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION_PLAN.md`.
 - **Statistical validation**: Six-test scorecard (all required before real money; quarterly re-validation enforced via gate):
   - **Test 1** — OOS holdout (train 2010-2022, test 2023-today).
@@ -115,6 +116,8 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/crypto_momentum.py`, `strategies/portfolio.py`
 
 ### Risk Controls — Operational Behavior
+
+**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline applies to both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`, not local time. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto APScheduler job is the only exception and runs at 00:05 UTC (crypto markets are 24/7, so UTC-anchoring is the honest convention there).
 
 **When are filters and circuit breakers checked?**
 Risk controls are checked at two levels:

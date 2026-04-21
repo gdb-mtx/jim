@@ -1,15 +1,18 @@
 """
-Risk Manager — Fractional Kelly + 2% Rule + Drawdown Circuit Breakers.
+Risk Manager — Drawdown Circuit Breakers.
 
-This module enforces three layers of risk protection:
-1. Kelly Criterion (fractional) determines position SIZE
-2. The 2% rule caps maximum LOSS per trade
-3. Circuit breakers halt trading at portfolio/strategy drawdown thresholds
+Position sizing is handled at the strategy layer (equal-weight top-N,
+blend weights, vol-scaling where applicable) — this module does NOT size
+positions. Historical Kelly + 2% rule + max_position_pct code was removed
+2026-04-21 (AUDIT_MONTH2 C7 resolution, R12 cleanup) — those layers were
+dead code and, in the case of max_position_pct=20%, actively buggy against
+A4's top-2 crypto design.
 
 Circuit breaker state (peaks, halts) persists to disk so server restarts
 don't reset safety protections.
 
-See PLAN.md Section 3 (Kelly) and Section 5 (Constraints).
+See PLAN.md Section 3.5 (Drawdown Circuit Breakers) — though the design
+itself is under review; see AUDIT_MONTH2 C5.
 """
 
 import json
@@ -28,24 +31,9 @@ STATE_DIR = Path(__file__).parent.parent / "data" / "risk_state"
 
 @dataclass
 class RiskLimits:
-    """Risk management parameters."""
-    max_loss_per_trade_pct: float = 0.02       # 2% max loss per trade
-    kelly_fraction: float = 0.25                # Quarter-Kelly (conservative)
+    """Circuit-breaker thresholds. (Position sizing lives in strategies.)"""
     portfolio_drawdown_halt: float = 0.15       # Halt all trading at -15%
     strategy_drawdown_halt: float = 0.10        # Halt strategy at -10%
-    max_position_pct: float = 0.20              # No single position > 20% of portfolio
-
-
-@dataclass
-class PositionSize:
-    """Result of position sizing calculation."""
-    symbol: str
-    kelly_optimal_pct: float      # Full Kelly suggests this %
-    kelly_fractional_pct: float   # Fractional Kelly (what we use)
-    max_loss_capped_pct: float    # After applying 2% rule
-    final_position_pct: float     # Final answer (min of all constraints)
-    shares: int                   # Number of shares to buy
-    dollar_amount: float          # Dollar value of position
 
 
 class RiskManager:
@@ -119,69 +107,6 @@ class RiskManager:
             os.rename(str(tmp), str(self._state_file))
         except OSError as e:
             log.warning(f"Could not save circuit breaker state: {e}")
-
-    def calculate_position_size(
-        self,
-        symbol: str,
-        portfolio_value: float,
-        win_rate: float,
-        avg_win: float,
-        avg_loss: float,
-        current_price: float,
-        stop_loss_pct: float,
-    ) -> PositionSize:
-        """Calculate position size using Kelly + 2% rule.
-
-        Args:
-            symbol: Ticker symbol
-            portfolio_value: Current total portfolio value
-            win_rate: Historical win rate (0-1)
-            avg_win: Average winning trade return (positive decimal)
-            avg_loss: Average losing trade return (positive decimal, we negate)
-            current_price: Current price per share
-            stop_loss_pct: Stop loss distance as decimal (e.g., 0.05 = 5%)
-
-        Returns:
-            PositionSize with all sizing details
-        """
-        # Kelly Criterion: f* = (bp - q) / b
-        if avg_loss == 0 or win_rate <= 0:
-            kelly_full = 0.0
-        else:
-            b = avg_win / avg_loss  # Win/loss ratio
-            p = win_rate
-            q = 1 - p
-            kelly_full = max((b * p - q) / b, 0)
-
-        # Apply fractional Kelly
-        kelly_frac = kelly_full * self.limits.kelly_fraction
-
-        # Apply 2% max loss rule
-        # If stop_loss_pct would cause > 2% portfolio loss, reduce position
-        if stop_loss_pct > 0:
-            max_position_from_loss_rule = self.limits.max_loss_per_trade_pct / stop_loss_pct
-        else:
-            max_position_from_loss_rule = kelly_frac
-
-        # Take the most conservative of all constraints
-        final_pct = min(
-            kelly_frac,
-            max_position_from_loss_rule,
-            self.limits.max_position_pct,
-        )
-
-        dollar_amount = portfolio_value * final_pct
-        shares = int(dollar_amount / current_price) if current_price > 0 else 0
-
-        return PositionSize(
-            symbol=symbol,
-            kelly_optimal_pct=kelly_full,
-            kelly_fractional_pct=kelly_frac,
-            max_loss_capped_pct=max_position_from_loss_rule,
-            final_position_pct=final_pct,
-            shares=shares,
-            dollar_amount=shares * current_price,
-        )
 
     def check_circuit_breakers(
         self,

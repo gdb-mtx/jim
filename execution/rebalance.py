@@ -272,6 +272,22 @@ def compute_rebalance(
     # 3. Get target weights from strategy (broker provides real-time prices for filters)
     target_weights = get_current_signals(strategy_id, broker=broker)
 
+    # Invariant check — strategies should produce sane weight distributions.
+    # Guards against a strategy bug producing extreme/pathological output.
+    # Loud failure beats silent clamping (see AUDIT_MONTH2 C7 resolution).
+    _weight_sum = sum(target_weights.values())
+    if _weight_sum > 1.0 + 1e-6:
+        raise ValueError(
+            f"Strategy {strategy_id} produced weights summing to {_weight_sum:.4f} > 1.0. "
+            f"Refusing to trade. Investigate signal generation before retrying."
+        )
+    for sym, w in target_weights.items():
+        if w < 0 or w > 1.0 + 1e-6:
+            raise ValueError(
+                f"Strategy {strategy_id} produced out-of-range weight for {sym}: {w:.4f}. "
+                f"Expected [0, 1]. Refusing to trade."
+            )
+
     # 3b. Check tradeability for NEW target symbols (not currently held)
     # This catches delisted/acquired stocks before we try to buy them
     new_symbols = [s for s in target_weights if s not in current_positions]
@@ -321,9 +337,11 @@ def compute_rebalance(
         if weight < 0:
             log.warning(f"Negative weight for {symbol}: {weight:.4f}, skipping (long-only system)")
             continue
-        # Cap individual position at max_position_pct
-        capped_weight = min(weight, risk_manager.limits.max_position_pct)
-        dollar_amount = portfolio_value * capped_weight
+        # Per-symbol weight from the strategy is the sizing. Concentration is
+        # controlled by strategy shape (top_n + equal-weight), not a runtime cap.
+        # See AUDIT_MONTH2 C7: the old 20% cap silently kneecapped A4's top-2
+        # crypto design (capped 50/50 to 20/20 + 60% cash).
+        dollar_amount = portfolio_value * weight
         if is_crypto:
             qty = round(dollar_amount / prices[symbol], 8)
         else:

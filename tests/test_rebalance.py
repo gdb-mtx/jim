@@ -80,24 +80,6 @@ def test_circuit_breaker_halts_rebalance(mock_signals):
 
 
 @patch("execution.rebalance.get_current_signals")
-def test_position_cap_at_20_percent(mock_signals):
-    """No single position exceeds 20% of portfolio."""
-    mock_signals.return_value = {"AAPL": 0.50}  # Request 50%
-
-    broker = _mock_broker(positions={}, value=100_000, prices={"AAPL": 100.0})
-
-    result = compute_rebalance(
-        broker=broker,
-        strategy_id="test_strategy",
-        risk_manager=RiskManager(persist=False),
-    )
-
-    # Should be capped at 20% = $20,000 = 200 shares
-    assert len(result.orders) == 1
-    assert result.orders[0].qty <= 200
-
-
-@patch("execution.rebalance.get_current_signals")
 def test_no_orders_when_at_target(mock_signals):
     """No orders generated when already at target."""
     mock_signals.return_value = {"AAPL": 0.10}  # 10% = $10k = 100 shares at $100
