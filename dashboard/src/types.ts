@@ -254,3 +254,27 @@ export interface FilterMonitorState {
     source: string;
   }>;
 }
+
+export interface PlausibilityIssue {
+  ticker: string;
+  unresolved_failure: boolean;
+  recent_divergence: boolean;
+  last_success_at?: string;
+  last_success_n_obs?: number;
+  last_failure_at?: string;
+  last_failure_reason?: string;
+  last_failure_obs_min?: number;
+  last_failure_obs_max?: number;
+  last_failure_n_obs?: number;
+  last_divergence_at?: string;
+  last_divergence_cached?: number;
+  last_divergence_live?: number;
+  last_divergence_pct?: number;
+  last_divergence_threshold_pct?: number;
+}
+
+export interface PlausibilityState {
+  state: Record<string, Omit<PlausibilityIssue, "ticker" | "unresolved_failure" | "recent_divergence">>;
+  active_issues: PlausibilityIssue[];
+  has_active: boolean;
+}

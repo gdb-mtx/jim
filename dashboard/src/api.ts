@@ -156,3 +156,9 @@ export async function fetchFilterMonitorState() {
     `${BASE_URL}/portfolio/filter-state`
   );
 }
+
+export async function fetchPlausibilityState() {
+  return fetchJSON<import("./types").PlausibilityState>(
+    `${BASE_URL}/portfolio/plausibility`,
+  );
+}

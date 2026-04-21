@@ -321,6 +321,7 @@ async def filter_status():
     def _compute():
         from data.pipeline import download_and_cache
         from data.crypto import download_btc_prices
+        from data.plausibility import cross_validate_last_close
 
         result = {}
 
@@ -330,11 +331,22 @@ async def filter_status():
             spy_ma_val = float(spy_ma.iloc[-1])
 
             # Use Alpaca real-time price instead of cached yfinance close
+            live_spy: float | None = None
             try:
                 broker = _get_broker(1)
-                spy_price = broker.get_latest_price("SPY")
+                live_spy = broker.get_latest_price("SPY")
             except Exception:
-                spy_price = float(spy_prices.iloc[-1])
+                pass
+
+            # Read-time cross-validation (AUDIT_MONTH2 S5). If the cached
+            # series' last close diverges >5% from the live broker quote,
+            # the cache is suspect — the MA computed from it may be wrong
+            # and can't be trusted as a filter input. Record the divergence
+            # to plausibility_state.json so the dashboard shows a warning.
+            if live_spy is not None:
+                cross_validate_last_close(spy_prices, "SPY", live_spy)
+
+            spy_price = live_spy if live_spy is not None else float(spy_prices.iloc[-1])
 
             result["spy"] = {
                 "price": round(spy_price, 2),
@@ -351,11 +363,18 @@ async def filter_status():
             btc_ma_val = float(btc_ma.iloc[-1])
 
             # Use Alpaca real-time price instead of cached yfinance close
+            live_btc: float | None = None
             try:
                 broker = _get_broker(4)
-                btc_price = broker.get_latest_price("BTC/USD")
+                live_btc = broker.get_latest_price("BTC/USD")
             except Exception:
-                btc_price = float(btc_prices.iloc[-1])
+                pass
+
+            # Read-time cross-validation — same pattern as SPY above.
+            if live_btc is not None:
+                cross_validate_last_close(btc_prices, "BTC-USD", live_btc)
+
+            btc_price = live_btc if live_btc is not None else float(btc_prices.iloc[-1])
 
             result["btc"] = {
                 "price": round(btc_price, 2),
@@ -435,3 +454,32 @@ async def filter_monitor_state():
     ]
     state["recent_auto_rebalances"] = monitor_rebalances[:5]
     return state
+
+
+@router.get("/plausibility")
+async def plausibility_state():
+    """Get per-ticker plausibility state and any active issues.
+
+    Returns the raw `plausibility_state.json` (per-ticker last_success /
+    last_failure / last_divergence timestamps + values) plus a derived
+    `active_issues` list of tickers with:
+      - an unresolved write-time failure (last_failure_at > last_success_at), or
+      - a recent (<24h) read-time cache-vs-live divergence.
+
+    Dashboard uses `active_issues` to decide whether to show a warning
+    banner. Raw state is exposed for debugging.
+
+    Added 2026-04-21 (AUDIT_MONTH2 S5 resolution).
+    """
+    from data.plausibility import get_state, has_active_issues
+
+    def _load():
+        state = get_state()
+        active = has_active_issues(state)
+        return {
+            "state": state,
+            "active_issues": active,
+            "has_active": len(active) > 0,
+        }
+
+    return await asyncio.to_thread(_load)

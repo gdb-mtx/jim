@@ -93,6 +93,12 @@ def download_crypto_prices(
     print(f"Final universe: {prices.shape[1]} coins with 50%+ coverage")
     print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
+    # Plausibility guard (AUDIT_MONTH2 S5). Columns without a defined band
+    # (most of the 9-coin universe) pass silently — only BTC-USD and
+    # ETH-USD have bands today. Raises loudly if either is wrong.
+    from data.plausibility import assert_plausible_df
+    assert_plausible_df(prices)
+
     write_parquet_atomic(prices, cache_path)
     print(f"Cached to {cache_path}")
 
@@ -125,23 +131,18 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
 
     print("Downloading BTC price data...")
     from data.pipeline import download_with_retry, write_parquet_atomic
+    from data.plausibility import assert_plausible
     prices = download_with_retry(["BTC-USD"], start=start, min_coverage_ratio=1.0)
     btc = prices.iloc[:, 0]
-
-    # Sanity check: yfinance occasionally returns wrong-ticker data under
-    # "BTC-USD" (happened 2026-04-21 — series came back in the $9-$29 range
-    # with rows starting 2010, corrupting the cache). BTC has not traded
-    # below $1,000 since late 2017; if max < $1k, this is clearly not BTC.
-    # Refuse to write the cache so the dashboard + filter monitor don't
-    # act on bad data.
-    if btc.max() < 1000:
-        raise RuntimeError(
-            f"BTC series looks wrong: max={btc.max():.2f}, min={btc.min():.2f}, "
-            f"rows={len(btc)}, last={btc.iloc[-1]:.2f}. Refusing to cache — "
-            f"likely a transient yfinance data glitch. Retry in a few minutes."
-        )
-
     btc.name = "BTC-USD"
+
+    # Plausibility guard (AUDIT_MONTH2 S5). Raises PlausibilityError if
+    # yfinance returned a series that's clearly not BTC (e.g. 2026-04-21
+    # $9-$29 range). Caller gets a loud failure; bad data never cached.
+    # Prior inline `max < 1000` check replaced by the unified helper on
+    # 2026-04-21 for consistency across BTC/ETH/SPY/VIX/SHY.
+    assert_plausible(btc, "BTC-USD")
+
     btc_df = btc.to_frame()
     write_parquet_atomic(btc_df, cache_path)
     print(f"Cached BTC prices: {len(btc)} rows")

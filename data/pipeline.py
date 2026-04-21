@@ -144,6 +144,12 @@ def download_and_cache(
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)
 
+    # Plausibility guard (AUDIT_MONTH2 S5). Checks per-column against the
+    # BANDS dict — SPY, ETH-USD, BTC-USD, SHY, ^VIX have bands; other ETFs
+    # pass through silently. Coverage / staleness is handled elsewhere.
+    from data.plausibility import assert_plausible_df
+    assert_plausible_df(prices)
+
     write_parquet_atomic(prices, cache_path)
     print(f"Cached {len(prices)} rows to: {cache_path}")
 

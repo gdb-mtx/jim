@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from "react";
-import { fetchFilterStatus, fetchFilterMonitorState } from "../api";
-import type { FilterStatusResponse, FilterMonitorState } from "../types";
+import { fetchFilterStatus, fetchFilterMonitorState, fetchPlausibilityState } from "../api";
+import type { FilterStatusResponse, FilterMonitorState, PlausibilityState, PlausibilityIssue } from "../types";
 
 type AccountView = 0 | 1 | 2 | 3 | 4;
 
@@ -24,6 +24,7 @@ export default memo(function FilterStatusBanner({
 }) {
   const [filters, setFilters] = useState<FilterStatusResponse | null>(null);
   const [monitorState, setMonitorState] = useState<FilterMonitorState | null>(null);
+  const [plausibility, setPlausibility] = useState<PlausibilityState | null>(null);
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
@@ -33,6 +34,9 @@ export default memo(function FilterStatusBanner({
         .catch(() => setFetchError(true));
       fetchFilterMonitorState()
         .then(setMonitorState)
+        .catch(() => {});
+      fetchPlausibilityState()
+        .then(setPlausibility)
         .catch(() => {});
     };
     load();
@@ -60,9 +64,74 @@ export default memo(function FilterStatusBanner({
   const spy = filters.spy;
   const btc = filters.btc;
 
+  // Plausibility banner — filter to tickers relevant to the active view so
+  // an SPY issue doesn't clutter Acct 4's crypto view (and vice versa).
+  const relevantTickers = new Set<string>();
+  if (showSpy) relevantTickers.add("SPY");
+  if (showBtc) relevantTickers.add("BTC-USD");
+  // On the Combined view, show everything:
+  if (account === 0) {
+    relevantTickers.add("SPY");
+    relevantTickers.add("BTC-USD");
+    relevantTickers.add("ETH-USD");
+    relevantTickers.add("^VIX");
+    relevantTickers.add("SHY");
+  }
+  const activeIssues: PlausibilityIssue[] = (plausibility?.active_issues ?? [])
+    .filter((i) => relevantTickers.has(i.ticker));
+
   return (
-    <div className="flex flex-wrap gap-3">
-      {showSpy && spy && !("error" in spy && spy.error) && (
+    <div className="flex flex-col gap-3">
+      {activeIssues.length > 0 && (
+        <div className="rounded-xl border border-[#ff4d6a60] bg-[#ff4d6a10] px-4 py-3">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#ff4d6a]" />
+            <span className="text-sm font-medium text-[#ff4d6a]">
+              Data plausibility warning — filter decisions may be stale or wrong
+            </span>
+          </div>
+          <ul className="ml-4 space-y-1 text-xs text-[#c0c0d4]">
+            {activeIssues.map((iss) => (
+              <li key={iss.ticker}>
+                <span className="font-medium text-[#e8e8f0]">{iss.ticker}</span>
+                {iss.unresolved_failure && iss.last_failure_at && (
+                  <span>
+                    {" — "}write-time failure {timeAgo(iss.last_failure_at)}
+                    {iss.last_failure_obs_min !== undefined &&
+                      iss.last_failure_obs_max !== undefined && (
+                        <span className="text-[#8888a0]">
+                          {" "}(range ${iss.last_failure_obs_min.toFixed(2)}-$
+                          {iss.last_failure_obs_max.toFixed(2)})
+                        </span>
+                      )}
+                  </span>
+                )}
+                {iss.recent_divergence && iss.last_divergence_at && (
+                  <span>
+                    {" — "}cache vs live divergence{" "}
+                    {((iss.last_divergence_pct ?? 0) * 100).toFixed(1)}%{" "}
+                    {timeAgo(iss.last_divergence_at)}
+                    {iss.last_divergence_cached !== undefined &&
+                      iss.last_divergence_live !== undefined && (
+                        <span className="text-[#8888a0]">
+                          {" "}(cached ${iss.last_divergence_cached.toFixed(2)} vs
+                          live ${iss.last_divergence_live.toFixed(2)})
+                        </span>
+                      )}
+                  </span>
+                )}
+                {iss.last_success_at && (
+                  <span className="text-[#8888a0]">
+                    {" · "}last successful fetch {timeAgo(iss.last_success_at)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        {showSpy && spy && !("error" in spy && spy.error) && (
         <div
           className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 ${
             spy.above_ma
@@ -141,6 +210,7 @@ export default memo(function FilterStatusBanner({
           </span>
         </div>
       )}
+      </div>
     </div>
   );
 })

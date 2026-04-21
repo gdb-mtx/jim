@@ -169,7 +169,14 @@ def download_sp500_prices(
     print(f"Final universe: {prices.shape[1]} stocks with {min_coverage:.0%}+ coverage")
     print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
+    # Plausibility guard (AUDIT_MONTH2 S5). Individual S&P 500 stocks don't
+    # have per-ticker bands (prices legitimately span $5-$1000+ and change
+    # after splits), so most columns pass silently. Any banded symbols
+    # present (e.g. if SPY ended up here) get checked.
     from data.pipeline import write_parquet_atomic
+    from data.plausibility import assert_plausible_df
+    assert_plausible_df(prices)
+
     write_parquet_atomic(prices, cache_path)
     print(f"Cached to {cache_path}")
 
@@ -200,10 +207,16 @@ def download_vix(start: str = "2005-01-01") -> pd.Series:
 
     print("Downloading VIX data...")
     from data.pipeline import download_with_retry, write_parquet_atomic
+    from data.plausibility import assert_plausible
     prices = download_with_retry(["^VIX"], start=start, min_coverage_ratio=1.0)
     vix = prices.iloc[:, 0]
+    vix.name = "^VIX"  # keep ticker name for plausibility lookup
 
-    vix.name = "VIX"
+    # Plausibility guard (AUDIT_MONTH2 S5). VIX band 5-100; anything
+    # outside this is yfinance garbage, not a real VIX regime.
+    assert_plausible(vix, "^VIX")
+
+    vix.name = "VIX"  # restore display name for downstream consumers
     vix_df = vix.to_frame()
     write_parquet_atomic(vix_df, cache_path)
     print(f"Cached VIX: {len(vix)} rows")
