@@ -201,28 +201,38 @@ async def _execute_under_lock(account: int, strategy_id: str):
             "strategy_id": strategy_id,
         }
 
-    # Execute
-    order_results = await asyncio.to_thread(execute_rebalance, broker, result)
+    # Execute — try/finally around the journal so audit trail survives
+    # any raise after orders have been submitted to Alpaca (R4).
+    order_results: list[dict] = []
+    execute_error: str | None = None
+    try:
+        order_results = await asyncio.to_thread(execute_rebalance, broker, result)
+    except Exception as e:
+        execute_error = f"{type(e).__name__}: {e}"
+    finally:
+        failed = [o for o in order_results if o.get("status") == "error"]
+        log_rebalance(
+            account=account,
+            strategy_id=result.strategy_id,
+            portfolio_value=result.portfolio_value,
+            orders_submitted=len(order_results),
+            orders_failed=len(failed),
+            order_details=order_results,
+            spy_filter_active=result.spy_filter_active,
+            spy_filter_scalar=result.spy_filter_scalar,
+            btc_filter_active=result.btc_filter_active,
+            btc_filter_scalar=result.btc_filter_scalar,
+            vol_scalar=result.vol_scalar,
+            vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+            execute_error=execute_error,
+            source="manual",
+        )
 
-    # Report partial fills / failures
-    failed = [o for o in order_results if o.get("status") == "error"]
-
-    # Log to rebalance history
-    log_rebalance(
-        account=account,
-        strategy_id=result.strategy_id,
-        portfolio_value=result.portfolio_value,
-        orders_submitted=len(order_results),
-        orders_failed=len(failed),
-        order_details=order_results,
-        spy_filter_active=result.spy_filter_active,
-        spy_filter_scalar=result.spy_filter_scalar,
-        btc_filter_active=result.btc_filter_active,
-        btc_filter_scalar=result.btc_filter_scalar,
-        vol_scalar=result.vol_scalar,
-        vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-        source="manual",
-    )
+    if execute_error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Execute failed after journaling state: {execute_error}",
+        )
 
     # Take equity snapshot so dashboard updates immediately.
     # save_snapshot() serializes internally (S3 fix).

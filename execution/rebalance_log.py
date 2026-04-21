@@ -28,6 +28,7 @@ def log_rebalance(
     btc_filter_scalar: float = 1.0,
     vol_scalar: float = 1.0,
     vol_scalar_diagnostics: dict | None = None,
+    execute_error: str | None = None,
     source: str = "manual",
 ):
     """Append a rebalance event to the JSONL log.
@@ -49,6 +50,11 @@ def log_rebalance(
         vol_scalar_diagnostics: Diagnostics dict from `compute_live_vol_scalar`
             (realized_vol, n_obs, fallback_reason, etc.). None when the
             vol-scaling gate is skipped.
+        execute_error: Exception message if `execute_rebalance` raised mid-
+            flight (AUDIT_MONTH2 R4). The `orders` list then reflects
+            whatever was recorded before the raise (usually empty if the
+            raise was at the Alpaca submit-orders entry point; potentially
+            populated for partial failures that escape the per-order guard).
         source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
     """
     entry = {
@@ -65,6 +71,7 @@ def log_rebalance(
         "btc_filter_scalar": btc_filter_scalar,
         "vol_scalar": vol_scalar,
         "vol_scalar_diagnostics": vol_scalar_diagnostics,
+        "execute_error": execute_error,
         "orders": [
             {
                 "symbol": o.get("symbol", "?"),

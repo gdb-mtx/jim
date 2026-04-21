@@ -157,27 +157,35 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                 log.info(f"  Account {account}: no trades needed")
                 return {"account": account, "status": "no_trades", "orders": 0}
 
-            # Execute
-            order_results = execute_rebalance(broker, result)
-            failed = [o for o in order_results if o.get("status") == "error"]
+            # Execute — try/finally so the journal survives any raise (R4)
+            order_results: list[dict] = []
+            execute_error: str | None = None
+            try:
+                order_results = execute_rebalance(broker, result)
+            except Exception as e:
+                execute_error = f"{type(e).__name__}: {e}"
+                log.error(f"  Account {account}: execute raised: {execute_error}", exc_info=True)
+            finally:
+                failed = [o for o in order_results if o.get("status") == "error"]
+                log_rebalance(
+                    account=account,
+                    strategy_id=strategy_id,
+                    portfolio_value=result.portfolio_value,
+                    orders_submitted=len(order_results),
+                    orders_failed=len(failed),
+                    order_details=order_results,
+                    spy_filter_active=result.spy_filter_active,
+                    spy_filter_scalar=result.spy_filter_scalar,
+                    btc_filter_active=result.btc_filter_active,
+                    btc_filter_scalar=result.btc_filter_scalar,
+                    vol_scalar=result.vol_scalar,
+                    vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+                    execute_error=execute_error,
+                    source="filter_monitor",
+                )
 
-            # Determine filter fields based on account type
-            filter_type = ACCOUNT_FILTERS[account]
-            log_rebalance(
-                account=account,
-                strategy_id=strategy_id,
-                portfolio_value=result.portfolio_value,
-                orders_submitted=len(order_results),
-                orders_failed=len(failed),
-                order_details=order_results,
-                spy_filter_active=result.spy_filter_active,
-                spy_filter_scalar=result.spy_filter_scalar,
-                btc_filter_active=result.btc_filter_active,
-                btc_filter_scalar=result.btc_filter_scalar,
-                vol_scalar=result.vol_scalar,
-                vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-                source="filter_monitor",
-            )
+            if execute_error:
+                return {"account": account, "status": "execute_error", "orders": len(order_results), "error": execute_error}
 
             take_snapshot(account)
 

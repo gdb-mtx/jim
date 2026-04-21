@@ -68,28 +68,43 @@ async def _daily_crypto_rebalance():
                             raise RuntimeError(f"Price drift detected: {drifted}")
 
                     if result.orders:
-                        order_results = await asyncio.to_thread(execute_rebalance, broker, result)
-                        failed = [o for o in order_results if o.get("status") == "error"]
-                        log.info(
-                            f"Crypto rebalance: {len(order_results)} orders submitted"
-                            + (f" ({len(failed)} failed)" if failed else "")
-                        )
-                        for f in failed:
-                            log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
+                        # try/finally around execute — journal always fires,
+                        # even if execute raises mid-flight (R4).
+                        order_results: list[dict] = []
+                        execute_error: str | None = None
+                        try:
+                            order_results = await asyncio.to_thread(execute_rebalance, broker, result)
+                        except Exception as e:
+                            execute_error = f"{type(e).__name__}: {e}"
+                            log.error(f"Crypto execute raised: {execute_error}", exc_info=True)
+                        finally:
+                            failed = [o for o in order_results if o.get("status") == "error"]
+                            log.info(
+                                f"Crypto rebalance: {len(order_results)} orders submitted"
+                                + (f" ({len(failed)} failed)" if failed else "")
+                                + (f" [EXECUTE RAISED: {execute_error}]" if execute_error else "")
+                            )
+                            for f in failed:
+                                log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
 
-                        log_rebalance(
-                            account=4,
-                            strategy_id="crypto_momentum_filtered",
-                            portfolio_value=result.portfolio_value,
-                            orders_submitted=len(order_results),
-                            orders_failed=len(failed),
-                            order_details=order_results,
-                            btc_filter_active=result.btc_filter_active,
-                            btc_filter_scalar=result.btc_filter_scalar,
-                            vol_scalar=result.vol_scalar,
-                            vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-                            source="scheduled",
-                        )
+                            log_rebalance(
+                                account=4,
+                                strategy_id="crypto_momentum_filtered",
+                                portfolio_value=result.portfolio_value,
+                                orders_submitted=len(order_results),
+                                orders_failed=len(failed),
+                                order_details=order_results,
+                                btc_filter_active=result.btc_filter_active,
+                                btc_filter_scalar=result.btc_filter_scalar,
+                                vol_scalar=result.vol_scalar,
+                                vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+                                execute_error=execute_error,
+                                source="scheduled",
+                            )
+
+                        if execute_error:
+                            # Re-raise so the outer retry loop picks it up.
+                            raise RuntimeError(f"execute_rebalance failed: {execute_error}")
                     else:
                         log.info("Crypto rebalance: no trades needed")
 
