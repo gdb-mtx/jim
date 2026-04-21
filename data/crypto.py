@@ -128,6 +128,19 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
     prices = download_with_retry(["BTC-USD"], start=start, min_coverage_ratio=1.0)
     btc = prices.iloc[:, 0]
 
+    # Sanity check: yfinance occasionally returns wrong-ticker data under
+    # "BTC-USD" (happened 2026-04-21 — series came back in the $9-$29 range
+    # with rows starting 2010, corrupting the cache). BTC has not traded
+    # below $1,000 since late 2017; if max < $1k, this is clearly not BTC.
+    # Refuse to write the cache so the dashboard + filter monitor don't
+    # act on bad data.
+    if btc.max() < 1000:
+        raise RuntimeError(
+            f"BTC series looks wrong: max={btc.max():.2f}, min={btc.min():.2f}, "
+            f"rows={len(btc)}, last={btc.iloc[-1]:.2f}. Refusing to cache — "
+            f"likely a transient yfinance data glitch. Retry in a few minutes."
+        )
+
     btc.name = "BTC-USD"
     btc_df = btc.to_frame()
     write_parquet_atomic(btc_df, cache_path)

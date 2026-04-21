@@ -254,6 +254,31 @@ Portfolio-level drawdown halt + manual reset has substantive problems beyond the
 **Fix applied:** new `file_snapshot_lock(account, timeout=10)` in `api/locks.py` (blocking fcntl with timeout — snapshot writers are legitimate, just need serialization). `save_snapshot` and `backfill_from_alpaca` acquire it internally, so all callers are safe by default. Both functions also now use `write_parquet_atomic`.
 **Verified:** 5 concurrent threads writing different dates for the same account — all 5 rows persisted.
 
+### ✅ S5. yfinance returned wrong data under "BTC-USD" → poisoned cache — FIXED 2026-04-21
+**File:** `data/crypto.py:126-139` (`download_btc_prices`)
+**Finding:** On 2026-04-21 ~11:30 MT (first API request after an idle window that expired the 16h cache TTL), yfinance returned a series under the symbol "BTC-USD" that was clearly **not BTC data**: 4099 rows starting 2010-01-04, values in the $9-$29 range, nearly flat. Real BTC on yfinance starts 2014-09-17 and trades at ~$75k. The bad series was written to `data/raw/btc_prices.parquet` via the atomic write helper — so the bad data fully replaced the good cache.
+
+**How it manifested:** `/api/portfolio/filters` returned `"btc": {"price": 75376.04, "ma_125": 24.5, "above_ma": true, "filter_scalar": 1.0}`. Alpaca live price was correct ($75k), yfinance-derived MA was $24.5 → filter incorrectly reported "bullish" (scalar 1.0) when it should have been "cash" (scalar 0.0). Dashboard BTC trend status was wrong.
+
+**Did it trade on bad data? No, got lucky on timing:**
+- Last filter-monitor cron run: 2026-04-20 16:30 ET — **before** the corruption. `filter_state.json` had correct `btc_scalar=0.0`.
+- Last APScheduler crypto job: 2026-04-21 00:05 UTC — also before the corruption.
+- User caught the wrong MA on the dashboard before either next scheduled run.
+- Manual cache refresh on 2026-04-21 returned correct data (3033 rows from 2018, current $75,312). yfinance recovered by the time we re-queried.
+
+**Why the fix so far (S4 retry helper) didn't catch it:**
+- `download_with_retry` validates *coverage* (did we get the symbols we asked for) but not *values*. The series had full coverage; just wrong values.
+- `write_parquet_atomic` ensures no partial write, but an atomic write of bad data is still bad data.
+- There was no price-plausibility sanity check.
+
+**Fix applied:** added a minimal sanity assertion in `download_btc_prices` — if `btc.max() < 1000`, raise `RuntimeError` instead of caching. BTC has not traded below $1,000 since late 2017, so any series with max < $1k is definitively not BTC. Loud failure on next retry beats silent bad cache.
+**Follow-ups to consider (not done yet):**
+- Same sanity check for other critical tickers (SPY > $50, ETH > $10).
+- Cross-validate the cached last-close against Alpaca's live price on read (divergence > 5% = flag). Would catch this class of bug at *read* time, not just *write* time.
+- Add a dashboard alert when `/api/portfolio/filters` values look implausibly out-of-band vs. Alpaca live prices.
+
+**Status:** ✅ Write-side defense in place. Read-side cross-check with Alpaca deferred to Tier 4.
+
 ### ✅ S4. `download_prices` has no retry — FIXED 2026-04-20
 **Files:** `data/pipeline.py` (helper), `data/sp500.py`, `data/crypto.py`
 **Finding:** Single-shot yfinance call with no retry, used in the live rebalance path at `execution/rebalance.py:116,162`. Same rate-limit/partial-batch hiccup that caused the 91/451 SP500 corruption could return partial data during a live rebalance → wrong target weights → wrong orders.
