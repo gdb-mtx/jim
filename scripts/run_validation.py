@@ -351,9 +351,14 @@ def test_3_parameter_stability(adapter: AccountAdapter) -> dict:
 def test_4_bootstrap(adapter: AccountAdapter) -> dict:
     """Block bootstrap. Primary metric is now CAGR p5 (forward worst-case
     compounding rate), not Sharpe. Pass if p5 CAGR >= 0."""
+    # Block size per asset class: crypto autocorrelation (regime-driven bull/
+    # bear BTC cycles) runs materially longer than equity, so a 20-day block
+    # understates autocorr and overstates p5 CAGR confidence. AUDIT_MONTH2 R9.
+    block_size = 40 if adapter.periods_per_year == 365 else 20
+
     result = block_bootstrap(
         adapter.full_returns,
-        block_size=20,
+        block_size=block_size,
         n_simulations=1000,
         periods_per_year=adapter.periods_per_year,
         seed=42,
@@ -367,7 +372,7 @@ def test_4_bootstrap(adapter: AccountAdapter) -> dict:
     rng = np.random.default_rng(42)
     arr = adapter.full_returns.dropna().values
     n = len(arr)
-    block = 20
+    block = block_size
     sims = 1000
     n_blocks = n // block
     cagrs = np.empty(sims)
