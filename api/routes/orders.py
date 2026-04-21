@@ -116,6 +116,8 @@ async def preview_rebalance(
         "spy_filter_scalar": result.spy_filter_scalar,
         "btc_filter_active": result.btc_filter_active,
         "btc_filter_scalar": result.btc_filter_scalar,
+        "vol_scalar": result.vol_scalar,
+        "vol_scalar_diagnostics": result.vol_scalar_diagnostics,
         "prices": result.prices,
         "missing_prices": result.missing_prices,
         "price_error": result.price_error,
@@ -188,10 +190,14 @@ async def _execute_under_lock(account: int, strategy_id: str):
     if result.prices:
         drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
         if drifted:
-            symbols = ", ".join(f"{d['symbol']} ({d['drift_pct']}%)" for d in drifted)
+            def _fmt(d: dict) -> str:
+                if d.get("reason") == "unfetchable":
+                    return f"{d['symbol']} (unfetchable)"
+                return f"{d['symbol']} ({d['drift_pct']}%)"
+            symbols = ", ".join(_fmt(d) for d in drifted)
             raise HTTPException(
                 status_code=409,
-                detail=f"Prices moved >2% since computation: {symbols}. Re-preview for current prices.",
+                detail=f"Price check failed since computation: {symbols}. Re-preview for current prices.",
             )
 
     if not result.orders:

@@ -73,6 +73,12 @@ PORTFOLIOS = {
         },
         "spy_filter": True,
         "vol_scaling": True,
+        "vol_scaling_params": {
+            "vol_target": 0.15,
+            "vol_halflife": 21,
+            "scalar_floor": 0.5,
+            "scalar_cap": 1.0,
+        },
     },
     "multi_asset_trend": {
         "name": "Multi-Asset Trend",
@@ -113,7 +119,7 @@ PORTFOLIOS = {
             "vol_target": 0.15,
             "vol_halflife": 30,
             "scalar_floor": 0.1,
-            "scalar_cap": 1.5,
+            "scalar_cap": 1.0,
         },
     },
 }
@@ -244,7 +250,7 @@ def apply_vol_scaling(
     vol_target: float = 0.15,
     vol_halflife: int = 21,
     scalar_floor: float = 0.5,
-    scalar_cap: float = 1.5,
+    scalar_cap: float = 1.0,
 ) -> pd.Series:
     """Apply volatility-scaling overlay to portfolio returns.
 
@@ -262,7 +268,10 @@ def apply_vol_scaling(
         vol_target: Target annualized vol (0.15 = 15%)
         vol_halflife: EWMA half-life in days for vol estimation
         scalar_floor: Minimum exposure (0.5 = never below 50%)
-        scalar_cap: Maximum exposure (1.5 = max 150%)
+        scalar_cap: Maximum exposure (1.0 = no leverage; matches Alpaca paper /
+                    spot-only constraints. AUDIT_MONTH2 C4: live had no
+                    vol-scaling overlay and couldn't realize a 1.5x scalar even
+                    if it had one. Cap=1.0 keeps sim and live apples-to-apples.)
 
     Returns:
         Vol-scaled daily returns

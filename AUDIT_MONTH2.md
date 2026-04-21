@@ -7,6 +7,8 @@
 
 **Status 2026-04-20:** Tier 1 C1 + C2 fixed; C1 empirically non-material (<0.3pp CAGR), C2 does not flip the SMA-125/top2 production config. C3 disclosure in place. **Tier 2 S1-S4 all fixed 2026-04-20** — cross-process lock unified, parquet writes atomic, snapshot RMW locked, yfinance retry helper shared across every live-path downloader. Real-money-graduation blocker lifted. **Tier 3 D1-D4 all fixed 2026-04-20** — ET trading-date helper (`data/trading_dates.py`), backfill/snapshot TZ-stable, SP500 ticker list on 7-day TTL (discovered the cached list was 998h old → refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings), SPY fetch failures now render "—" instead of misleading 0%. Tier 4 remains open.
 
+**Status 2026-04-21 (session 5 — A1+A2 rebalance unblocker):** **C4 and R11 fixed.** C4 landed option B (live vol-scaling via `execution/vol_scaling.compute_live_vol_scalar` mirroring `apply_vol_scaling` math; wired into `compute_rebalance` before the invariant check; `RebalanceResult` extended with `vol_scalar` + diagnostics fields; preview endpoint surfaces them). Backtest `scalar_cap` reduced 1.5 → 1.0 in three places (`apply_vol_scaling` default + A2 and A4 PORTFOLIOS configs) so sim and live cap at the same upside — Alpaca paper is spot-only, so cap=1.5 was unreachable live either way. Live/backtest scalar parity verified within 1e-6 on A2's snapshot history. Validation re-run: **A1 unchanged PASS (27.3% CAGR, 2.77 Calmar); A2 dropped PASS → MARGINAL (CAGR 16.9% → 11.2%, Calmar 1.57 → 1.54)** — MARGINAL is explicitly allowed for paper by `validation_gate.py`, so A1+A2 are unblocked for the May 4 monthly rebalance. A4 held PASS (CAGR 45.2% → 43.8%, Calmar 3.98 → 3.86). R11 fixed: `check_price_staleness` now flags unfetchable symbols as `drifted` with `reason="unfetchable"` instead of silently passing — unit-tested end-to-end. Also fixed two pre-existing mock-harness failures in `tests/test_rebalance.py` (`check_tradeable` not configured, dating from commit `a710ac2` — stood broken for 5 weeks); test suite now 41/41 green.
+
 **Sim/Live Parity Audit 2026-04-20 (session 2) — NEW Tier 1 findings:** A second adversarial pass specifically targeting divergence between the backtest path (`run_combined_portfolio`, `apply_vol_scaling`, etc.) and the live rebalance path (`compute_rebalance`, `_daily_crypto_rebalance`, `filter_check.py`) found **three new Tier 1 items (C4, C5, C6)** where the headline CAGR/MaxDD/Calmar numbers are produced by code the live book does not run. Cumulative effect: A4 MaxDD is materially understated in the backtest (vol-scaling floor of 10% never applies live); A4 CAGR is ~0.5-1pp overstated (no fee model); all accounts' backtests assume trading continues through -15% drawdowns that would halt live. Details below under Tier 1 → C4/C5/C6. **Not yet fixed.**
 
 **Session 3 follow-up 2026-04-20 — C7 corrected and promoted to 🔴:** Re-verified the 20% `max_position_pct` cap against A4's top-2 crypto strategy. Session-2 mechanical check was wrong ("never binds" was based on comparing the 50% weight to the 20% cap without realizing 50% is the *design*, not a weight to cap). Reality: the cap forces A4 from its designed 50/50 top-2 to 20/20 top-2 + 60% cash. A4 has been 100% cash since launch, masking the bug — **but BTC is 1.2% below the 125d MA right now, so the first live rebalance after a crossover will execute the wrong book.** C7 is now the largest A4-specific sim/live gap and is time-sensitive.
@@ -49,7 +51,7 @@
 **Finding:** We pull the current Wikipedia constituent list and backtest 2010+ using that snapshot. "Top 15 of 451" in 2010 is picking from a forward-biased universe. Expected CAGR overstatement **~1-2pp** on A1 and the SM leg of A3.
 **Fix:** Either acknowledge explicitly (add disclaimer to all A1 CAGR claims) or source point-in-time constituents (e.g., Kenneth French / CRSP). The latter is a week+ of work.
 
-### 🔴 C4. Vol-scaling overlay absent from live rebalance — NEW 2026-04-20 (session 2)
+### ✅ C4. Vol-scaling overlay absent from live rebalance — FIXED 2026-04-21 (option B, `scalar_cap=1.0`)
 **Files:** `strategies/portfolio.py:242-281` (defines `apply_vol_scaling`), `strategies/portfolio.py:346-347` (backtest calls it), `execution/rebalance.py` (never calls it), `api/main.py:22-108` (never calls it), `scripts/filter_check.py` (never calls it).
 **Finding:** `apply_vol_scaling` multiplies the **returns series** by `vol_target / realized_vol` clipped to `[floor, cap]`. It is invoked inside `run_combined_portfolio` (backtest) and in the validation adapters + research scripts, but **never in any live code path**. Configs `trend_lowvol` (A2, defaults: floor 0.5 / cap 1.5) and `crypto_momentum_filtered` (A4, params: target 15%, halflife 30, **floor 0.1 / cap 1.5**) both have `"vol_scaling": True`. The overlay does nothing in live — weights are just `top_n equal-weight × BTC/SPY filter scalar`, capped at 100% exposure by construction.
 **Why overlooked:** (a) `"vol_scaling": True` sits next to `"spy_filter": True` in the same PORTFOLIOS dict — reads like a peer setting; SPY/BTC filters ARE applied in both paths, vol-scaling only in one. (b) Architectural mismatch — `apply_vol_scaling` operates on a return series, not on weights; scaling weights in live is different code that was never written. (c) AUDIT_MONTH2 session 1 scoped for data correctness (calendars, warmup, survivorship), not sim/live parity. (d) A4 has been 100% cash since launch (BTC below 125d MA), so the live path doesn't hold positions that would expose the divergence. (e) A2's realized vol has been close to the scalar=1.0 regime since 2026-03-10, so live and backtest returns haven't visibly diverged yet.
@@ -106,7 +108,31 @@ Defaults on `apply_vol_scaling`: `scalar_floor=0.5, scalar_cap=1.5`. A2 inherits
 - **Priorities for the leverage research vector:** (a) quantify how much CAGR/Calmar >1.0 could unlock (worth doing via backtest before committing operational work); (b) pick one asset class to start with (likely crypto via CME micros, since that's where A4's Sharpe is highest and the Kelly-optimal leverage is largest); (c) build margin-cost + margin-call modeling into the backtest.
 - **Not in Month 3 scope.** File under post-real-money-graduation research. Cap stays at 1.0 through the deployed-paper window.
 
-**Status:** 🔴 Open. Decision made (option B); implementation deferred to a dedicated session.
+**Resolution 2026-04-21 — landed option B per the decision above.** Live scalar parity verified with the backtest.
+
+**Changes made 2026-04-21:**
+1. New `execution/vol_scaling.py` — `compute_live_vol_scalar(account_id, vol_target, vol_halflife, scalar_floor, scalar_cap, min_history_days)` returns `(scalar, diagnostics)`. Loads `data/snapshots.py:load_snapshots`, computes EWMA variance on daily equity returns, scales `vol_target / realized_vol` and clips to `[floor, cap]`. Cold-start fallback → `1.0` with `fallback_reason="cold_start"`; zero/NaN variance fallback → `1.0` with `fallback_reason="zero_variance"` (A4 at launch hits this — all-cash since BTC-below-filter → flat equity → zero variance).
+2. Wired into `execution/rebalance.py:compute_rebalance` between `get_current_signals` (L275) and the post-C7 weight invariant check (L299). Config gate: only fires when `PORTFOLIOS[strategy_id].vol_scaling` is True. Forces `scalar_cap=1.0` at the wire site regardless of config — pragma: no margin on Alpaca paper. `broker.account` used directly (no reverse strategy_id → account_id lookup).
+3. `RebalanceResult` dataclass extended with `vol_scalar: float = 1.0` and `vol_scalar_diagnostics: dict | None = None`. Preview endpoint in `api/routes/orders.py` surfaces both so the dashboard can show the scalar alongside the SPY/BTC filter scalars.
+4. Backtest parity: `strategies/portfolio.py:apply_vol_scaling` default `scalar_cap: 1.5 → 1.0`; A2 `trend_lowvol` config gains explicit `vol_scaling_params: {vol_target: 0.15, vol_halflife: 21, scalar_floor: 0.5, scalar_cap: 1.0}`; A4 `crypto_momentum_filtered` config `scalar_cap: 1.5 → 1.0` (floor 0.1 and halflife 30 unchanged).
+5. New `tests/test_vol_scaling.py` — 6 tests: cold-start → 1.0, empty snapshots → 1.0, high vol clips to floor, low vol clips to cap, `test_matches_backtest_apply_vol_scaling` (same series through both paths → exact-match within 1e-6), and a sig-check that `apply_vol_scaling` default cap is 1.0.
+
+**Live/backtest parity verified on A2 snapshot history 2026-04-21.** Walked A2's 32-row snapshot parquet day by day; for each date with ≥21 prior rows, computed (a) `compute_live_vol_scalar(2)` with data through that date and (b) the equivalent backtest EWMA-var/realized-vol/clip math on the same returns. 10 days evaluated, 0 mismatches (all diffs exactly 0.0 — the math and data are identical, so any bit-level deviation would reveal a wiring bug). Today's (2026-04-21) live A2 scalar: **0.786866** (realized vol 19.06% vs target 15% → scale down to 78.7% of strategy weights).
+
+**Validation re-run with `cap=1.0` backtest:**
+- **A1** (no vol_scaling in config): unchanged — CAGR 27.3%, MaxDD -9.8%, Calmar 2.77, **PASS**.
+- **A2**: CAGR 16.9% → **11.2%** (-5.7pp), MaxDD -10.7% → -7.3%, Calmar 1.57 → **1.54**, **PASS → MARGINAL**. Bigger drop than the original estimate (-0.5 to -1pp). Why: the old cap=1.5 let the low-vol leg lever up routinely in calm regimes that dominate the 2010-2026 window. Live was never realizing this, so live-actual CAGR was always closer to 11% — the update strips a CAGR number the live book couldn't produce. MARGINAL is explicitly allowed for paper per `validation_gate.py:79`, so A2 is unblocked.
+- **A4**: CAGR 45.2% → **43.8%** (-1.4pp), MaxDD -11.4% unchanged, Calmar 3.98 → **3.86**, **PASS**. Smaller drop than the -2-to-5pp estimate — crypto realized vol is usually at or above the 15% target, so cap=1.5 rarely bound.
+- Bootstrap p5/p50/p95 (A4) with `cap=1.0`: **+25.1% / +45.9% / +74.8%** (was +24.8% / +45.8% / +76.1%). Essentially unchanged.
+
+**Live preview smoke tests (all three accounts, 2026-04-21):**
+- A1 `/rebalance/preview?strategy_id=sm_filtered`: `vol_scalar=1.0`, `vol_scalar_diagnostics=None` (gate skipped — A1 has no `vol_scaling` config). 15 target positions, no invariant error.
+- A2 `/rebalance/preview?strategy_id=trend_lowvol`: `vol_scalar=0.7868663819…` (exact match to parity-script output), full diag with `realized_vol=0.19063`. 34 target positions.
+- A4 `/rebalance/preview?strategy_id=crypto_momentum_filtered`: `vol_scalar=1.0`, `fallback_reason="zero_variance"`, `n_obs=31`. Empty target_weights (BTC-below-125d-MA strategy filter) — scalar fallback is correct by construction.
+
+**Combined-book headline numbers** (A1+A2+A4 @ 1/3, Equity core @ 50/50) **are stale and need a `run_combined_portfolio` re-run** against post-C4 configs. The 33%→40% A4 upgrade ladder direction is preserved (C4 bias was uniform across the 25%/33%/40% weight scenarios), but the absolute Calmar numbers for the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
+
+**Status:** ✅ **RESOLVED 2026-04-21. A1 + A2 cleared for the 2026-05-04 monthly rebalance.** Paper data collection resumes on that cycle.
 
 ### 🔴 C5. Circuit breakers not simulated in backtest — NEW 2026-04-20 (session 2)
 **Files:** `execution/risk_manager.py:186-233` (live implementation), `strategies/portfolio.py` (no equivalent), `backtesting/` (no equivalent).
@@ -332,11 +358,12 @@ Portfolio-level drawdown halt + manual reset has substantive problems beyond the
 | R8 | `scripts/run_validation.py:71` | OOS/IS CAGR ratio threshold 70% gameable by moving TRAIN_END | Medium |
 | R9 | `backtesting/bootstrap.py:21` | 20d block size may be too short for crypto regime autocorrelation; p5 CAGR overstated | Medium |
 | R10 | `execution/alpaca_broker.py:35-38` | `is_non_tradeable` regex matches "CVR" anywhere in symbol — future small-cap expansion could break | Low |
-| R11 | `execution/rebalance.py:422` | `check_price_staleness` silently skips symbols with unfetchable new price — should treat as drift | Medium |
+| R11 | `execution/rebalance.py:425-449` | ~~`check_price_staleness` silently skips symbols with unfetchable new price — should treat as drift.~~ **Resolved 2026-04-21** — unfetchable symbols now appended to `drifted` with `reason="unfetchable"` + `current_price=None` + `drift_pct=None`. API caller at `api/routes/orders.py:191-197` renders "(unfetchable)" in the 409 detail instead of "(None%)". Unit tests in `tests/test_rebalance.py` cover drift, unfetchable, and zero-price cases. | ~~Medium~~ Resolved |
 | R12 | `execution/risk_manager.py:123-184` (`calculate_position_size`) | ~~Kelly/fractional-Kelly sizing computed in live risk manager but never called from any rebalance path. Dead code.~~ **Resolved 2026-04-21 alongside C7** — `calculate_position_size`, `PositionSize` dataclass, `kelly_fraction`, `max_loss_per_trade_pct`, `max_position_pct` all deleted from `RiskLimits` / `RiskManager`. Kelly remains as a reporting metric in `backtesting/metrics.py:kelly_criterion` (never wired to sizing, diagnostic only). | ~~Low~~ Resolved |
 | R13 | `strategies/portfolio.py` (backtest) vs `execution/rebalance.py:320-323` (live) | Live rejects negative weights as a defensive guard, but **no strategy currently generates negative weights** (verified: StockMomentum, LowVolatility, MultiAssetTrend, CryptoMomentum all produce min weight ≥ 0.0). Dead rejection branch — safe to keep as belt-and-suspenders, but flag in docs. | Low |
 | R14 | Backtest uses yfinance adjusted closes; live uses Alpaca `get_latest_prices()` | Systematic price-source mismatch. yfinance = adjusted close; Alpaca = last trade / mid. Cumulative slippage is already indirectly counted under C6 fees but the vendor discrepancy itself is its own latent gotcha — e.g., after a split, yfinance adjusts historical series but Alpaca position cost basis doesn't. No live bug observed; flag for awareness. | Low |
 | R15 | Live qty rounding (`int(dollar/price)` for stocks, `round(..., 8)` for crypto at `execution/rebalance.py:328-330`) vs backtest fractional weights | Small micro-positions (<1 share) silently dropped in live. Backtest assumes perfectly fractional execution. Cumulative impact negligible (<0.1% CAGR) but worth noting for ultra-small accounts. | Low |
+| R16 | `execution/rebalance_log.py` | Rebalance journal does not persist `vol_scalar` / `vol_scalar_diagnostics` (added to `RebalanceResult` 2026-04-21 in the C4 fix). Observed post-A2 2026-04-21 execution: journal entries show `vol_scalar=?` on readback. Preview UI + server logs record it, but post-hoc audit of "what scalar was applied on this rebalance day" requires re-computing from snapshots. Add the two fields to the journal schema alongside `spy_filter_scalar` / `btc_filter_scalar`. | Low |
 
 ---
 
@@ -406,23 +433,35 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 
 **Session 4 — Sim/live parity (Tier 1 NEW) — HIGHEST PRIORITY, ORDERED:**
 10. ✅ **C7 (position cap)** — FIXED 2026-04-21 via option C (removed cap entirely; strategy shape is concentration control). R12 closed simultaneously.
-11. **C4 (vol-scaling) — decided 2026-04-21: option B.** Implement vol-scaling in live `compute_rebalance` with `scalar_cap=1.0`; strip cap=1.5 from backtest too so sim/live are apples-to-apples. Per-account realized vol from snapshot returns + EWMA. Re-run A2 + A4 validation. `scalar_cap > 1.0` is future research (leverage via CME micros / Coinbase Advanced; file under post-real-money scope). See C4 section for full plan.
-12. **C5 (circuit breakers)** — **research question first** (keep/modify/delete the design per the session-3 critical review), then simulate whatever lands in the backtest. Don't mechanically add halt simulation without resolving the design question.
-13. **C6 (fee/slippage)** — add per-account transaction-cost layer to backtest (0 bps equity, ~20 bps round-trip crypto). Re-run A4 validation; issue post-cost CAGR.
+11. ✅ **C4 (vol-scaling)** — FIXED 2026-04-21 via option B. `execution/vol_scaling.compute_live_vol_scalar` wired into `compute_rebalance`; backtest `scalar_cap` aligned to 1.0 in three places; sim/live parity verified within 1e-6 on A2 history; validation re-run (A1 PASS, A2 → MARGINAL, A4 PASS). `scalar_cap > 1.0` is future research (leverage via CME micros / Coinbase Advanced; file under post-real-money scope). See C4 section for full changelog.
+12. **C5 (circuit breakers)** — **research question first** (keep/modify/delete the design per the session-3 critical review), then simulate whatever lands in the backtest. Don't mechanically add halt simulation without resolving the design question. NOT blocking A1+A2 rebalance; breaker has not tripped.
+13. **C6 (fee/slippage)** — add per-account transaction-cost layer to backtest (0 bps equity, ~20 bps round-trip crypto). Re-run A4 validation; issue post-cost CAGR. Negligible effect on A1+A2; defer to post-May-4.
 
-**Session 5 — Reporting hygiene (Tier 4):**
-14. R1: Relabel A2 validation as "holdout only" until walk-forward is implemented.
+**Session 5 — A1+A2 rebalance unblocker (2026-04-21):** ✅ COMPLETE.
+- ✅ **C4 + R11 fixed** — see entries above.
+- ✅ **Pre-existing mock harness gap resolved** — `tests/test_rebalance.py:_mock_broker` now configures `check_tradeable.return_value = set(positions) | set(prices)` to match `AlpacaBroker.check_tradeable`'s real `set[str]` contract. Two tests (`test_basic_rebalance_generates_orders`, `test_missing_prices_flagged`) had been silently failing since commit `a710ac2` when `check_tradeable` was added to `compute_rebalance` without updating the mock — every target symbol was being stripped as "untradeable" before orders generated. Full suite now 41/41.
+- ✅ **CLAUDE.md updated** — headline scorecard table reflects post-C4 numbers (A2 MARGINAL, A4 43.8% CAGR); combined-book row marked stale pending re-run; next-steps updated.
+
+**Session 6 (future) — Reporting hygiene (Tier 4):**
+14. R1: ~~Relabel A2 validation as "holdout only" until walk-forward is implemented.~~ Resolved in session 1 fallout — Test 2 relabeled `rolling_oos_fixed_params`; walk-forward REFIT added as Test 6.
 15. R2: Per-account validation override + never-overridable "retired".
-16. R3: Wire strategy-level breakers or delete the claim from docs.
+16. R3: Wire strategy-level breakers or delete the claim from docs. (Likely delete pending C5 outcome.)
 17. R4: try/finally around execute + journal.
 18. R6: Align correlation sample to blended CAGR sample in portfolio_fit.
-19. R8, R9, R11: Medium-value fixes; pick up as time permits.
-20. R12: Delete or wire up the unused Kelly sizing code.
+19. R8, R9: Medium-value fixes; pick up as time permits. (R11 resolved session 5.)
+20. R12: ~~Delete or wire up the unused Kelly sizing code.~~ Resolved 2026-04-21 alongside C7.
 21. R13-R15: Belt-and-suspenders docs / parity footnotes (low priority).
+
+**Session 7 (future) — C5 + C6 + S5 broader value-plausibility (post-May-4):**
+- C5 design decision first, then backtest simulation if needed.
+- C6 fee/slippage backtest layer.
+- S5 broader value-plausibility layer across all cached tickers (SPY, ETH, SHY, VIX) — BTC-specific fix landed session 4, but the class of bug still exists for other tickers.
 
 **Long-term (Tier 3+ / research):**
 - C3 survivorship bias: evaluate point-in-time SP500 constituents (CRSP / Kenneth French data). Week-long project; only worth doing before real-money graduation.
 - Add dashboard validation-status banner per account (already on the CLAUDE.md next-steps list).
+- New Account 4-class strategy (user directive 2026-04-18) — rate vol / commodity vol / narrative-aware crypto. Parallel workstream once paper data starts flowing again.
+- Phase 0 deployment refactor (`strategies/portfolio.py` live vs. backtest surface split) — precondition for Fly.io Phase 1 per `DEPLOYMENT_PLAN.md`. Don't refactor during active bug-hunt window.
 
 ---
 
@@ -435,15 +474,18 @@ The C7 + R12 cleanup deleted `calculate_position_size` (Kelly + 2% rule + 20% ca
 - **C3 S&P 500 survivorship** — acknowledged; A1 OOS CAGR 20.9% is ~1-2pp overstated. Point-in-time constituents sourcing deferred to pre-real-money track.
 - **Live 29-day A1-A3 correlation 0.84** was a real number, but A2-A4/A1-A4 live correlations over the Mar 10 → Apr 17 window reflect stale-data artifacts for the equity side — don't cite them as independent validations.
 
-**Post sim/live parity audit (2026-04-20 session 2) — OPEN:**
+**Post sim/live parity audit (2026-04-20 session 2 → 2026-04-21 session 5):**
 
-- **C4 vol-scaling live gap** — per-account scope (full table in C4 itself):
-  - **A1: clean.** No vol-scaling in config → scalar always 1.0× in backtest. CAGR 27.3% / MaxDD -9.8% / Calmar 2.77 are apples-to-apples with live.
-  - **A2: mildly affected.** Backtest scalar range [0.5, 1.5]; live stuck at 1.0. MaxDD understated by ~1-3pp.
-  - **A4: materially affected.** Backtest scalar range **[0.1, 1.5]**; live stuck at 1.0 until BTC<MA flip. **A4 backtest MaxDD -11.4% / Calmar 3.98 is understated. Plausible live MaxDD in a real crypto crash is 2-3× the backtest number.** **Do not trust A4 Calmar for real-money sizing until C4 is fixed or the backtest is re-run without vol-scaling.**
-- **C5 circuit breakers unsimulated** — backtest Calmar treats a hypothetical -15-20% crash as investable return; live would halt at -15% portfolio DD. Two-sided effect (helps in continued crashes, hurts on V-shaped recoveries). Not yet quantified.
-- **C6 fee/slippage** — A4 CAGR 45.2% is ~0.5-1pp optimistic (daily crypto rebalance × 0.1-0.3% spread). Realistic live A4 CAGR closer to **43-45%**. A1/A2 fee drag negligible.
+- **C4 vol-scaling live gap** — ✅ **FIXED 2026-04-21** via option B (`scalar_cap=1.0` in both live and backtest). Per-account impact:
+  - **A1:** unchanged — no vol_scaling in config; CAGR 27.3% / MaxDD -9.8% / Calmar 2.77, **PASS**.
+  - **A2:** CAGR 16.9% → **11.2%**, MaxDD -10.7% → -7.3%, Calmar 1.57 → **1.54**, **PASS → MARGINAL**. The 1.57 → 1.54 Calmar shift is small; the CAGR drop is large because the old backtest was routinely leveraging the low-vol leg up to 1.5× in calm regimes that live could never realize. MARGINAL is allowed for paper per `validation_gate.py`.
+  - **A4:** CAGR 45.2% → **43.8%**, MaxDD -11.4% unchanged, Calmar 3.98 → **3.86**, **PASS**. Bootstrap p5/p50/p95: +25.1% / +45.9% / +74.8%.
+  - Live parity verified within 1e-6 on A2 snapshot history; live A2 scalar today (2026-04-21) is 0.7869 (realized vol 19.06% > target 15%).
+- **C5 circuit breakers unsimulated** — 🔴 still open. Backtest Calmar treats a hypothetical -15-20% crash as investable return; live would halt at -15% portfolio DD. Two-sided effect (helps in continued crashes, hurts on V-shaped recoveries). Design question (keep / modify / delete) to resolve *before* mechanically adding halt simulation. Not blocking A1+A2 rebalance — breaker has not tripped.
+- **C6 fee/slippage** — 🔴 still open. A4 CAGR 43.8% (post-C4) is ~0.5-1pp optimistic on daily crypto rebalance × 0.1-0.3% spread — realistic live A4 CAGR closer to **42-43.5%**. A1/A2 fee drag negligible (monthly equity rebalance, zero commission).
 - **C7 position cap** — ✅ **FIXED 2026-04-21** via option C (cap removed entirely; rely on strategy shape for concentration control). A4 will rebalance to 50/50 top-2 as designed when BTC crosses the 125d MA. R12 (dead Kelly code) closed in the same pass. Invariant checks on strategy output added to `compute_rebalance` as replacement defense (loud failure > silent clamp).
+
+**Combined-book headline numbers are stale 2026-04-21 pending `run_combined_portfolio` re-run with post-C4 configs.** The A1+A2+A4 @ 1/3 and A1+A2 @ 50/50 rows in CLAUDE.md were computed with pre-C4 A2+A4 return series. The C4 bias was uniform across the 25% / 33% / 40% A4 weight scenarios, so the ladder-to-40% *direction* is preserved, but the absolute Calmar numbers cited against the 2.0 upgrade threshold need to be re-issued before citing them for real-money sizing. Not on the A1+A2 rebalance critical path; deferred.
 
 **The A3 retirement / A4 weight decisions are not affected by C4-C7** — those decisions compared *relative* Calmar across weight configurations, and all four findings bias the backtest numbers in consistent directions across the 25% / 33% / 40% A4 weight scenarios. The ladder-to-40% direction stands.
 

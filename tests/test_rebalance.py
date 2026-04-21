@@ -1,19 +1,35 @@
 """Tests for rebalance logic — order generation, sell-before-buy, etc."""
 
 from unittest.mock import MagicMock, patch
-from execution.rebalance import compute_rebalance, RebalanceResult
+from execution.rebalance import compute_rebalance, RebalanceResult, check_price_staleness
 from execution.alpaca_broker import OrderRequest
 from execution.risk_manager import RiskManager
 
 
-def _mock_broker(positions: dict[str, float], value: float = 100_000, prices: dict | None = None):
-    """Create a mock broker with given positions and prices."""
+def _mock_broker(
+    positions: dict[str, float],
+    value: float = 100_000,
+    prices: dict | None = None,
+    tradeable: set[str] | None = None,
+):
+    """Create a mock broker with given positions and prices.
+
+    `tradeable` defaults to the union of positions + prices — i.e., all
+    symbols the test configured are assumed tradeable. Matches
+    AlpacaBroker.check_tradeable's `set[str]` return contract. Without this,
+    MagicMock returns a bare mock whose `in` check is always False → every
+    target symbol is stripped as "untradeable" before orders are generated.
+    """
     broker = MagicMock()
+    broker.account = 1
     broker.get_portfolio_value.return_value = value
     broker.get_position_map.return_value = positions
     if prices is None:
         prices = {sym: 100.0 for sym in positions}
     broker.get_latest_prices.return_value = prices
+    if tradeable is None:
+        tradeable = set(positions.keys()) | set(prices.keys())
+    broker.check_tradeable.return_value = tradeable
     return broker
 
 
@@ -109,11 +125,13 @@ def test_missing_prices_flagged(mock_signals):
     """
     mock_signals.return_value = {"AAPL": 0.10, "MISSING": 0.10}
 
-    # Broker only returns price for AAPL, not MISSING
+    # Broker only returns price for AAPL, not MISSING (but MISSING is still a
+    # tradeable asset per Alpaca — it just failed the price quote fetch).
     broker = _mock_broker(
         positions={},
         value=100_000,
         prices={"AAPL": 100.0},
+        tradeable={"AAPL", "MISSING"},
     )
 
     result = compute_rebalance(
@@ -156,3 +174,51 @@ def test_missing_current_position_prices_block_execution(mock_signals):
         s for s in result.current_positions
         if s not in result.prices or result.prices.get(s, 0) <= 0
     ]) > 0
+
+
+# ---- R11: check_price_staleness handles unfetchable symbols ----
+
+
+def test_price_staleness_drift_detected():
+    """Drifted prices (>threshold) are returned with reason=drift."""
+    broker = MagicMock()
+    broker.get_latest_prices.return_value = {"AAPL": 105.0, "MSFT": 200.5}
+    compute_prices = {"AAPL": 100.0, "MSFT": 200.0}
+
+    drifted = check_price_staleness(broker, compute_prices, threshold=0.02)
+
+    assert len(drifted) == 1
+    assert drifted[0]["symbol"] == "AAPL"
+    assert drifted[0]["reason"] == "drift"
+    assert drifted[0]["drift_pct"] == 5.0
+
+
+def test_price_staleness_unfetchable_flagged():
+    """Unfetchable symbol (missing from fresh quote) is flagged, not silently
+    skipped (AUDIT_MONTH2 R11). Forces caller to re-preview rather than trade
+    on a stale price.
+    """
+    broker = MagicMock()
+    # AAPL fetchable; MSFT missing (delist/halt/network)
+    broker.get_latest_prices.return_value = {"AAPL": 100.0}
+    compute_prices = {"AAPL": 100.0, "MSFT": 200.0}
+
+    drifted = check_price_staleness(broker, compute_prices, threshold=0.02)
+
+    unfetchable = [d for d in drifted if d.get("reason") == "unfetchable"]
+    assert len(unfetchable) == 1
+    assert unfetchable[0]["symbol"] == "MSFT"
+    assert unfetchable[0]["current_price"] is None
+    assert unfetchable[0]["drift_pct"] is None
+
+
+def test_price_staleness_zero_price_flagged():
+    """Fresh price of 0 is treated as unfetchable (falsy)."""
+    broker = MagicMock()
+    broker.get_latest_prices.return_value = {"AAPL": 0}
+    compute_prices = {"AAPL": 100.0}
+
+    drifted = check_price_staleness(broker, compute_prices, threshold=0.02)
+
+    assert len(drifted) == 1
+    assert drifted[0]["reason"] == "unfetchable"

@@ -56,6 +56,8 @@ class RebalanceResult:
     spy_filter_scalar: float = 1.0
     btc_filter_active: bool = False
     btc_filter_scalar: float = 1.0
+    vol_scalar: float = 1.0
+    vol_scalar_diagnostics: dict | None = None
     prices: dict[str, float] = field(default_factory=dict)
     missing_prices: list[str] = field(default_factory=list)
     price_error: bool = False
@@ -272,6 +274,27 @@ def compute_rebalance(
     # 3. Get target weights from strategy (broker provides real-time prices for filters)
     target_weights = get_current_signals(strategy_id, broker=broker)
 
+    # 3a. Vol-scaling overlay (AUDIT_MONTH2 C4) — applies to strategies whose
+    # backtest uses `apply_vol_scaling`. Keeps sim/live parity by multiplying
+    # strategy weights by EWMA-vol-inverse × vol_target, clipped [floor, cap].
+    # Cap forced to 1.0 here regardless of config — Alpaca paper is spot-only /
+    # no margin, so the backtest's cap=1.5 was never reachable live either way.
+    vol_scalar = 1.0
+    vol_scalar_diagnostics: dict | None = None
+    portfolio_cfg = PORTFOLIOS.get(strategy_id, {})
+    if portfolio_cfg.get("vol_scaling"):
+        from execution.vol_scaling import compute_live_vol_scalar
+        params = {**portfolio_cfg.get("vol_scaling_params", {}), "scalar_cap": 1.0}
+        vol_scalar, vol_scalar_diagnostics = compute_live_vol_scalar(
+            broker.account, **params
+        )
+        log.info(
+            f"vol_scaling account={broker.account} strategy={strategy_id} "
+            f"scalar={vol_scalar:.4f} diag={vol_scalar_diagnostics}"
+        )
+        if vol_scalar != 1.0:
+            target_weights = {s: w * vol_scalar for s, w in target_weights.items()}
+
     # Invariant check — strategies should produce sane weight distributions.
     # Guards against a strategy bug producing extreme/pathological output.
     # Loud failure beats silent clamping (see AUDIT_MONTH2 C7 resolution).
@@ -416,6 +439,8 @@ def compute_rebalance(
         spy_filter_scalar=spy_filter_scalar,
         btc_filter_active=btc_filter_active,
         btc_filter_scalar=btc_filter_scalar,
+        vol_scalar=vol_scalar,
+        vol_scalar_diagnostics=vol_scalar_diagnostics,
         prices=prices,
         missing_prices=missing_prices,
         price_error=price_error,
@@ -431,13 +456,27 @@ def check_price_staleness(
 
     Returns list of drifted symbols (empty if all prices are within threshold).
     Used as a safety guard before executing orders — blocks execution if any
-    price moved >threshold since computation.
+    price moved >threshold since computation, OR if a symbol became
+    unfetchable (AUDIT_MONTH2 R11: previously unfetchable symbols were
+    silently skipped, so a halt/delist between preview and execute would not
+    block execution).
     """
     fresh = broker.get_latest_prices(list(compute_prices.keys()))
     drifted = []
     for sym, old_price in compute_prices.items():
         new_price = fresh.get(sym)
-        if new_price and old_price > 0:
+        if not new_price:
+            # Unfetchable — treat as drifted so caller forces re-preview
+            # instead of trading on a stale price.
+            drifted.append({
+                "symbol": sym,
+                "compute_price": old_price,
+                "current_price": None,
+                "drift_pct": None,
+                "reason": "unfetchable",
+            })
+            continue
+        if old_price > 0:
             pct = abs(new_price - old_price) / old_price
             if pct > threshold:
                 drifted.append({
@@ -445,6 +484,7 @@ def check_price_staleness(
                     "compute_price": old_price,
                     "current_price": new_price,
                     "drift_pct": round(pct * 100, 2),
+                    "reason": "drift",
                 })
     return drifted
 

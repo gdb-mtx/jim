@@ -76,17 +76,20 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 - **C1 (fixed 2026-04-20):** `run_combined_portfolio` migrated from union calendar + fillna(0) + ppy=365 to equity trading calendar with A4 compounded Fri→Mon + ppy=252. Empirical delta on headline numbers was ≤ 0.3pp CAGR / 0.05 Calmar — audit's "biased HIGH" claim did not materialize.
 - **C2 (fixed 2026-04-20):** `min_periods=1` on BTC MA warmup changed to strict `min_periods=period` in `strategies/crypto_momentum.py`, `mode2/crypto_autoresearch.py`, and `api/routes/portfolio.py`. Robust-opt + validation harnesses now compute MA on full BTC history before reindexing to half-slices, so pre-slice warmup is used. SMA-125/top2 remains the min-Calmar winner (half A 2.89 unchanged, half B 3.10 → 2.94).
 - **C3:** A1 standalone CAGR is ~1-2pp overstated by S&P 500 survivorship bias (known, documented below).
+- **C4 (fixed 2026-04-21, option B with `scalar_cap=1.0`):** Live vol-scaling now applied in `compute_rebalance` via `execution/vol_scaling.compute_live_vol_scalar` for any config with `vol_scaling: True` (A2 + A4). Backtest `scalar_cap` also reduced 1.5 → 1.0 in both `apply_vol_scaling` default and per-config params — sim and live are now apples-to-apples at the 1.0 upside cap (Alpaca paper is spot-only / no margin, so cap=1.5 was unreachable in live anyway). Live/backtest scalar parity verified within 1e-6 on A2's 10-day snapshot history. Empirical impact on headline numbers below.
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | UPI | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|---|
-| **Live book (A1+A2+A4 @ 1/3)** | — | **+30.3%** | **-7.0%** | **4.31** | — | — | — | *2.68* |
-| **Equity core (A1+A2 @ 50/50)** | — | **+22.3%** | **-7.7%** | **2.88** | — | — | — | *2.12* |
-| **Crypto Momentum (Acct 4)** | PASS | **+45.2%** | **-11.4%** | **3.98** | 3.98 | 8.68 | 2.18 | *1.90* |
+| **Crypto Momentum (Acct 4)** | PASS | **+43.8%** | **-11.4%** | **3.86** | 3.86 | — | — | — |
 | **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+27.3%** | **-9.8%** | **2.77** | 2.77 | — | 2.11 | *2.05* |
-| **Trend + Low-Vol (Acct 2)** | PASS | **+16.9%** | **-10.7%** | **1.57** | 1.57 | — | 1.38 | *1.38* |
+| **Trend + Low-Vol (Acct 2)** | MARGINAL | **+11.2%** | **-7.3%** | **1.54** | 1.54 | — | — | — |
 | *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — | — |
 
-All three active accounts pass the CAGR ≥ 15%, Calmar ≥ 1.0, OOS/IS ratio ≥ 70% gates on fresh data. A4's headline numbers dropped slightly (47.1% → 45.2% CAGR; 4.15 → 3.98 Calmar) with fresh-data window extension — small move, still strong. A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
+A1 + A4 PASS the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates. **A2 dropped to MARGINAL** after the C4 fix (cap 1.5 → 1.0): backtest had been leveraging the low-vol leg up to 1.5× in calm regimes that live could never realize. Post-fix CAGR 11.2% is below the 15% gate, but MARGINAL is allowed for paper per `execution/validation_gate.py` — the actual live book was never producing 16.9% anyway because `apply_vol_scaling` was not wired into the live rebalance path. A4's drop (45.2% → 43.8% CAGR, 3.98 → 3.86 Calmar) is smaller because crypto realized vol is usually at or above the 15% target — the cap-1.5 capability rarely bound.
+
+**Combined headline numbers (A1+A2+A4 @ 1/3, Equity core @ 50/50) are stale pending a re-run of `run_combined_portfolio` against post-C4 configs.** The ladder-to-40% decision was made on relative-Calmar across weight configurations and the direction is not affected by the C4 fix (same bias across all three A4 weight scenarios), but the absolute Calmar/CAGR numbers need to be re-issued before citing them for real-money sizing.
+
+A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
 
 Research/building-block strategies (in-sample only — never went to a live account, OOS not measured):
 
@@ -169,7 +172,8 @@ backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests; + walk_forward_refit_analysis (true per-window param refit, added 2026-04-20)
 backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION_PLAN Test 4)
 backtesting/account_adapters.py — Per-account (returns, prices, strategy_fn) bundles for the validation runner
-execution/risk_manager.py — Fractional Kelly + 2% rule + circuit breakers
+execution/risk_manager.py — Circuit breakers (portfolio + strategy level). Kelly/2% rule deleted 2026-04-21 per C7+R12 cleanup.
+execution/vol_scaling.py  — Live vol-scaling scalar (AUDIT_MONTH2 C4 fix, 2026-04-21). Mirrors backtest `apply_vol_scaling` math on snapshot equity.
 execution/validation_gate.py — Rebalance gate; blocks accounts without a passing validation record
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
@@ -254,7 +258,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" (gate blocks retired automatically). `execution/validation_gate.py` blocks FAIL/unvalidated/retired; MARGINAL allowed for paper. Override: `FIRE_VALIDATION_OVERRIDE=1` (global — known issue, see AUDIT_MONTH2.md R2).
 
-**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. Tier 1: C1 + C2 fixed 2026-04-20, C3 remains as acknowledged survivorship caveat. **Tier 2 S1-S4 all fixed 2026-04-20** — `dual_rebalance_lock`, `write_parquet_atomic`, `file_snapshot_lock`, `download_with_retry` live in `api/locks.py` and `data/pipeline.py`; all live-path rebalance and yfinance calls go through them. **Tier 3 D1-D4 all fixed 2026-04-20** — `data/trading_dates.py` (TZ-stable ET helpers) used by snapshot backfill + `_patch_today`; SP500 ticker list on 7-day TTL with stale-cache fallback (refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings); SPY fetch failures now log + surface as nullable `spy_return_pct`/`alpha_pct` rendered as "—" on the dashboard. Tier 4 (R1-R11) reporting hygiene remains open — none block paper or real-money operation.
+**Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. **Tier 1: C1 + C2 + C4 + C7 fixed**, C3 remains as acknowledged survivorship caveat, **C5 (circuit-breaker design) and C6 (fees/slippage in backtest) still open**. C4 fix (2026-04-21, option B): live vol-scaling via `execution/vol_scaling.compute_live_vol_scalar`, `scalar_cap=1.0` in both live and backtest for sim/live parity; A2 dropped PASS → MARGINAL (still allowed for paper), A4 remains PASS. **Tier 2 S1-S4 all fixed 2026-04-20** — `dual_rebalance_lock`, `write_parquet_atomic`, `file_snapshot_lock`, `download_with_retry` live in `api/locks.py` and `data/pipeline.py`; all live-path rebalance and yfinance calls go through them. **Tier 3 D1-D4 all fixed 2026-04-20** — `data/trading_dates.py` (TZ-stable ET helpers) used by snapshot backfill + `_patch_today`; SP500 ticker list on 7-day TTL with stale-cache fallback (refresh pulled 451→503 tickers, confirming 52 silently-dropped delistings); SPY fetch failures now log + surface as nullable `spy_return_pct`/`alpha_pct` rendered as "—" on the dashboard. **Tier 4 R11 fixed 2026-04-21** — `check_price_staleness` now flags unfetchable symbols as drifted with `reason="unfetchable"` instead of silently skipping; unit-tested. Tier 4 R2-R9 remain open — none block paper or real-money operation.
 
 **Sharpe is explicitly deemphasized.** The prior framework used OOS Sharpe ≥ 1.0 as the gate, which is the wrong objective function for a 3-5 year wealth compounder (Sharpe penalizes upside vol and normalizes absolute return magnitude). Sharpe is still shown on reports as informational context but is not gated on. Primary gates are CAGR + MaxDD + Calmar. See `VALIDATION_PLAN.md` for rationale.
 
@@ -276,7 +280,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **Mode 1 priority:** Tier 1 (C1, C2) + Tier 2 (S1-S4) + Tier 3 (D1-D4) all fixed 2026-04-20. C1 non-material (<0.3pp / <0.05 Calmar shift). C2 robust-opt rerun confirms SMA-125/top2 still wins (half A 2.89, half B 3.10→2.94). A4 validation still PASS, bootstrap p5 CAGR +24.8%. S1 A/B/C verified end-to-end. D3 refresh caught 52 stale tickers (451→503). C3 survivorship disclosure remains; Tier 4 reporting hygiene remains as lower-priority cleanup.
+- **Mode 1 priority:** Tier 1 (C1, C2, C4, C7) + Tier 2 (S1-S4) + Tier 3 (D1-D4) + Tier 4 (R11, R12) all fixed. **C4 fix 2026-04-21 cleared the path for A1 + A2 May 4 rebalance** — live vol-scaling now wired in `compute_rebalance` with `scalar_cap=1.0`; backtest aligned. A2 dropped PASS → MARGINAL (CAGR 16.9% → 11.2%) but allowed for paper. A4 stayed PASS (45.2% → 43.8%). Live/backtest scalar parity verified within 1e-6. **C5 (drawdown-halt design decision + backtest sim)** and **C6 (fee/slippage in backtest)** remain open — neither blocks paper rebalancing. Tier 4 R2-R9 reporting hygiene remain as lower-priority cleanup.
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.

@@ -1,12 +1,18 @@
 const BASE_URL = "http://localhost:8000/api";
-const TIMEOUT_MS = 20_000;
+const DEFAULT_TIMEOUT_MS = 20_000;
+// Rebalance execute submits orders serially to Alpaca (~0.5-1s per order);
+// a 40-order rebalance needs 40-50s. Use a generous timeout so the frontend
+// waits for the backend to finish, matching the backend file-lock guarantee
+// that only one execute runs per account at a time.
+const REBALANCE_EXECUTE_TIMEOUT_MS = 180_000;
 
 async function fetchWithTimeout(
   url: string,
   opts?: RequestInit,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...opts, signal: controller.signal });
   } finally {
@@ -14,8 +20,12 @@ async function fetchWithTimeout(
   }
 }
 
-async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetchWithTimeout(url, opts);
+async function fetchJSON<T>(
+  url: string,
+  opts?: RequestInit,
+  timeoutMs?: number,
+): Promise<T> {
+  const res = await fetchWithTimeout(url, opts, timeoutMs);
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
@@ -122,7 +132,8 @@ export async function fetchRebalancePreview(
 export async function executeRebalance(strategyId: string, account: number) {
   return fetchJSON<import("./types").RebalanceExecuteResult>(
     `${BASE_URL}/orders/rebalance/execute?strategy_id=${strategyId}&account=${account}`,
-    { method: "POST" }
+    { method: "POST" },
+    REBALANCE_EXECUTE_TIMEOUT_MS,
   );
 }
 
