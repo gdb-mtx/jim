@@ -6,6 +6,7 @@
 We're optimized for a builder with an AI partner. Different constraints, different optimal path. We build fast, iterate fast, and the infrastructure serves the research.
 
 ### Key Documents
+- **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
 - **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
 - `DECISIONS_RESOLVED.md` — record of the April 2026 portfolio-architecture decisions (A3 retired, A4 at 33% with a pre-committed upgrade plan to 40% — manual decision framework, not an automated rule). Formerly DECISIONS_PENDING.md; renamed after both decisions executed.
 - `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
