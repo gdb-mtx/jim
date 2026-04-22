@@ -41,6 +41,11 @@
         <string>/Users/george</string>
         <key>FIRE_FILTER_CHECK_SOURCE</key>
         <string>launchd-crypto</string>
+        <!-- Silence macOS notifications from filter_check.py — the
+             dashboard Ops tab (see OPS_DASHBOARD_PLAN.md) is the
+             system's notification surface going forward. -->
+        <key>FIRE_DISABLE_NOTIFICATIONS</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>
