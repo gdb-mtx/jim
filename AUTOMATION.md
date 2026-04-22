@@ -8,11 +8,13 @@ take day-to-day.
 ## What's automated
 
 **An APScheduler job fires daily at 00:05 UTC** (= 8:05 PM ET during EDT,
-7:05 PM ET during EST). It's defined in [api/main.py:180-187](api/main.py#L180-L187)
+7:05 PM ET during EST). It's defined in [api/main.py:250-259](api/main.py#L250-L259)
 as part of the FastAPI lifespan — meaning it only runs while the uvicorn
-process is alive.
+process is alive. The scheduler instance is held at module scope so the
+Ops dashboard (see below) can introspect jobs + last-run state without
+re-starting the scheduler.
 
-On each tick, [_daily_crypto_rebalance()](api/main.py#L22) runs the
+On each tick, [_daily_crypto_rebalance()](api/main.py#L54) runs the
 following steps:
 
 1. `require_validated(4)` — checks `data/risk_state/validation_state.json`,
@@ -123,6 +125,47 @@ BTC flip, the next crypto filter monitor run sees `btc_scalar` already
 matches live and exits as a no-op — no duplicate trade on the flip
 day. Symmetric for the reverse case (launchd fires first).
 
+### Known oddity (2026-04-22) — one unexplained filter_state.json write
+
+On 2026-04-22 at 12:27:49 MDT (= 18:27:49 UTC), `filter_state.json`
+was written (btc_scalar 0.0 → 1.0, `last_btc_change` stamped) with
+no identified caller:
+
+- Only log entry at that second is a manual `filter_check.py --filter btc --dry-run`
+  invocation (`source=manual`), which a sandbox harness confirmed
+  does **not** write state through any code path (every `save` /
+  `update_fields` / `_atomic_write` call is gated by `if not args.dry_run:`).
+- launchd plists were installed at 12:57 MDT, **30 minutes after** the
+  write — they can't have fired at 12:27.
+- APScheduler's `_daily_crypto_rebalance` only fires at 00:05 UTC.
+- Dashboard manual rebalance never touches `filter_state.json` (exhaustive grep).
+- The old single-plist `com.fire.filter-check` was calendar-scheduled
+  at 16:30 local, never at 12:27.
+
+The data landed correct (btc=1.0 matched live market), but provenance
+is unexplained. Most plausible: a forgotten human action (non-dry-run
+`filter_check.py` run in a parallel terminal, or a REPL call to
+`filter_state.update_fields` during debugging).
+
+**If this pattern repeats on a future flip day, here's how to
+diagnose quickly:**
+
+- Both new launchd plists set `FIRE_FILTER_CHECK_SOURCE` env vars, so
+  any launchd-triggered run tags itself `launchd-crypto` or
+  `launchd-equity` in `data/filter_check.log`. A write with no
+  matching launchd-tagged log entry = human-invoked.
+- Correlate `filter_state.json` mtime against:
+  - `data/filter_check.log` (user + launchd filter_check.py runs)
+  - `data/filter_check_stderr.log` / `_stdout.log` (launchd stderr/stdout capture)
+  - `data/rebalance_log.jsonl` (entries with `source=scheduled` → APScheduler wrote)
+  - `uvicorn` server log (APScheduler `_daily_crypto_rebalance` entry/exit)
+- If none of those match, check shell history for a manual
+  `filter_check.py` invocation or a Python REPL session.
+
+Not currently blocking anything — documented here because one
+unexplained write on a flip day is the kind of thing that comes back
+to bite.
+
 ## What you have to do
 
 **Nothing, as long as the server stays up overnight.** Keep uvicorn
@@ -131,10 +174,14 @@ happens hands-free.
 
 ### To verify the job fired (the next morning)
 
-1. Check `data/rebalance_log.jsonl` for a fresh entry with `"source":
-   "scheduled"` and `"account": 4`.
-2. Glance at the Rebalance History panel on the Account 4 dashboard tab.
-3. Check server logs for `"Daily crypto rebalance complete"`.
+1. Open the **Ops** dashboard tab — the Scheduler Panel shows
+   APScheduler's `daily_crypto_rebalance` job with its last-run /
+   next-run and status (success / skipped / failed). The Event
+   Timeline below lists the scheduled rebalance alongside any filter
+   flips.
+2. Or, from the CLI: grep `data/rebalance_log.jsonl` for a fresh entry
+   with `"source": "scheduled"` and `"account": 4`.
+3. Server logs still emit `"Daily crypto rebalance complete"` on success.
 
 ### If the server was down at 00:05 UTC
 
@@ -214,8 +261,10 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   event (manual, scheduled, and filter-monitor-triggered)
 - `DEPLOYMENT_PLAN.md` — plan to migrate the scheduler to 24/7 cloud
   hosting so the "laptop must be awake" constraint goes away
-- `OPS_DASHBOARD_PLAN.md` — planned consolidation of all automation
-  status (scheduler, filter state, validation, event timeline) into a
-  single "Ops" dashboard tab. Will replace the existing scattered
-  banners and eventually absorb cloud-scheduler status post-migration.
-  Not yet built.
+- `OPS_DASHBOARD_PLAN.md` + Ops dashboard tab — built 2026-04-22
+  (commits `79b957e` backend, `8f23750` frontend, `6b0d78b` cleanup).
+  Single pane covering APScheduler jobs + launchd filter monitors +
+  validation status + a merged rebalance / filter-flip event timeline.
+  Endpoints at `/api/ops/*`; panels under
+  [dashboard/src/components/ops/](dashboard/src/components/ops/).
+  Will absorb cloud-scheduler status post-Fly migration.
