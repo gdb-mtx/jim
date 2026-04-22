@@ -1,8 +1,79 @@
 # Ops Dashboard — Design & Implementation Plan
 
-**Status:** Planned. Not yet built.
-**Owner:** Next session.
-**Estimated effort:** Half-day of focused work (see Sizing at bottom).
+**Status:** ✅ **Built 2026-04-22.** Commits:
+- `79b957e` — backend (`api/routes/ops.py`, APScheduler refactor, log parser + tests)
+- `8f23750` — frontend (Ops tab + 4 panels)
+- `6b0d78b` — Live Portfolio cleanup (remove `RebalanceHistory`)
+
+Day-to-day runbook info lives in [AUTOMATION.md](AUTOMATION.md). This
+document is preserved as the design record — §1–§9 below are the
+as-planned spec. **The section immediately below** captures what
+actually shipped vs. what was planned.
+
+## 0. As-built — deltas vs. this plan
+
+### Shipped as designed
+- Ops tab alongside Live Portfolio + Backtests
+- SchedulerPanel (APScheduler jobs + 2 launchd rows with last-run
+  relative times, flip badges, account-result summaries)
+- FilterStatePanel (SPY 200d + BTC 125d cards, plausibility banner
+  when active, `last_checked_relative` server-side)
+- ValidationPanel (4 accounts, status dots, days-remaining with
+  amber <30d / red if expired, expandable row showing OOS metrics +
+  reason + report path resolved via `account_N_YYYYMMDD_*.md` glob)
+- EventTimeline (rebalance + filter_flip merge, Type + Account
+  dropdowns, expandable JSON per row, tie-breaker puts `filter_flip`
+  above the rebalance it triggered on shared timestamps)
+- Four endpoints at `/api/ops/{scheduler,filters,validation,events}`
+- APScheduler scheduler + `_last_run_info` promoted to module scope
+  in `api/main.py` (visible at [L28-L32](api/main.py#L28-L32) and
+  [L54-L144](api/main.py#L54-L144))
+- `data/filter_check_log.py` parser with 10 fixture tests (all green)
+- `data/filter_state.py::load_with_plausibility()` shared helper
+
+### Deferred (present in plan, not shipped)
+- **Server health indicator** (amber-if-slow, red-if-unreachable) —
+  current state is binary running/not-running from
+  `scheduler.running`. Good enough for MVP.
+- **"Validation refreshes" as an event type** — would need a
+  `validation_state.json` mtime watcher. Not wired.
+- **APScheduler fire events as a third timeline source** —
+  `rebalance_log.jsonl` with `source=scheduled` already covers this
+  for A4 daily. Per plan §6, deferred.
+- **`next_cursor` pagination on /events** — endpoint returns
+  `{events, total}` with a `limit` cap. Good for now; revisit if
+  event history grows.
+
+### Shipped differently
+- **`/api/ops/filters` response shape** — flat JSON mirroring raw
+  `filter_state.json` fields (`spy_scalar`, `spy_price`, `spy_ma200`,
+  `last_spy_change`, etc.), *not* nested under `spy`/`btc` keys as
+  sketched in §3. Simpler, no type wrangling on the frontend.
+- **FilterStatusBanner NOT migrated** — per user preference, the
+  banner stays on Live Portfolio as-is. The compact one-liner
+  described in §2.2 / §5 was not built; instead the Ops tab
+  duplicates the filter info in richer form.
+- **RebalanceHistory removed, not replaced with a compact view** —
+  no "last 3 rebalances" preview on Live Portfolio. Full history
+  lives in Ops EventTimeline. The `fetchRebalanceHistory` helper
+  and `RebalanceHistoryEntry` type are retained because
+  `EquityHistoryChart` marks rebalance events on the equity curve.
+
+### Open questions — resolved
+1. **Auth gate on Ops tab** — unchanged. Dashboard stays
+   localhost-only, no auth. Manual-trigger buttons remain deferred
+   per §6.
+2. **Settings area for env vars** — not built.
+3. **Compact "recent events" on Live Portfolio** — no (per user).
+4. **"Run re-validation" button** — not built. Defer to CLI.
+
+### Known oddity flagged during build
+The 2026-04-22 12:27:49 MDT unexplained `filter_state.json` write —
+ruled out every automated path via sandbox harness + mtime checks.
+Documented in [AUTOMATION.md → Known oddity](AUTOMATION.md#known-oddity-2026-04-22--one-unexplained-filter_statejson-write)
+with a diagnosis recipe for next time.
+
+---
 
 ## 1. Motivation
 
