@@ -190,11 +190,10 @@ export default memo(function RebalancePanel({
         );
       }
       onExecuted?.();
-      setTimeout(() => {
-        setState("idle");
-        setPreview(null);
-        setResult(null);
-      }, 5000);
+      // Keep the post-execute result card visible until the user starts
+      // a new preview or explicitly dismisses. Previously auto-reset
+      // after 5s, which hid the "N of M failed" summary before the user
+      // could read it — especially painful when orders partially failed.
     } catch (e) {
       const msg = (e as Error).message;
       setExecError(msg);
@@ -236,15 +235,28 @@ export default memo(function RebalancePanel({
           </span>
         )}
         {state === "executed" && result && (
-          <span className="text-sm text-[#00d4aa]">
-            {result.submitted} orders submitted
-            {result.failed > 0 && (
-              <span className="text-[#ff4d6a]">
-                {" "}
-                ({result.failed} failed)
-              </span>
-            )}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-[#00d4aa]">
+              {result.submitted} orders submitted
+              {result.failed > 0 && (
+                <span className="text-[#ff4d6a]">
+                  {" "}
+                  ({result.failed} failed)
+                </span>
+              )}
+            </span>
+            <button
+              onClick={() => {
+                setState("idle");
+                setPreview(null);
+                setResult(null);
+                setExecError(null);
+              }}
+              className="rounded-lg border border-[#2a2a3e] bg-[#1a1a2e] px-3 py-1.5 text-xs text-[#8888a0] hover:text-[#e8e8f0] hover:border-[#3a3a4e]"
+            >
+              New Preview
+            </button>
+          </div>
         )}
       </div>
 

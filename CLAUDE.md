@@ -47,7 +47,7 @@ Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 - A2↔A4: 0.10-0.19 — genuinely diversified
 - (A3 retired — historical correlations preserved in DECISIONS_RESOLVED.md)
 
-**Live correlation panel** (dashboard) shows A1/A2/A4 pairs only. Live A4 pairs currently show "—" because A4 has been all-cash since launch (BTC below 125d MA filter → zero-variance returns make Pearson correlation undefined).
+**Live correlation panel** (dashboard) shows A1/A2/A4 pairs only. A4 first-entered positions on 2026-04-22 after BTC crossed above its 125d MA (50% BTC/USD + 50% ETH/USD); live correlations will populate once A4 has ≥21 daily returns post-entry.
 
 Combined OOS (2023-01-03 → 2026-04-20; equity trading calendar, A4 compounded Fri→Mon, ppy=252; post C1+C2+C4+C6):
 
@@ -164,9 +164,9 @@ The dashboard's RiskStatusPanel and FilterStatusBanner show current status. Filt
 ### Architecture
 ```
 # Mode 1: Factor Trading System
-data/pipeline.py          — yfinance ETF data download & caching
+data/pipeline.py          — yfinance ETF data download & caching (threading.Lock serializes yf.download; returned-column verification rejects cross-thread contamination; cache-read schema check refuses corrupt caches)
 data/sp500.py             — S&P 500 stock universe + VIX data
-data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping)
+data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping; `normalize_alpaca_position_symbol` converts `BTCUSD` → `BTC/USD` so position-API + order-API forms match in the rebalance diff)
 data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
 data/trading_dates.py     — ET trading-date helpers (today_et, utc_ts_to_et_date) — TZ-stable
 data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
@@ -191,7 +191,7 @@ backtesting/costs.py           — Per-strategy transaction-cost layer (AUDIT_MO
 execution/vol_scaling.py  — Live vol-scaling scalar (AUDIT_MONTH2 C4 fix, 2026-04-21). Mirrors backtest `apply_vol_scaling` math on snapshot equity.
 execution/validation_gate.py — Rebalance gate; blocks accounts without a passing validation record
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
-execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list)
+execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list). Crypto orders use `time_in_force="gtc"` and notional (dollar-amount) sizing on buys — sidesteps the price-drift-between-preview-and-fill "insufficient balance" reject path. Notional total is capped to 99.9% of live Alpaca cash.
 execution/rebalance_log.py — Structured JSONL rebalance audit trail
 api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
 api/locks.py             — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
@@ -268,10 +268,18 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
   - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.2% (post C4+C6)
   - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 11.0% MARGINAL (post C4+C6)
   - Account 3: RETIRED 2026-04-20. Slot preserved. See `DECISIONS_RESOLVED.md`.
-  - Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 robust-opt production, OOS CAGR 40.4%, Calmar 3.18 (post C4+C6). Currently 100% cash (BTC below 125d MA since launch).
-  - Live-tracking clock reset to **2026-04-20** — Mar 10 → Apr 17 window was compromised by stale-data bug. A4 33%→40% upgrade clock counts from here (and only counts signal-trading days, not cash-on-filter days).
+  - Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 robust-opt production, OOS CAGR 40.4%, Calmar 3.18 (post C4+C6). **First live entry 2026-04-22** — BTC crossed above 125d MA overnight, system rotated from 100% cash into 50% BTC/USD + 50% ETH/USD (the top-2 coins by 21d momentum: BTC +16.1%, ETH +12.3%). Entry exposed a cascade of latent bugs (see below) — 5 preview/execute attempts before clean fills, ~$247 realized slippage from the churn. A4 signal-trading-days clock starts 2026-04-22.
+  - Live-tracking clock reset to **2026-04-20** — Mar 10 → Apr 17 window was compromised by stale-data bug. A4 33%→40% upgrade clock counts from 2026-04-22 (first signal-trading day; cash-on-filter days before that don't count).
 
 **Validation status (2026-04-20, fresh-data refresh, CAGR-first framework):** All three active accounts PASS. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, NO override can bypass them (AUDIT_MONTH2 R2 fix). `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides (for FAIL/unvalidated/expired only): `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped to account N). Both surface a WARNING log.
+
+**2026-04-22 A4 first-entry fixes — four cascading bugs resolved:**
+1. **Concurrent yfinance cross-contamination** — multiple `yf.download` calls during API startup shared a single response payload across threads; crypto cache ended up as `[XLE, ^VIX]`, VIX cache got IWM values, spy_filter got an extra EFA column. `CryptoMomentum` preview returned `{XLE: 0.5}` as a target. Fix: `threading.Lock` around `yf.download` in `data/pipeline.py`, returned-column verification (reject if returned set ≠ requested set), cache-read schema checks in `download_and_cache` / `download_crypto_prices` / `download_btc_prices` / `download_vix`, stricter plausibility bands (any value outside band fails — previously only "entire series outside"). SPY floor lowered $50 → $40 to admit the 2009-03-09 auto-adjusted low ($49.81).
+2. **Alpaca rejects `time_in_force="day"` for crypto** — crypto requires `gtc` or `ioc`. `execution/rebalance.py` now picks `gtc` for crypto, keeps `day` for equities.
+3. **Position symbol mismatch** — Alpaca's position API returns `BTCUSD` (no slash) but orders/quotes use `BTC/USD`. Rebalance diff engine treated them as different assets and wanted to sell all BTC + rebuy. Fix: `normalize_alpaca_position_symbol` helper in `data/crypto.py`, applied inside `get_position_map` + `get_positions` in `execution/alpaca_broker.py`.
+4. **Crypto price drift between preview and fill** — ETH moved +2% in seconds between preview (20.78 ETH @ $2,396) and submit ($2,445); `qty × fill_price > available_cash` → Alpaca rejected 4 attempts with "insufficient balance." Fix: **notional (dollar-amount) orders for crypto buys** — `OrderRequest.notional` field; if set, `submit_order` passes `notional` to Alpaca instead of `qty` (Alpaca computes qty at fill price). `compute_rebalance` caps total crypto-buy notional to 99.9% of live cash and scales proportionally; crypto sells still use `qty`. Equity orders are unchanged.
+
+Dashboard polish from same session: post-execute auto-refresh of summary/positions panels (not just chart), error/warning toasts 20s (info 10s), rebalance result card persists with explicit "New Preview" reset button (was auto-resetting in 5s).
 
 **Known open bugs / fix plan** — see `AUDIT_MONTH2.md` for the ranked list. **Tier 1 fully closed except C3** (C1, C2, C4, C5, C6, C7 all fixed). C3 remains as acknowledged survivorship caveat, week+ of work and only matters pre-real-money. Tier 2 (S1-S5), Tier 3 (D1-D4), Tier 4 R1/R3/R11/R12/R16 all resolved; remaining R-items are low-priority hygiene. C4 fix (2026-04-21, option B): live vol-scaling via `execution/vol_scaling.compute_live_vol_scalar`, `scalar_cap=1.0` in both live and backtest for sim/live parity; A2 dropped PASS → MARGINAL (still allowed for paper), A4 remains PASS. **Tier 2 S1-S4 all fixed 2026-04-20**; **S5 fully resolved 2026-04-21** — `data/plausibility.py` adds per-ticker value-plausibility bands + write-time assertions + read-time cache-vs-live cross-validation on `/filters`; state surfaced via `/api/portfolio/plausibility` + red warning banner in `FilterStatusBanner.tsx`. What started as "one ticker defended" (inline BTC check 2026-04-21 morning) is now a full defensive layer across BTC/ETH/SPY/VIX/SHY. **Tier 3 D1-D4 all fixed 2026-04-20**. **Tier 4 R11 fixed 2026-04-21** — `check_price_staleness` now flags unfetchable symbols as drifted with `reason="unfetchable"` instead of silently skipping; unit-tested. Tier 4 R2-R9 remain open — none block paper or real-money operation.
 

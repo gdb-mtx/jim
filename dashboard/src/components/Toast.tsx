@@ -39,9 +39,13 @@ export default function ToastContainer() {
     globalAdd = (msg) => {
       const id = nextId++;
       setToasts((prev) => [...prev, { ...msg, id }]);
+      // Errors and warnings stay long enough to read and usually warrant
+      // action; info messages are transient. User can dismiss any toast
+      // manually via the × button.
+      const durationMs = msg.type === "info" ? 10000 : 20000;
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 6000);
+      }, durationMs);
     };
     return () => {
       globalAdd = null;

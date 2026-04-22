@@ -43,6 +43,21 @@ def to_yfinance_symbol(alpaca_symbol: str) -> str:
     return ALPACA_TO_YFINANCE.get(alpaca_symbol, alpaca_symbol.replace("/", "-"))
 
 
+# Alpaca's position list returns crypto symbols without a slash (e.g. `BTCUSD`),
+# but orders and price quotes use the slashed form (`BTC/USD`). This map
+# normalizes the position form to the order form so the rebalance diff engine
+# doesn't treat `BTCUSD` and `BTC/USD` as two different assets.
+_ALPACA_POSITION_TO_ORDER = {s.replace("/", ""): s for s in YFINANCE_TO_ALPACA.values()}
+
+
+def normalize_alpaca_position_symbol(symbol: str) -> str:
+    """Normalize Alpaca's position-API crypto symbol to the order-API form.
+
+    'BTCUSD' → 'BTC/USD'. Non-crypto symbols pass through unchanged.
+    """
+    return _ALPACA_POSITION_TO_ORDER.get(symbol, symbol)
+
+
 def download_crypto_prices(
     symbols: list[str] | None = None,
     start: str = "2020-01-01",
@@ -65,16 +80,28 @@ def download_crypto_prices(
     cache_path = DATA_DIR / "raw" / "crypto_prices.parquet"
     max_age_hours = 16
 
+    if symbols is None:
+        symbols = CRYPTO_UNIVERSE
+
     if cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             prices = pd.read_parquet(cache_path)
-            print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
-            return prices
-        print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
-
-    if symbols is None:
-        symbols = CRYPTO_UNIVERSE
+            # Schema check — cache must only contain tickers from the
+            # crypto universe. 2026-04-22 corruption left [XLE, ^VIX] here
+            # from concurrent-download cross-contamination; a read-time
+            # refusal would have stopped the bad rebalance preview.
+            extras = set(prices.columns) - set(CRYPTO_UNIVERSE)
+            if extras:
+                print(
+                    f"Crypto cache has non-crypto tickers {sorted(extras)} "
+                    f"— refreshing"
+                )
+            else:
+                print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
+                return prices
+        else:
+            print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print(f"Downloading prices for {len(symbols)} cryptos from {start}...")
     from data.pipeline import download_with_retry, write_parquet_atomic
@@ -124,10 +151,29 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
     if cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
-            btc = pd.read_parquet(cache_path).squeeze()
-            print(f"Loaded BTC prices from cache: {len(btc)} rows")
-            return btc
-        print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
+            cached_df = pd.read_parquet(cache_path)
+            # Schema check — file must contain exactly the BTC-USD column.
+            if list(cached_df.columns) != ["BTC-USD"]:
+                print(
+                    f"BTC cache has unexpected columns {list(cached_df.columns)} "
+                    f"— refreshing"
+                )
+            else:
+                btc = cached_df.squeeze()
+                # Plausibility check on read — catches a silently-corrupted
+                # cache that escaped the write-time guard.
+                from data.plausibility import assert_plausible, PlausibilityError
+                try:
+                    btc_check = btc.copy()
+                    btc_check.name = "BTC-USD"
+                    assert_plausible(btc_check, "BTC-USD")
+                except PlausibilityError as e:
+                    print(f"BTC cache failed plausibility ({e}) — refreshing")
+                else:
+                    print(f"Loaded BTC prices from cache: {len(btc)} rows")
+                    return btc
+        else:
+            print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading BTC price data...")
     from data.pipeline import download_with_retry, write_parquet_atomic

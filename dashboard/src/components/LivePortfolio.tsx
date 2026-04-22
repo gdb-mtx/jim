@@ -257,7 +257,14 @@ export default function LivePortfolio() {
         <RebalancePanel
           account={account as 1 | 2 | 3 | 4}
           strategyId={summary.default_strategy}
-          onExecuted={() => setChartRefreshKey((k) => k + 1)}
+          onExecuted={() => {
+            setChartRefreshKey((k) => k + 1);
+            // Refetch summary/positions/orders immediately so the panels
+            // reflect the post-execute state instead of waiting for the
+            // next 30s poll cycle.
+            if (account === 0) refreshCombined();
+            else refreshSingle(account);
+          }}
         />
       )}
 

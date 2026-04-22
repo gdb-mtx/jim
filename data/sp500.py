@@ -200,10 +200,31 @@ def download_vix(start: str = "2005-01-01") -> pd.Series:
     if cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
-            vix = pd.read_parquet(cache_path).squeeze()
-            print(f"Loaded VIX from cache: {len(vix)} rows")
-            return vix
-        print(f"VIX cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
+            cached_df = pd.read_parquet(cache_path)
+            # Schema check — file must contain exactly the renamed VIX column.
+            if list(cached_df.columns) != ["VIX"]:
+                print(
+                    f"VIX cache has unexpected columns {list(cached_df.columns)} "
+                    f"— refreshing"
+                )
+            else:
+                vix = cached_df.squeeze()
+                # Plausibility check on read — catches a silently-corrupted
+                # cache (2026-04-22: vix.parquet had values ~$276, matching
+                # IWM, not VIX). Note the file stores name="VIX" but bands
+                # are keyed on "^VIX", so we check under the ticker key.
+                from data.plausibility import assert_plausible, PlausibilityError
+                try:
+                    vix_check = vix.copy()
+                    vix_check.name = "^VIX"
+                    assert_plausible(vix_check, "^VIX")
+                except PlausibilityError as e:
+                    print(f"VIX cache failed plausibility ({e}) — refreshing")
+                else:
+                    print(f"Loaded VIX from cache: {len(vix)} rows")
+                    return vix
+        else:
+            print(f"VIX cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading VIX data...")
     from data.pipeline import download_with_retry, write_parquet_atomic

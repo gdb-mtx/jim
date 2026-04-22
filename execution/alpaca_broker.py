@@ -69,13 +69,21 @@ def active_accounts() -> list[int]:
 
 @dataclass
 class OrderRequest:
-    """A trade to be executed."""
+    """A trade to be executed.
+
+    For crypto market BUYS, prefer `notional` over `qty` to eliminate
+    price-drift-between-preview-and-fill rejects. Alpaca figures out the
+    qty at fill price, so we spend exactly the dollar amount we have.
+    `qty` is always populated for logging/display; `notional`, when set,
+    takes precedence at submission.
+    """
     symbol: str
     qty: float         # float for crypto fractional quantities
     side: str          # "buy" or "sell"
     order_type: str    # "market" or "limit"
     limit_price: float | None = None
     time_in_force: str = "day"
+    notional: float | None = None
 
 
 class AlpacaBroker:
@@ -139,7 +147,12 @@ class AlpacaBroker:
 
         Positions from corporate actions (CVRs, warrants, etc.) are included
         but flagged with `non_tradeable=True` so callers can filter them.
+
+        Crypto position symbols are normalized from Alpaca's position-API
+        form (`BTCUSD`) to the order-API form (`BTC/USD`) so internal code
+        can use a single representation everywhere.
         """
+        from data.crypto import normalize_alpaca_position_symbol
         positions = self.api.list_positions()
         result = []
         for p in positions:
@@ -163,7 +176,7 @@ class AlpacaBroker:
                 log.info(f"Non-tradeable position detected: {p.symbol} (qty={qty})")
 
             result.append({
-                "symbol": p.symbol,
+                "symbol": normalize_alpaca_position_symbol(p.symbol),
                 "qty": qty,
                 "side": p.side,
                 "market_value": market_value,
@@ -181,8 +194,11 @@ class AlpacaBroker:
         """Get simple {symbol: qty} map of current tradeable holdings.
 
         Excludes non-tradeable positions (CVRs, warrants, etc.) so that
-        rebalance logic doesn't try to sell them.
+        rebalance logic doesn't try to sell them. Crypto symbols are
+        normalized to the slashed order-API form (`BTC/USD`), matching
+        target-weight keys.
         """
+        from data.crypto import normalize_alpaca_position_symbol
         positions = self.api.list_positions()
         result = {}
         for p in positions:
@@ -194,7 +210,7 @@ class AlpacaBroker:
             if is_non_tradeable(p.symbol) or all_prices_none:
                 log.info(f"Excluding non-tradeable from position map: {p.symbol}")
                 continue
-            result[p.symbol] = float(p.qty)
+            result[normalize_alpaca_position_symbol(p.symbol)] = float(p.qty)
         return result
 
     def get_portfolio_value(self) -> float:
@@ -215,11 +231,17 @@ class AlpacaBroker:
         """
         kwargs = {
             "symbol": order.symbol,
-            "qty": order.qty,
             "side": order.side,
             "type": order.order_type,
             "time_in_force": order.time_in_force,
         }
+        # Notional ($-amount) for crypto market buys — Alpaca computes qty
+        # at fill price, sidestepping the price-drift reject path. Alpaca
+        # expects one of qty / notional, not both.
+        if order.notional is not None:
+            kwargs["notional"] = order.notional
+        else:
+            kwargs["qty"] = order.qty
         if order.order_type == "limit" and order.limit_price is not None:
             kwargs["limit_price"] = order.limit_price
 

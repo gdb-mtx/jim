@@ -395,8 +395,57 @@ def compute_rebalance(
         if qty > 0:
             target_positions[symbol] = qty
 
+    # 5b. Cash-constrained sizing for crypto buys, via Alpaca's notional
+    # (dollar-amount) order path. Crypto prices can drift 1-2% in the
+    # seconds between preview and fill; a qty-based order at a stale
+    # price then exceeds available cash and gets rejected with
+    # "insufficient balance". Specifying a dollar amount lets Alpaca
+    # compute qty at fill price, so we spend exactly what we have.
+    #
+    # Per-symbol notional = target_weight × portfolio_value, capped so
+    # the total crypto buy notional fits inside available cash with a
+    # small safety margin for spread + fees. Sells still use qty (we
+    # know exactly what we hold). Discovered 2026-04-22 on A4's first
+    # trade — three qty-based ETH buys got rejected as ETH rose 2%
+    # between preview and fill; the notional path settles cleanly.
+    crypto_buy_notionals: dict[str, float] = {}
+    if is_crypto and target_positions:
+        available_cash = broker.get_cash()
+        # Raw dollar target = weight × portfolio_value (not qty × price,
+        # so we aren't re-exposed to stale prices).
+        raw_target_notionals = {
+            s: target_weights[s] * portfolio_value
+            for s in target_positions
+            if target_weights.get(s, 0) > 0
+        }
+        # What still needs to be bought, in dollars at current price.
+        remaining_buy_notionals = {
+            s: max(0.0, n - current_positions.get(s, 0) * prices[s])
+            for s, n in raw_target_notionals.items()
+        }
+        total_buy_notional = sum(remaining_buy_notionals.values())
+        cash_budget = available_cash * 0.999
+        if total_buy_notional > 0:
+            scale = min(1.0, cash_budget / total_buy_notional)
+            if scale < 1.0:
+                log.warning(
+                    f"Crypto buy notional ${total_buy_notional:.2f} exceeds "
+                    f"cash budget ${cash_budget:.2f} (cash=${available_cash:.2f}). "
+                    f"Scaling by {scale:.4f}."
+                )
+            for s, n in remaining_buy_notionals.items():
+                scaled = round(n * scale, 2)
+                if scaled >= 1.0:  # skip dust (< $1 Alpaca crypto minimum)
+                    crypto_buy_notionals[s] = scaled
+
     # 6. Compute order diffs
     orders: list[OrderRequest] = []
+
+    # Alpaca rejects time_in_force="day" on crypto orders with "invalid
+    # crypto time_in_force" (discovered 2026-04-22 on A4's first trade).
+    # Crypto supports gtc/ioc; use gtc so the order survives a brief
+    # connectivity hiccup. Equities keep the existing "day" default.
+    tif = "gtc" if is_crypto else "day"
 
     # Sells: positions we hold but shouldn't, or need to reduce
     for symbol, current_qty in current_positions.items():
@@ -409,19 +458,26 @@ def compute_rebalance(
                 side="sell",
                 order_type=order_type,
                 limit_price=prices.get(symbol) if order_type == "limit" else None,
+                time_in_force=tif,
             ))
 
-    # Buys: positions we need to open or increase
+    # Buys: positions we need to open or increase. For crypto, use
+    # notional (dollar-amount) orders — see 5b above.
     for symbol, target_qty in target_positions.items():
         current_qty = current_positions.get(symbol, 0)
         if target_qty > current_qty:
             buy_qty = target_qty - current_qty
+            notional = crypto_buy_notionals.get(symbol) if is_crypto else None
+            if is_crypto and notional is None:
+                continue  # crypto buy was dust-filtered or cash-zero'd
             orders.append(OrderRequest(
                 symbol=symbol,
                 qty=buy_qty,
                 side="buy",
                 order_type=order_type,
                 limit_price=prices.get(symbol) if order_type == "limit" else None,
+                time_in_force=tif,
+                notional=notional,
             ))
 
     # Check SPY filter status (use live prices consistent with signal generation)

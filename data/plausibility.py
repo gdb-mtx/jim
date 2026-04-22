@@ -48,12 +48,15 @@ STATE_PATH = Path(__file__).resolve().parents[1] / "data" / "risk_state" / "plau
 # ---------------------------------------------------------------------------
 # Per-ticker bands — (min_allowed, max_allowed, reason)
 # ---------------------------------------------------------------------------
-# A series is plausible if observed_max >= min_allowed AND observed_min <= max_allowed.
-# If observed_max < min_allowed → series is clearly wrong asset (all values below the floor).
-# If observed_min > max_allowed → series is clearly wrong asset (all values above the cap).
-# Both bands must be violated for a series to look globally wrong-ticker;
-# a single outlier bar won't trip this. The check is designed to catch
-# the "entire series is from a different asset" failure mode, not outliers.
+# A series is plausible if *every* value falls inside [min_allowed, max_allowed].
+# Any single bar below the floor or above the cap fails the check.
+#
+# The check was tightened 2026-04-22 after IWM data leaked into vix.parquet
+# under concurrent yfinance contamination. IWM's historical range
+# ($36–$280+) overlaps VIX's ($5–$100) at the low end, so the earlier
+# "entire series must be out of range" variant passed the corrupted cache.
+# The bands carry 3-5× headroom over historical extremes, so the tightened
+# check has no false-positive risk on real data for banded tickers.
 #
 # Reasons: all thresholds anchored to verifiable historical facts. If an
 # assumption breaks (e.g. BTC crashes to $500 in 2029), update the band
@@ -73,10 +76,11 @@ BANDS: dict[str, tuple[float, float, str]] = {
         "$20k upper is ~4x current ATH.",
     ),
     "SPY": (
-        50.0,
+        40.0,
         2_000.0,
-        "SPY has not closed below $67 since Mar 2009. $2k cap gives 3x+ "
-        "headroom for long-term growth.",
+        "SPY auto-adjusted close bottomed at $49.81 on 2009-03-09 — $40 "
+        "floor leaves headroom under the historical low. $2k cap gives "
+        "3x+ headroom for long-term growth.",
     ),
     "^VIX": (
         5.0,
@@ -141,21 +145,11 @@ def assert_plausible(series: pd.Series, ticker: str) -> None:
     obs_max = float(clean.max())
     obs_min = float(clean.min())
 
-    if obs_max < min_val:
+    if obs_min < min_val or obs_max > max_val:
         reason_msg = (
-            f"Plausibility FAIL for {ticker}: observed max={obs_max:.4f} is "
-            f"below expected floor {min_val}. Reason band: {reason}. "
-            f"Observed range [{obs_min:.4f}, {obs_max:.4f}] over {len(clean)} rows. "
-            f"Refusing to cache — likely wrong-ticker data from source."
-        )
-        _record_failure(ticker, reason_msg, obs_min=obs_min, obs_max=obs_max, n_obs=len(clean))
-        raise PlausibilityError(reason_msg)
-
-    if obs_min > max_val:
-        reason_msg = (
-            f"Plausibility FAIL for {ticker}: observed min={obs_min:.4f} is "
-            f"above expected cap {max_val}. Reason band: {reason}. "
-            f"Observed range [{obs_min:.4f}, {obs_max:.4f}] over {len(clean)} rows. "
+            f"Plausibility FAIL for {ticker}: observed range "
+            f"[{obs_min:.4f}, {obs_max:.4f}] escapes band [{min_val}, {max_val}] "
+            f"over {len(clean)} rows. Reason band: {reason}. "
             f"Refusing to cache — likely wrong-ticker data from source."
         )
         _record_failure(ticker, reason_msg, obs_min=obs_min, obs_max=obs_max, n_obs=len(clean))
