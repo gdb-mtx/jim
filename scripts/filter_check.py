@@ -283,8 +283,8 @@ def main():
             seed = {**current}
             filter_state.save({
                 **seed,
-                "last_spy_change": None,
-                "last_btc_change": None,
+                "last_spy_flip": None,
+                "last_btc_flip": None,
             })
         notify("FIRE Filter Monitor", f"Initialized ({args.filter}). {', '.join(parts)}")
         return
@@ -326,8 +326,8 @@ def main():
         result = rebalance_account(account, dry_run=args.dry_run)
         results.append(result)
 
-    # Persist the flip. `track_flips` stamps `last_spy_change` /
-    # `last_btc_change` when the scalar actually differs.
+    # Persist the flip. `track_flips` stamps `last_spy_flip` /
+    # `last_btc_flip` when the scalar actually differs.
     if not args.dry_run:
         filter_state.update_fields(
             current,

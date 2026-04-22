@@ -122,9 +122,11 @@ def update_fields(
         track_flips: Scalar field names to compare against existing state.
             For every field in this tuple whose value in `updates` differs
             from the existing stored value, also write
-            `last_{field}_change = now`. Use this so both writers (launchd
+            `last_{field}_flip = now`. Use this so both writers (launchd
             filter_check.py and APScheduler) can record a flip timestamp
-            uniformly without racing.
+            uniformly without racing. Renamed from `last_{field}_change`
+            to `last_{field}_flip` (2026-04-22) for clarity — the field
+            records regime flips, not heartbeat updates.
 
     Returns:
         The merged state dict after the write.
@@ -136,9 +138,9 @@ def update_fields(
             new_val = updates.get(key)
             old_val = state.get(key)
             if new_val is not None and old_val is not None and new_val != old_val:
-                # Convention: scalar field `btc_scalar` -> flip field `last_btc_change`.
+                # Convention: scalar field `btc_scalar` -> flip field `last_btc_flip`.
                 prefix = key.replace("_scalar", "")
-                state[f"last_{prefix}_change"] = now
+                state[f"last_{prefix}_flip"] = now
         state.update(updates)
         if set_last_checked:
             state["last_checked"] = now

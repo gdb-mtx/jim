@@ -128,7 +128,8 @@ day. Symmetric for the reverse case (launchd fires first).
 ### Known oddity (2026-04-22) — one unexplained filter_state.json write
 
 On 2026-04-22 at 12:27:49 MDT (= 18:27:49 UTC), `filter_state.json`
-was written (btc_scalar 0.0 → 1.0, `last_btc_change` stamped) with
+was written (btc_scalar 0.0 → 1.0, `last_btc_flip` stamped — field
+was named `last_btc_change` at the time, renamed later that day) with
 no identified caller:
 
 - Only log entry at that second is a manual `filter_check.py --filter btc --dry-run`

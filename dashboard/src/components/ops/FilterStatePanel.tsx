@@ -118,7 +118,7 @@ export default memo(function FilterStatePanel() {
               price={data.spy_price}
               ma={data.spy_ma200}
               aboveMa={spyAboveMa}
-              lastChange={data.last_spy_change}
+              lastChange={data.last_spy_flip}
               toneAbove="green"
               toneBelow="amber"
               exposureAbove="full exposure (1.0×)"
@@ -130,7 +130,7 @@ export default memo(function FilterStatePanel() {
               price={data.btc_price}
               ma={data.btc_ma125}
               aboveMa={btcAboveMa}
-              lastChange={data.last_btc_change}
+              lastChange={data.last_btc_flip}
               toneAbove="green"
               toneBelow="red"
               exposureAbove="strategy active (1.0×)"

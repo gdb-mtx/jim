@@ -248,8 +248,8 @@ export interface FilterMonitorState {
   btc_price: number;
   btc_ma125: number;
   last_checked: string;
-  last_spy_change: string | null;
-  last_btc_change: string | null;
+  last_spy_flip: string | null;
+  last_btc_flip: string | null;
   recent_auto_rebalances: Array<{
     timestamp: string;
     account: number;
@@ -342,8 +342,8 @@ export interface OpsFiltersResponse {
   btc_ma125?: number;
   last_checked?: string;
   last_checked_relative: string | null;
-  last_spy_change?: string | null;
-  last_btc_change?: string | null;
+  last_spy_flip?: string | null;
+  last_btc_flip?: string | null;
   plausibility: PlausibilityState;
 }
 

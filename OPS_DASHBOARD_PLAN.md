@@ -47,8 +47,10 @@ actually shipped vs. what was planned.
 ### Shipped differently
 - **`/api/ops/filters` response shape** — flat JSON mirroring raw
   `filter_state.json` fields (`spy_scalar`, `spy_price`, `spy_ma200`,
-  `last_spy_change`, etc.), *not* nested under `spy`/`btc` keys as
+  `last_spy_flip`, etc.), *not* nested under `spy`/`btc` keys as
   sketched in §3. Simpler, no type wrangling on the frontend.
+  Note: `last_btc_change` / `last_spy_change` were renamed to
+  `last_btc_flip` / `last_spy_flip` 2026-04-22 for clarity.
 - **FilterStatusBanner NOT migrated** — per user preference, the
   banner stays on Live Portfolio as-is. The compact one-liner
   described in §2.2 / §5 was not built; instead the Ops tab

@@ -160,7 +160,7 @@ async def _daily_crypto_rebalance():
                     # monitor would see a stale scalar later the same day
                     # and fire a no-op second rebalance (the "double
                     # rebalance" gap). `update_fields` is file-locked and
-                    # stamps `last_btc_change` only if the scalar actually
+                    # stamps `last_btc_flip` only if the scalar actually
                     # differs from the saved value.
                     try:
                         from data import filter_state
