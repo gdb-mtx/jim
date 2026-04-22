@@ -3,13 +3,14 @@ import PortfolioChart from "./components/PortfolioChart";
 import MetricCard from "./components/MetricCard";
 import StrategyPanel from "./components/StrategyPanel";
 import LivePortfolio from "./components/LivePortfolio";
+import OpsPage from "./pages/OpsPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ToastContainer, { showToast } from "./components/Toast";
 import { fetchStrategies, fetchBacktest } from "./api";
 import type { StrategyMetrics, BacktestResult } from "./types";
 import "./index.css";
 
-type Tab = "backtest" | "portfolio";
+type Tab = "backtest" | "portfolio" | "ops";
 
 function App() {
   const [tab, setTab] = useState<Tab>("portfolio");
@@ -103,6 +104,16 @@ function App() {
             >
               Backtests
             </button>
+            <button
+              onClick={() => setTab("ops")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                tab === "ops"
+                  ? "bg-[#4d8eff] text-white"
+                  : "text-[#8888a0] hover:text-[#e8e8f0]"
+              }`}
+            >
+              Ops
+            </button>
           </div>
           <span className="rounded-full bg-[#00d4aa20] px-3 py-1 text-xs font-medium text-[#00d4aa]">
             Paper Trading
@@ -123,6 +134,11 @@ function App() {
       {/* Live Portfolio view */}
       {tab === "portfolio" && (
         <LivePortfolio />
+      )}
+
+      {/* Ops view */}
+      {tab === "ops" && (
+        <OpsPage />
       )}
 
       {/* Backtest view */}

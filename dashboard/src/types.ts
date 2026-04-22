@@ -282,3 +282,104 @@ export interface PlausibilityState {
   active_issues: PlausibilityIssue[];
   has_active: boolean;
 }
+
+// -----------------------------------------------------------------------
+// Ops dashboard types — automation surface shown on the /ops tab.
+// Backend: api/routes/ops.py
+// -----------------------------------------------------------------------
+
+export interface OpsSchedulerJob {
+  id: string;
+  name: string;
+  next_run_time: string | null;
+  last_started: string | null;
+  last_finished: string | null;
+  last_status: "running" | "success" | "skipped" | "failed" | null;
+  error: string | null;
+}
+
+export interface OpsLaunchdFlip {
+  filter: string;       // "spy" | "btc"
+  from: number;
+  to: number;
+  direction: string;    // "BULLISH" | "DEFENSIVE" | "CASH"
+}
+
+export interface OpsLaunchdAccount {
+  account: number;
+  status: string;       // "executed" | "dry_run" | "no_trades" | "halted" | ...
+  orders: number;
+}
+
+export interface OpsLaunchdEntry {
+  label: string;        // plist identifier
+  source: string;       // source tag the plist emits (e.g. "launchd-crypto")
+  expected_scope: string;
+  last_run: string | null;       // ISO (naive local-time) of the start line
+  last_run_relative: string | null;
+  outcome: "no_change" | "flip" | "first_run" | "error" | null;
+  scope: string | null;
+  flips: OpsLaunchdFlip[];
+  accounts: OpsLaunchdAccount[];
+}
+
+export interface OpsSchedulerResponse {
+  apscheduler: {
+    running: boolean;
+    jobs: OpsSchedulerJob[];
+    error?: string;
+  };
+  launchd: OpsLaunchdEntry[];
+  launchd_error?: string;
+}
+
+export interface OpsFiltersResponse {
+  spy_scalar?: number;
+  btc_scalar?: number;
+  spy_price?: number;
+  spy_ma200?: number;
+  btc_price?: number;
+  btc_ma125?: number;
+  last_checked?: string;
+  last_checked_relative: string | null;
+  last_spy_change?: string | null;
+  last_btc_change?: string | null;
+  plausibility: PlausibilityState;
+}
+
+export interface OpsValidationAccount {
+  account: number;
+  name: string;
+  status: "pass" | "marginal" | "fail" | "retired" | "unvalidated";
+  last_run: string;
+  expires: string;
+  days_remaining: number | null;
+  report_path: string | null;
+  oos_cagr?: number;
+  oos_maxdd?: number;
+  oos_calmar?: number;
+  oos_is_cagr_ratio?: number;
+  reason?: string;
+  retired_at?: string;
+  retired_reason?: string;
+}
+
+export interface OpsValidationResponse {
+  accounts: OpsValidationAccount[];
+}
+
+export type OpsEventType = "rebalance" | "filter_flip";
+
+export interface OpsEvent {
+  timestamp: string;
+  type: OpsEventType;
+  source: string;
+  account: number | null;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export interface OpsEventsResponse {
+  events: OpsEvent[];
+  total: number;
+}

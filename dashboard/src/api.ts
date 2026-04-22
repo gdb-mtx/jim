@@ -158,3 +158,36 @@ export async function fetchPlausibilityState() {
     `${BASE_URL}/portfolio/plausibility`,
   );
 }
+
+// --- Ops dashboard ------------------------------------------------------
+
+export async function fetchOpsScheduler() {
+  return fetchJSON<import("./types").OpsSchedulerResponse>(
+    `${BASE_URL}/ops/scheduler`
+  );
+}
+
+export async function fetchOpsFilters() {
+  return fetchJSON<import("./types").OpsFiltersResponse>(
+    `${BASE_URL}/ops/filters`
+  );
+}
+
+export async function fetchOpsValidation() {
+  return fetchJSON<import("./types").OpsValidationResponse>(
+    `${BASE_URL}/ops/validation`
+  );
+}
+
+export async function fetchOpsEvents(
+  limit = 50,
+  opts?: { source?: string; type?: import("./types").OpsEventType; since?: string },
+) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (opts?.source) params.set("source", opts.source);
+  if (opts?.type) params.set("type", opts.type);
+  if (opts?.since) params.set("since", opts.since);
+  return fetchJSON<import("./types").OpsEventsResponse>(
+    `${BASE_URL}/ops/events?${params}`
+  );
+}
