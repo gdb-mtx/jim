@@ -8,31 +8,76 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import portfolio, strategies, backtests, orders
+from api.routes import portfolio, strategies, backtests, orders, ops
 from api.locks import RebalanceLockedError, dual_rebalance_lock
 
 log = logging.getLogger("fire.scheduler")
+
+# Module-level scheduler reference so `api/routes/ops.py` can introspect jobs
+# and the last-run cache. Assigned inside `lifespan()`; None before startup
+# and after shutdown.
+scheduler: AsyncIOScheduler | None = None
+
+# In-memory cache of each APScheduler job's last invocation. Reset on server
+# restart — the durable record is `data/rebalance_log.jsonl`. Schema:
+# {job_id: {"started": iso, "finished": iso|None,
+#           "status": "running"|"success"|"skipped"|"failed",
+#           "error": str|None}}
+_last_run_info: dict[str, dict] = {}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _record_run(job_id: str, started: str, status: str, error: str | None = None) -> None:
+    """Stamp the end of a job invocation in `_last_run_info`.
+
+    `started` is captured at function entry and threaded through so the
+    recorded window reflects the full invocation, not just the terminal
+    branch.
+    """
+    _last_run_info[job_id] = {
+        "started": started,
+        "finished": _now_iso(),
+        "status": status,
+        "error": error,
+    }
 
 
 async def _daily_crypto_rebalance():
     """Run daily crypto rebalance for Account 4 at 00:05 UTC.
 
-    Retries up to 3 times with exponential backoff on failure.
+    Retries up to 3 times with exponential backoff on failure. The outer
+    scope records terminal status into `_last_run_info` so the Ops panel
+    can render last-run state without tailing the rebalance log.
     """
     from execution.validation_gate import ValidationGateError, require_validated
+
+    job_id = "daily_crypto_rebalance"
+    started = _now_iso()
+    _last_run_info[job_id] = {
+        "started": started,
+        "finished": None,
+        "status": "running",
+        "error": None,
+    }
 
     try:
         require_validated(4)
     except ValidationGateError as e:
         log.warning(f"Daily crypto rebalance blocked by validation gate: {e}")
+        _record_run(job_id, started, "skipped", f"validation_gate: {e}")
         return
 
     max_retries = 3
+    final_error: str | None = None
     for attempt in range(1, max_retries + 1):
         try:
             from execution.alpaca_broker import AlpacaBroker
@@ -129,12 +174,15 @@ async def _daily_crypto_rebalance():
                         log.warning(f"filter_state.json sync failed (non-fatal): {e}")
 
                     log.info("Daily crypto rebalance complete")
+                    _record_run(job_id, started, "success")
                     return  # Success — exit retry loop
             except RebalanceLockedError as e:
                 log.warning(f"Crypto rebalance skipped — {e}")
+                _record_run(job_id, started, "skipped", f"locked: {e}")
                 return
 
         except Exception as e:
+            final_error = f"{type(e).__name__}: {e}"
             log.error(f"Daily crypto rebalance attempt {attempt} failed: {e}", exc_info=True)
             if attempt < max_retries:
                 wait = 2 ** attempt * 30  # 60s, 120s
@@ -142,6 +190,7 @@ async def _daily_crypto_rebalance():
                 await asyncio.sleep(wait)
 
     log.error(f"Daily crypto rebalance FAILED after {max_retries} attempts")
+    _record_run(job_id, started, "failed", final_error or f"exhausted {max_retries} retries")
 
 
 def _startup_backfill_and_snapshot():
@@ -191,11 +240,14 @@ def _startup_backfill_and_snapshot():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: schedule backfill in background, start crypto scheduler."""
+    global scheduler
+
     # Run backfill/snapshot in a background thread (non-blocking)
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _startup_backfill_and_snapshot)
 
-    # Start APScheduler for daily crypto rebalance
+    # Start APScheduler for daily crypto rebalance. Stored on the module
+    # global so `api/routes/ops.py` can read `.get_jobs()` / `.running`.
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         _daily_crypto_rebalance,
@@ -211,6 +263,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     scheduler.shutdown(wait=False)
+    scheduler = None
     log.info("APScheduler stopped")
 
 
@@ -228,6 +281,7 @@ app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"]
 app.include_router(strategies.router, prefix="/api/strategies", tags=["strategies"])
 app.include_router(backtests.router, prefix="/api/backtests", tags=["backtests"])
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
+app.include_router(ops.router, prefix="/api/ops", tags=["ops"])
 
 
 @app.get("/api/health")

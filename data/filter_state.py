@@ -70,6 +70,30 @@ def load() -> dict[str, Any]:
         return {}
 
 
+def load_with_plausibility() -> dict[str, Any]:
+    """Return filter state enriched with plausibility snapshot.
+
+    Used by `/api/ops/filters` so the Ops panel can render filter status and
+    any active data-quality issues (cached-vs-live divergences, write-time
+    band failures) in a single response.
+
+    Plausibility state lives separately in `data/plausibility.py` and is
+    imported lazily here to keep `data.filter_state` free of pandas-touching
+    dependencies at import time.
+    """
+    from data import plausibility
+
+    state = load()
+    plaus_state = plausibility.get_state()
+    active = plausibility.has_active_issues(plaus_state)
+    state["plausibility"] = {
+        "state": plaus_state,
+        "active_issues": active,
+        "has_active": bool(active),
+    }
+    return state
+
+
 def _atomic_write(state: dict[str, Any]) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE_PATH.with_suffix(".tmp")
