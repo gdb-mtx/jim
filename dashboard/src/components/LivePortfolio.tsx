@@ -10,7 +10,6 @@ import EquityHistoryChart from "./EquityHistoryChart";
 import CorrelationPanel from "./CorrelationPanel";
 import RiskStatusPanel from "./RiskStatusPanel";
 import RebalancePanel from "./RebalancePanel";
-import RebalanceHistory from "./RebalanceHistory";
 import FilterStatusBanner from "./FilterStatusBanner";
 import DataFreshnessPill from "./DataFreshnessPill";
 import { showToast } from "./Toast";
@@ -281,9 +280,6 @@ export default function LivePortfolio() {
         totalUnrealizedPl={viewData.total_unrealized_pl}
         marketOpen={viewData.market_open}
       />
-
-      {/* Rebalance history */}
-      <RebalanceHistory account={account} />
 
       {/* Recent orders */}
       <OrdersTable orders={recentOrders} />
