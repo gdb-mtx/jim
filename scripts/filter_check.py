@@ -2,21 +2,26 @@
 """Daily filter monitor — detects SPY/BTC filter changes and auto-rebalances.
 
 Designed to run from launchd cron (no server dependency). Checks whether
-the SPY 200d MA or BTC 200d MA filter scalar has changed since the last
+the SPY 200d MA or BTC 125d MA filter scalar has changed since the last
 run, and if so, executes rebalances for affected accounts.
 
 Usage:
-    uv run python3 scripts/filter_check.py          # normal run
-    uv run python3 scripts/filter_check.py --dry-run # check only, no trades
+    uv run python3 scripts/filter_check.py              # normal: both filters
+    uv run python3 scripts/filter_check.py --filter btc # crypto-only run
+    uv run python3 scripts/filter_check.py --filter spy # equity-only run
+    uv run python3 scripts/filter_check.py --dry-run    # check only, no trades
+
+The two launchd plists invoke this script with different `--filter` scopes
+on different cadences (equity at 4:30 PM ET, crypto every 4 hours), so BTC
+flips are detected within a few hours instead of once daily. `force_refresh`
+is always on here so filter decisions never use a stale cached price.
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 # Ensure project root is on sys.path for imports
@@ -24,6 +29,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from api.locks import file_rebalance_lock
+from data import filter_state
 from data.snapshots import take_snapshot
 from execution.alpaca_broker import ACCOUNT_INFO, AlpacaBroker
 from execution.notifications import notify_macos
@@ -39,7 +45,6 @@ from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_fil
 
 # --- Config ---
 
-STATE_FILE = PROJECT_ROOT / "data" / "risk_state" / "filter_state.json"
 LOG_FILE = PROJECT_ROOT / "data" / "filter_check.log"
 
 # Account → filter type. A3 retired 2026-04-21 (removed from auto-rebalance
@@ -50,6 +55,8 @@ ACCOUNT_FILTERS = {
     2: "spy",
     4: "btc",
 }
+
+VALID_SCOPES = ("all", "spy", "btc")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,47 +69,52 @@ logging.basicConfig(
 log = logging.getLogger("fire.filter_check")
 
 
-def load_state() -> dict:
-    """Load last-known filter state from disk."""
-    if STATE_FILE.exists():
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    return {}
+def compute_filters(scope: str = "all") -> dict:
+    """Compute current SPY and/or BTC filter scalars.
 
+    `force_refresh=True` on every download so the cached 16h parquet is
+    bypassed — filter decisions are always made against a freshly-fetched
+    last close. The refresh writes to cache so subsequent non-filter
+    readers (dashboard, API) get the up-to-date values too.
 
-def save_state(state: dict):
-    """Write filter state atomically."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATE_FILE.with_suffix(".tmp")
-    with open(tmp, "w") as f:
-        json.dump(state, f, indent=2)
-    tmp.rename(STATE_FILE)
+    Args:
+        scope: "all" | "spy" | "btc" — restrict which filters to compute.
+            The crypto-every-4h plist uses scope="btc" to skip the SPY
+            download entirely; the equity end-of-day plist uses
+            scope="spy".
 
-
-def compute_filters() -> dict:
-    """Compute current SPY and BTC filter scalars."""
-    spy_filter = compute_spy_trend_filter()
-    btc_filter = compute_btc_trend_filter()
-
-    # Extract price and MA for reporting
+    Returns:
+        Dict with whichever of `spy_*` / `btc_*` fields are in scope.
+    """
     from data.pipeline import download_and_cache
     from data.crypto import download_btc_prices
 
-    spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter")
-    spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
-    spy_ma = spy_close.rolling(200).mean()
+    result: dict = {}
 
-    btc_prices = download_btc_prices(start="2018-01-01")
-    btc_ma = btc_prices.rolling(125).mean()
+    if scope in ("all", "spy"):
+        spy_prices = download_and_cache(
+            ["SPY"], start="2008-01-01", cache_name="spy_filter", force_refresh=True
+        )
+        spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
+        spy_ma = spy_close.rolling(200).mean()
+        spy_filter = compute_spy_trend_filter()
+        result.update({
+            "spy_scalar": float(spy_filter.iloc[-1]),
+            "spy_price": round(float(spy_close.iloc[-1]), 2),
+            "spy_ma200": round(float(spy_ma.iloc[-1]), 2),
+        })
 
-    return {
-        "spy_scalar": float(spy_filter.iloc[-1]),
-        "btc_scalar": float(btc_filter.iloc[-1]),
-        "spy_price": round(float(spy_close.iloc[-1]), 2),
-        "spy_ma200": round(float(spy_ma.iloc[-1]), 2),
-        "btc_price": round(float(btc_prices.iloc[-1]), 2),
-        "btc_ma125": round(float(btc_ma.iloc[-1]), 2),
-    }
+    if scope in ("all", "btc"):
+        btc_prices = download_btc_prices(start="2018-01-01", force_refresh=True)
+        btc_ma = btc_prices.rolling(125).mean()
+        btc_filter = compute_btc_trend_filter()
+        result.update({
+            "btc_scalar": float(btc_filter.iloc[-1]),
+            "btc_price": round(float(btc_prices.iloc[-1]), 2),
+            "btc_ma125": round(float(btc_ma.iloc[-1]), 2),
+        })
+
+    return result
 
 
 def notify(title: str, message: str):
@@ -211,10 +223,21 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="FIRE filter monitor")
     parser.add_argument("--dry-run", action="store_true", help="Check only, no trades")
+    parser.add_argument(
+        "--filter",
+        choices=VALID_SCOPES,
+        default="all",
+        help="Scope: 'all' (both), 'spy' (equity only), 'btc' (crypto only). "
+             "Plists pass 'spy' at 4:30 PM ET and 'btc' every 4h.",
+    )
     args = parser.parse_args()
 
+    # Source tag — set by the plist so we can distinguish launchd vs manual
+    # runs in the log without relying on time-of-day inference.
+    source = os.environ.get("FIRE_FILTER_CHECK_SOURCE", "manual")
+
     log.info("=" * 60)
-    log.info("FIRE Filter Check starting")
+    log.info(f"FIRE Filter Check starting (source={source}, scope={args.filter})")
 
     # Load .env for Alpaca credentials
     env_file = PROJECT_ROOT / ".env"
@@ -222,48 +245,62 @@ def main():
         from dotenv import load_dotenv
         load_dotenv(env_file)
 
-    # Compute current filter values
+    # Compute current filter values (scope-restricted; force_refresh always on)
     t0 = time.time()
-    current = compute_filters()
-    log.info(
-        f"Filters computed in {time.time() - t0:.1f}s: "
-        f"SPY={current['spy_scalar']} (${current['spy_price']} vs MA ${current['spy_ma200']}), "
-        f"BTC={current['btc_scalar']} (${current['btc_price']} vs MA ${current['btc_ma125']})"
-    )
+    current = compute_filters(scope=args.filter)
+    parts = []
+    if "spy_scalar" in current:
+        parts.append(
+            f"SPY={current['spy_scalar']} (${current['spy_price']} vs MA ${current['spy_ma200']})"
+        )
+    if "btc_scalar" in current:
+        parts.append(
+            f"BTC={current['btc_scalar']} (${current['btc_price']} vs MA ${current['btc_ma125']})"
+        )
+    log.info(f"Filters computed in {time.time() - t0:.1f}s: " + ", ".join(parts))
 
-    # Load previous state
-    prev = load_state()
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Detect changes
-    spy_changed = prev.get("spy_scalar") is not None and current["spy_scalar"] != prev.get("spy_scalar")
-    btc_changed = prev.get("btc_scalar") is not None and current["btc_scalar"] != prev.get("btc_scalar")
+    # Load previous state (uses shared module with file lock; also writes
+    # are serialized so the FastAPI APScheduler job can update this file
+    # without racing with us).
+    prev = filter_state.load()
     first_run = not prev
+
+    # Detect changes — only for scalars in scope
+    spy_changed = (
+        "spy_scalar" in current
+        and prev.get("spy_scalar") is not None
+        and current["spy_scalar"] != prev.get("spy_scalar")
+    )
+    btc_changed = (
+        "btc_scalar" in current
+        and prev.get("btc_scalar") is not None
+        and current["btc_scalar"] != prev.get("btc_scalar")
+    )
 
     if first_run:
         log.info("First run — seeding filter state, no rebalance triggered")
-        current["last_checked"] = now
-        current["last_spy_change"] = None
-        current["last_btc_change"] = None
-        save_state(current)
-        notify("FIRE Filter Monitor", f"Initialized. SPY={current['spy_scalar']}, BTC={current['btc_scalar']}")
+        if not args.dry_run:
+            seed = {**current}
+            filter_state.save({
+                **seed,
+                "last_spy_change": None,
+                "last_btc_change": None,
+            })
+        notify("FIRE Filter Monitor", f"Initialized ({args.filter}). {', '.join(parts)}")
         return
 
     if not spy_changed and not btc_changed:
         log.info("No filter changes detected")
-        prev["last_checked"] = now
-        prev.update({
-            "spy_price": current["spy_price"],
-            "spy_ma200": current["spy_ma200"],
-            "btc_price": current["btc_price"],
-            "btc_ma125": current["btc_ma125"],
-        })
-        save_state(prev)
-        notify(
-            "FIRE Filter Check",
-            f"No changes. SPY={'BULL' if current['spy_scalar'] == 1.0 else 'BEAR'}, "
-            f"BTC={'BULL' if current['btc_scalar'] == 1.0 else 'BEAR'}",
-        )
+        # Update prices/MAs and last_checked. Only include scope fields so
+        # we don't clobber out-of-scope data from the other plist's last run.
+        if not args.dry_run:
+            filter_state.update_fields(current)
+        labels = []
+        if "spy_scalar" in current:
+            labels.append(f"SPY={'BULL' if current['spy_scalar'] == 1.0 else 'BEAR'}")
+        if "btc_scalar" in current:
+            labels.append(f"BTC={'BULL' if current['btc_scalar'] == 1.0 else 'BEAR'}")
+        notify("FIRE Filter Check", f"No changes. " + ", ".join(labels))
         return
 
     # --- Filter changed — rebalance affected accounts ---
@@ -275,19 +312,13 @@ def main():
         direction = "BULLISH" if current["spy_scalar"] == 1.0 else "DEFENSIVE"
         log.info(f"SPY filter changed: {prev.get('spy_scalar')} → {current['spy_scalar']} ({direction})")
         changes.append(f"SPY → {direction}")
-        current["last_spy_change"] = now
         accounts_to_rebalance.extend([a for a, f in ACCOUNT_FILTERS.items() if f == "spy"])
-    else:
-        current["last_spy_change"] = prev.get("last_spy_change")
 
     if btc_changed:
         direction = "BULLISH" if current["btc_scalar"] == 1.0 else "CASH"
         log.info(f"BTC filter changed: {prev.get('btc_scalar')} → {current['btc_scalar']} ({direction})")
         changes.append(f"BTC → {direction}")
-        current["last_btc_change"] = now
         accounts_to_rebalance.extend([a for a, f in ACCOUNT_FILTERS.items() if f == "btc"])
-    else:
-        current["last_btc_change"] = prev.get("last_btc_change")
 
     # Execute rebalances
     results = []
@@ -295,9 +326,13 @@ def main():
         result = rebalance_account(account, dry_run=args.dry_run)
         results.append(result)
 
-    # Update state
-    current["last_checked"] = now
-    save_state(current)
+    # Persist the flip. `track_flips` stamps `last_spy_change` /
+    # `last_btc_change` when the scalar actually differs.
+    if not args.dry_run:
+        filter_state.update_fields(
+            current,
+            track_flips=tuple(k for k in ("spy_scalar", "btc_scalar") if k in current),
+        )
 
     # Summary notification
     executed = [r for r in results if r["status"] == "executed"]

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fire.filter-check-crypto</string>
+
+    <!-- Crypto-scope filter check: BTC 125d MA filter for A4.
+         Runs every 4 hours because crypto trades 24/7 and the BTC filter
+         can flip at any UTC time. Catches overnight crossings within a
+         few hours instead of waiting for a single daily end-of-NYSE run
+         (the old coupling to 4:30 PM ET was a legacy artifact).
+         StartInterval is unanchored: first run after load, then every
+         14400 seconds. Actual fire times drift with load time but the
+         4-hour cadence is preserved regardless of laptop timezone. -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/george/.local/bin/uv</string>
+        <string>run</string>
+        <string>python3</string>
+        <string>/Users/george/Desktop/Projects/FIRE/scripts/filter_check.py</string>
+        <string>--filter</string>
+        <string>btc</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/george/Desktop/Projects/FIRE</string>
+
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/george</string>
+        <key>FIRE_FILTER_CHECK_SOURCE</key>
+        <string>launchd-crypto</string>
+    </dict>
+</dict>
+</plist>

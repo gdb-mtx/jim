@@ -15,6 +15,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `RATE_VOL_SCOPE.md` — Account 5 candidate scoping (MOVE-conditional TLT reversal)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
+- `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions
@@ -142,7 +143,7 @@ Risk controls are checked at two levels:
    - **Account 3** (weekly): Manual trigger every Monday
    - **Accounts 1 & 2** (monthly): Manual trigger first Monday of month
 
-**Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter).
+**Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter). *Caveat for A4 (crypto)*: A4's signal rotation is daily (APScheduler at 00:05 UTC), matching its filter cadence — so the decoupling is really about A1/A2 (monthly signal rotation, but daily SPY filter reaction via launchd). When the filter monitor fires a rebalance for A4 on a flip day, it runs the same `compute_rebalance` as APScheduler, including full signal ranking — not an exposure-only tweak.
 
 The dashboard's RiskStatusPanel and FilterStatusBanner show current status. FilterStatusBanner also shows the filter monitor's last check time and any recent auto-rebalances.
 
@@ -216,7 +217,8 @@ scripts/run_validation.py — VALIDATION_PLAN Tests 1-5 runner; updates data/ris
 scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config 2026-04-18
 scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
 scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
-scripts/com.fire.filter-check.plist — macOS launchd plist (4:30 PM ET daily)
+scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (daily 4:30 PM laptop-local, `--filter spy`)
+scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
 
 # Mode 2: PEAD / Informational Alpha
 mode2/earnings.py         — Finnhub EPS data + Insider Monkey transcript scraper + SEC EDGAR
@@ -251,8 +253,15 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
   - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
   - Check status: `launchctl list | grep fire`
   - View logs: `cat data/filter_check.log` or `cat data/risk_state/filter_state.json`
-  - Install: `cp scripts/com.fire.filter-check.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.fire.filter-check.plist`
-  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist`
+  - Install (first time or re-install):
+    ```
+    launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist 2>/dev/null  # remove old single-plist if present
+    rm -f ~/Library/LaunchAgents/com.fire.filter-check.plist
+    cp scripts/com.fire.filter-check-equity.plist scripts/com.fire.filter-check-crypto.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.fire.filter-check-equity.plist
+    launchctl load ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist
+    ```
+  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist`
 - **Validation**: `uv run python3 -c "from backtesting.validation import full_validation; ..."`
 
 ### Development Rules

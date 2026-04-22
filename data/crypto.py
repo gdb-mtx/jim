@@ -132,13 +132,18 @@ def download_crypto_prices(
     return prices
 
 
-def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
+def download_btc_prices(
+    start: str = "2018-01-01", force_refresh: bool = False
+) -> pd.Series:
     """Download BTC close prices for the BTC trend filter.
 
     Analogous to data/sp500.py download_vix() — single-ticker cache.
 
     Args:
         start: Start date (needs history for 200-day MA warmup)
+        force_refresh: If True, skip cache read and re-fetch from yfinance.
+            Used by filter_check.py so the BTC filter is never evaluated on
+            a stale cached price.
 
     Returns:
         Series of BTC/USD closing prices
@@ -148,7 +153,7 @@ def download_btc_prices(start: str = "2018-01-01") -> pd.Series:
     cache_path = DATA_DIR / "raw" / "btc_prices.parquet"
     max_age_hours = 16
 
-    if cache_path.exists():
+    if not force_refresh and cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             cached_df = pd.read_parquet(cache_path)

@@ -109,6 +109,25 @@ async def _daily_crypto_rebalance():
                         log.info("Crypto rebalance: no trades needed")
 
                     await asyncio.to_thread(take_snapshot, 4)
+
+                    # Sync filter_state.json with the BTC scalar we just
+                    # traded against. Without this, the launchd filter
+                    # monitor would see a stale scalar later the same day
+                    # and fire a no-op second rebalance (the "double
+                    # rebalance" gap). `update_fields` is file-locked and
+                    # stamps `last_btc_change` only if the scalar actually
+                    # differs from the saved value.
+                    try:
+                        from data import filter_state
+                        btc_scalar = float(result.btc_filter_scalar)
+                        await asyncio.to_thread(
+                            filter_state.update_fields,
+                            {"btc_scalar": btc_scalar},
+                            track_flips=("btc_scalar",),
+                        )
+                    except Exception as e:
+                        log.warning(f"filter_state.json sync failed (non-fatal): {e}")
+
                     log.info("Daily crypto rebalance complete")
                     return  # Success — exit retry loop
             except RebalanceLockedError as e:

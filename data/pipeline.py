@@ -137,6 +137,7 @@ def download_and_cache(
     end: str | None = None,
     cache_name: str = "prices",
     max_age_hours: int = 16,
+    force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Download prices and cache to parquet file for fast reloading.
 
@@ -149,6 +150,10 @@ def download_and_cache(
         end: End date
         cache_name: Name for the cache file
         max_age_hours: Re-download if cache is older than this (default 16h)
+        force_refresh: If True, skip cache read and re-fetch from yfinance.
+            Used by filter_check.py so filter decisions are never made on
+            hours-old cached prices. Still writes to cache on success so
+            subsequent readers benefit.
 
     Returns:
         DataFrame of prices (from cache if available and fresh)
@@ -157,7 +162,7 @@ def download_and_cache(
 
     cache_path = DATA_DIR / "raw" / f"{cache_name}.parquet"
 
-    if cache_path.exists():
+    if not force_refresh and cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             cached = pd.read_parquet(cache_path)

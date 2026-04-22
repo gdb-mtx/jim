@@ -183,11 +183,14 @@ def download_sp500_prices(
     return prices
 
 
-def download_vix(start: str = "2005-01-01") -> pd.Series:
+def download_vix(
+    start: str = "2005-01-01", force_refresh: bool = False
+) -> pd.Series:
     """Download VIX index for regime detection.
 
     Args:
         start: Start date
+        force_refresh: If True, skip cache read and re-fetch from yfinance.
 
     Returns:
         Series of VIX closing values
@@ -197,7 +200,7 @@ def download_vix(start: str = "2005-01-01") -> pd.Series:
     cache_path = DATA_DIR / "raw" / "vix.parquet"
     max_age_hours = 16
 
-    if cache_path.exists():
+    if not force_refresh and cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             cached_df = pd.read_parquet(cache_path)

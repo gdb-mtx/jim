@@ -3,7 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.fire.filter-check</string>
+    <string>com.fire.filter-check-equity</string>
+
+    <!-- Equity-scope filter check: SPY 200d MA filter for A1/A2.
+         Runs once daily at 4:30 PM laptop-local time (post-NYSE close).
+         SPY filter is only meaningful on daily closes, so a single
+         end-of-day check is sufficient. -->
 
     <key>ProgramArguments</key>
     <array>
@@ -11,12 +16,13 @@
         <string>run</string>
         <string>python3</string>
         <string>/Users/george/Desktop/Projects/FIRE/scripts/filter_check.py</string>
+        <string>--filter</string>
+        <string>spy</string>
     </array>
 
     <key>WorkingDirectory</key>
     <string>/Users/george/Desktop/Projects/FIRE</string>
 
-    <!-- Run daily at 4:30 PM local time (after market close) -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -25,17 +31,17 @@
         <integer>30</integer>
     </dict>
 
-    <!-- Log output for debugging -->
     <key>StandardOutPath</key>
     <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stdout.log</string>
     <key>StandardErrorPath</key>
     <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stderr.log</string>
 
-    <!-- Environment: ensure dotenv can find .env -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
         <string>/Users/george</string>
+        <key>FIRE_FILTER_CHECK_SOURCE</key>
+        <string>launchd-equity</string>
     </dict>
 </dict>
 </plist>
