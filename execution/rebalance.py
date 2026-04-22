@@ -217,6 +217,14 @@ def _get_portfolio_signals(
                 log.warning("Could not fetch live SPY price from Alpaca, using cached")
         spy_filter = compute_spy_trend_filter(start=lookback_start, live_price=live_spy)
         scalar = spy_filter.iloc[-1]  # Latest filter value (1.0 or 0.5)
+        # NaN scalar would silently liquidate the book (NaN × weights → all
+        # NaN → filtered to {} → empty target → full exit). Most likely on
+        # cloud cold-start when 200d MA warmup is incomplete.
+        if pd.isna(scalar):
+            raise RuntimeError(
+                f"SPY filter scalar is NaN for portfolio {portfolio_id}; refusing to rebalance. "
+                f"Check SPY cache has >=200d of history."
+            )
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
 
     # Apply BTC trend filter (binary: 1.0 or 0.0)
@@ -229,6 +237,11 @@ def _get_portfolio_signals(
                 log.warning("Could not fetch live BTC price from Alpaca, using cached")
         btc_filter = compute_btc_trend_filter(start=lookback_start, live_price=live_btc)
         scalar = btc_filter.iloc[-1]
+        if pd.isna(scalar):
+            raise RuntimeError(
+                f"BTC filter scalar is NaN for portfolio {portfolio_id}; refusing to rebalance. "
+                f"Check BTC cache has >=125d of history."
+            )
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
 
     return combined_weights

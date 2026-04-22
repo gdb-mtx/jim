@@ -4,7 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from execution.rebalance import compute_rebalance, RebalanceResult, check_price_staleness
+import numpy as np
+import pytest
+
+from execution.rebalance import compute_rebalance, RebalanceResult, check_price_staleness, get_current_signals
 from execution.alpaca_broker import OrderRequest
 from execution.risk_manager import RiskManager
 
@@ -278,3 +281,51 @@ def test_price_staleness_zero_price_flagged():
 
     assert len(drifted) == 1
     assert drifted[0]["reason"] == "unfetchable"
+
+
+# ---- AUDIT_MONTH2_REVIEW N2: filter-scalar NaN guards ----
+#
+# NaN scalar × weights → all NaN → downstream `abs(w) > 1e-6` filter strips
+# them → empty target → full-book liquidation. Loud failure beats silent exit.
+
+
+@patch("execution.rebalance.compute_spy_trend_filter")
+@patch("execution.rebalance.download_vix")
+@patch("execution.rebalance.download_sp500_prices")
+@patch("strategies.stock_momentum.StockMomentum.generate_signals")
+def test_spy_filter_nan_raises_rather_than_liquidating(
+    mock_signals, mock_sp500, mock_vix, mock_spy_filter
+):
+    ts = pd.Timestamp("2026-04-21")
+    mock_signals.return_value = pd.DataFrame({"AAPL": [0.1]}, index=[ts])
+    mock_sp500.return_value = pd.DataFrame({"AAPL": [100.0]}, index=[ts])
+    mock_vix.return_value = pd.Series([20.0], index=[ts])
+    mock_spy_filter.return_value = pd.Series([np.nan], index=[ts])
+
+    with pytest.raises(RuntimeError, match="SPY filter scalar is NaN"):
+        get_current_signals("sm_filtered")
+
+
+@patch("execution.rebalance.compute_btc_trend_filter")
+@patch("execution.rebalance.download_btc_prices")
+@patch("execution.rebalance.download_crypto_prices")
+@patch("strategies.crypto_momentum.CryptoMomentum.generate_signals")
+def test_btc_filter_nan_raises_rather_than_liquidating(
+    mock_signals, mock_crypto, mock_btc_prices, mock_btc_filter, monkeypatch
+):
+    # Currently no portfolio uses btc_filter=True at the portfolio level (BTC
+    # filter is built into CryptoMomentum). Guard is defensive for future
+    # configs — enable on crypto_momentum_filtered for the test.
+    import strategies.portfolio as portfolio_mod
+    monkeypatch.setitem(
+        portfolio_mod.PORTFOLIOS["crypto_momentum_filtered"], "btc_filter", True
+    )
+
+    ts = pd.Timestamp("2026-04-21")
+    mock_signals.return_value = pd.DataFrame({"BTC-USD": [0.5]}, index=[ts])
+    mock_crypto.return_value = pd.DataFrame({"BTC-USD": [50000.0]}, index=[ts])
+    mock_btc_prices.return_value = pd.Series([50000.0], index=[ts])
+    mock_btc_filter.return_value = pd.Series([np.nan], index=[ts])
+
+    with pytest.raises(RuntimeError, match="BTC filter scalar is NaN"):
+        get_current_signals("crypto_momentum_filtered")

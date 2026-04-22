@@ -308,7 +308,11 @@ def _write_state(state: dict) -> None:
         with os.fdopen(tmp_fd, "w") as f:
             json.dump(state, f, indent=2, sort_keys=True)
         os.replace(tmp_path, STATE_PATH)
-    except Exception:
+    except Exception as e:
+        # Callers (_record_failure/_success/_divergence) run inside
+        # exception-suppressing paths; without an explicit log the write
+        # failure disappears silently and the dashboard banner never fires.
+        log.error(f"Failed to persist plausibility state to {STATE_PATH}: {e}")
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
