@@ -16,6 +16,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
+- `OPS_DASHBOARD_PLAN.md` — design spec for a new "Ops" tab consolidating scheduler status, filter state, validation, and event timeline into a single dashboard view. Motivated by killing macOS notifications and prepping for cloud migration. Not yet built — next session.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions

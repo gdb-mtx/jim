@@ -214,3 +214,8 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   event (manual, scheduled, and filter-monitor-triggered)
 - `DEPLOYMENT_PLAN.md` — plan to migrate the scheduler to 24/7 cloud
   hosting so the "laptop must be awake" constraint goes away
+- `OPS_DASHBOARD_PLAN.md` — planned consolidation of all automation
+  status (scheduler, filter state, validation, event timeline) into a
+  single "Ops" dashboard tab. Will replace the existing scattered
+  banners and eventually absorb cloud-scheduler status post-migration.
+  Not yet built.
