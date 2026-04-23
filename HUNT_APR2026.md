@@ -219,3 +219,48 @@ But the week's bigger finding was accidental. Pressure-testing Breakthrough #2 s
 Revised framing: **Claude's commercial application in this system is not as an alpha source — it's as a discipline layer.** The value in today's work wasn't the filter test itself; it was running the test honestly, pre-committing to thresholds, and accepting a negative result without moving goalposts. That same discipline now has to be applied to the strategies we're already running with real exposure (paper, for now). That's what `VALIDATION_PLAN.md` is for.
 
 Not a new strategy. A clearer reading of what actually matters.
+
+---
+
+## Addendum 2026-04-23: Account 5 hunt — crypto reversal null result
+
+After the Mode 2 hunt (above) resolved with A4's base OOS-verified (CAGR 40.4%, Calmar 3.18), the standing directive shifted to finding a new uncorrelated Account 5 strategy that meaningfully beats or matches A4. A3's slot is preserved for this.
+
+Three vectors scouted in parallel on 2026-04-23:
+- **Rate vol** (MOVE-conditional TLT reversal): HOLD. Scout's honest cap ~15% CAGR / Calmar 1.2-1.8. Signal sparse in low-MOVE regimes (MOVE at 69.88 on scout date). See `RATE_VOL_SCOPE.md`.
+- **Commodity vol** (producer-equity cross-section: XLE/XME/GDX/URA/LIT): HOLD. Expected A5↔A2 correlation 0.45-0.65 — A2's Multi-Asset Trend leg already holds GLD+DBC, so likely factor-duplicative.
+- **Narrative-aware crypto**: GO, conditional on A4↔A5 correlation probe.
+
+Narrative crypto narrowed from "sector rotation" (DOA — SOL/NEAR/TIA/PEPE not on Alpaca at probe date, and our universe is quality-gated anyway; see the 2026-04-23 CLAUDE.md crypto-universe decision) to **cross-sectional reversal on A4's existing 9-coin universe**.
+
+### Probe: correlation PASSED, standalone FAILED
+
+A4↔A5 Pearson over 2021-2026: **+0.499** (filter-on), +0.384 (filter-off). Cleared the ≤0.70 gate comfortably. Would have qualified as a real diversifier if the strategy worked standalone.
+
+At default params (bot-2 / lookback 35d / 14d hold / BTC 125d filter): standalone A5 = **-3.4% CAGR, -76% MaxDD, Sharpe 0.26**. Losing strategy with catastrophic drawdowns.
+
+Sanity check on A4's probe numbers vs CLAUDE.md's 40.4% OOS: reconciled via vol-scaling haircut math (40/135 ≈ 0.30 average live exposure, matches crypto realized-vol / 15% target). No bug.
+
+### Robust-opt: clean null across 80 configs
+
+Minimax sweep (lookback × hold × top_n × filter, scored by max of min(Calmar_A, Calmar_B) across halves 2020-2022 / 2023-2026):
+- **No config cleared the 1.0 min-Calmar gate.** Best winner: 0.34.
+- Every config: MaxDDs -40% to -89% across both halves.
+- Half-A hero configs (+146% to +222% CAGR) collapsed in half-B to ~+10-16% on -50%+ MaxDD. Regime-dependent.
+- Winner OOS/IS CAGR ratio: 64% (gate: 70%).
+
+### Why it failed
+
+Dobrynskaya (2021) 100%+ reversal returns live in 2000-coin small-cap universes. Our 9 large-caps (half of them — DOT/LINK/AAVE — behave nearly identically in drawdowns) have too little cross-sectional dispersion for reversal to harvest. Predicted by the scout; confirmed by the sweep.
+
+**Meta-finding:** crypto reversal as A5 is dead on this universe. Expanding to small-caps for dispersion would require thin-liquidity / memecoin exposure, which violates the quality-gated universe decision made the same session. The two constraints are mutually exclusive.
+
+### Artifacts
+
+Research code deleted (value is in the finding, not the ~250 LOC of template work). Numbers preserved above. Raw ranking parquet also deleted.
+
+### Next
+
+**Rate-vol, defensively.** Minimum MOVE-conditional TLT reversal backtest per scout's recommendation (1 day of work, not four). Kill-switch: if the naive sketch returns <10% CAGR or <1.0 Calmar, kill the vector. Honest expectation 15-18% CAGR / Calmar 1.2-1.8 — a diversifier, not an A4-killer.
+
+If rate-vol also returns null, two remaining paths: (1) accept the 3-account book is the right shape and redirect to Mode 2 PEAD ops (C recommendation holding period, BAC/MS/PNC transcripts pending Insider Monkey, weekly report generator); (2) separate hunt on expanded quality-L1 crypto universe (TAO/SUI candidates if Alpaca coverage has grown since probe date).
