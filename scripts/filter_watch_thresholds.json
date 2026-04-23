@@ -1,0 +1,5 @@
+{
+  "btc_125_ma": 76892.68,
+  "spy_200_ma": 664.58,
+  "_note": "Refresh before each travel window. See scripts/watch_filters.py docstring."
+}

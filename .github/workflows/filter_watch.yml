@@ -1,0 +1,51 @@
+name: filter_watch
+
+# Travel-window safety net — alerts via ntfy.sh when SPY/BTC cross their
+# MA filters. Runs while the laptop is off, so launchd's filter_check.py
+# can't. See scripts/watch_filters.py.
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub Actions queues cron triggers under load,
+    # so actual cadence may be 30-60 min — fine for a daily-cadence filter.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: "Send a test ntfy notification regardless of crossings"
+        type: boolean
+        default: false
+
+# Avoid overlapping runs.
+concurrency:
+  group: filter-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Restore last-run state so we alert exactly once per crossing.
+      # Unique key per run + prefix restore-keys = always save the new state.
+      - name: Restore filter state
+        uses: actions/cache@v4
+        with:
+          path: scripts/filter_watch_state.json
+          key: filter-watch-state-${{ github.run_id }}
+          restore-keys: |
+            filter-watch-state-
+
+      - name: Run watcher
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          FORCE_TEST: ${{ inputs.force_test == true && '1' || '' }}
+        run: python3 scripts/watch_filters.py
