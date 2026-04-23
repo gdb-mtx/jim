@@ -58,10 +58,14 @@ def fetch_spy_price() -> float:
 
 def send_ntfy(title: str, message: str, *, priority: str = "high", tags: str = "warning") -> None:
     topic = os.environ["NTFY_TOPIC"]
+    # HTTP headers must be latin-1; ntfy's Title header is no exception.
+    # Drop unicode (em-dash, smart quotes, emoji) to '?' so the request
+    # never raises. Body is utf-8 in the payload and unaffected.
+    safe_title = title.encode("ascii", "replace").decode("ascii")
     req = urllib.request.Request(
         f"https://ntfy.sh/{topic}",
         data=message.encode("utf-8"),
-        headers={"Title": title, "Priority": priority, "Tags": tags},
+        headers={"Title": safe_title, "Priority": priority, "Tags": tags},
     )
     urllib.request.urlopen(req, timeout=15)
 
@@ -105,7 +109,7 @@ def main() -> int:
 
     if os.environ.get("FORCE_TEST") == "1":
         send_ntfy(
-            "FIRE Filter Watch — TEST",
+            "FIRE Filter Watch - TEST",
             f"Pipeline OK. BTC ${btc_price:,.0f} ({'above' if btc_above else 'below'} ${btc_ma:,.0f}); "
             f"SPY ${spy_price:,.2f} ({'above' if spy_above else 'below'} ${spy_ma:,.2f}).",
             priority="default",
