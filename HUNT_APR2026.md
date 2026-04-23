@@ -296,3 +296,151 @@ Costs aren't the issue (gross = +0.7%). No amount of parameter tuning rescues a 
 | Rate vol (MOVE×TLT reversal) | KILL 2026-04-23 | Lost money in the target hiking regime |
 
 Standing directive (2026-04-18) unchanged: the user wants another few months of hunting before accepting the 3-account book is the right shape. Next round: draw inspiration from elite quant shops (Jane Street, DE Shaw, RenTech, Two Sigma) via public tribal knowledge, filter for what a solo builder with an AI partner can plausibly capture in the narrow window before those firms fully integrate AI themselves.
+
+---
+
+## Addendum 2026-04-23 continued: elite shops round + RenTech experiment + reframe
+
+### Elite-shops round: 4 parallel scouts
+
+Launched after the 3-vector round (crypto reversal / commodity / rate-vol) exhausted. Tribal-knowledge survey of Jane Street, DE Shaw/Two Sigma, RenTech, and a fourth "AI-native" angle. Synthesis captured in `References/elite-quant-tribal-knowledge-2026-04.md`.
+
+| Scout | Verdict | Why |
+|---|---|---|
+| Jane Street (ETF/index mechanics) | PASS | Greenwood & Sammon (NBER WP 30748, 2022) documents index-reconstitution drift decayed from ~8% (1990s) to statistically zero post-2013. 3-6% CAGR best case is below 15% gate. |
+| DE Shaw / Two Sigma (factor ensemble) | HOLD | Piotroski turned negative US 2010-2020; Sloan attenuated; only Novy-Marx gross profitability held up. Expected A5↔A2 0.45-0.65 (A2's low-vol leg already harvests quality premium). |
+| RenTech (weak-signal ensemble) | GO-conditional | See full experiment chain below. |
+| AI-native FOMC overlay | HOLD w/ strict Day-3 gate | **Most important methodology finding of the session:** LLM look-ahead bias documented in 2023-2025 literature (Glasserman-Lin 2023 arXiv 2309.17322; Gao-Jiang-Yan Dec 2025 LAP metric arXiv 2512.23847). Any future LLM-scored backtest requires cross-validation against pre-2022-cutoff open-weight model. Vector not prosecuted this session; preserved for later. |
+
+**Critical methodology takeaway for future AI-alpha research:** any backtest that asks Claude (or any post-2024-cutoff LLM) to score historical events has structural look-ahead contamination. Must include Spearman ≥0.85 correlation check vs pre-2022-cutoff model (Mistral-7B via Ollama or similar) on crisis events. Applies to ALL future AI-based backtests in this system, not just FOMC.
+
+### RenTech experiment chain — the real intellectual content of the session
+
+**POC (equal-weight ensemble):** 5 orthogonal price-only signals (short_reversal, near_52wh, low_ivol beta-adjusted, trend_quality via R², price_acceleration). Signal-level orthogonality good (max pairwise corr 0.62). Top-decile composite rank, monthly rebalance, SPY 200d + turn-of-month overlays.
+
+- Full window 2010-2026: CAGR 18.9%, Sharpe 0.72, MaxDD **-45.5%**, Calmar 0.42
+- IS 2010-2022: CAGR 21.9%, Calmar 0.48
+- **OOS 2023-2026: CAGR 7.9%, Calmar 0.27, OOS/IS ratio 36%** — FAILS all gates
+
+**Solo-signal attribution (same overlays):**
+- low_ivol: +27.8% CAGR, Sharpe 1.25, Calmar 0.78 (best)
+- near_52wh: +20.4%, Sharpe 0.97
+- short_reversal: +16.8%, Sharpe 1.03
+- trend_quality: +16.7%, Sharpe 1.03
+- price_acceleration: +14.9%, Sharpe 0.94
+
+**Key insight — equal-weight averaging DILUTES strong signals.** The ensemble was 18.9% CAGR; the best solo (low_ivol) alone was 27.8%. Averaging loses the edge.
+
+**Followup tests:**
+1. **low_ivol solo vs A2 low-vol proxy:** 0.99 correlation. Same factor.
+2. **A1-overlay** (momentum rank + 5 RenTech ranks, top-15): full-window Calmar 0.62→0.80, but OOS CAGR 38.8%→33.5%. Regime-change insurance, not unconditional win.
+3. **SIGNAL-AGREEMENT K=K-of-5 ensemble:** require K signals to agree top-30% rank. **K=4 cleared all OOS gates — OOS CAGR 26.0%, Calmar 1.35, OOS/IS 131%.**
+
+**K=4 robustness grid (80 configs across K × top-pct × hold-days):** 16/36 configs cleared all OOS gates. Best: K=4/top-35%/hold-42d at CAGR 28.4% / Calmar 1.62. Broad parameter region works — not a single-point fluke.
+
+**BUT the killing finding — K=4 correlation:**
+- K=4 ↔ A1 (momentum): +0.846 full, +0.842 OOS
+- K=4 ↔ A2 (low-vol proxy): +0.870 full, +0.825 OOS
+- Holdings overlap: K=4 picks also in A2's top decile = 42.7%
+
+All 5 signals were in the equity-price-signal family. K=4 isn't a new factor — it's a more-diversified-within-family version of what A1+A2 already harvest. Structurally cannot diversify the book.
+
+### User's challenge and the A1/A2 reframe
+
+Mid-session, user challenged the "find uncorrelated A5" framing as possibly self-imposed. A1 and A2 are live PAPER (since 2026-04-20); if K=4 or similar is genuinely better than A1 or A2 on absolute terms, it could REPLACE one, not add as a 5th.
+
+**Direct measurement: low_ivol SOLO ↔ A1 correlation:**
+- Full: +0.663
+- OOS: +0.772
+- Transitive estimate (via K=4 test) was 0.80; actual is 0.66-0.77.
+
+**Book-level substitution test (50/50 equity blend, ignoring A4):**
+- **Book A (current A1+A2):** OOS CAGR 19.0%, MaxDD -6.1%, **Calmar 3.13**
+- **Book B (A1+low_ivol):** OOS CAGR **36.2%**, MaxDD **-17.3%**, **Calmar 2.09**
+
+Higher CAGR book but 33% worse Calmar. **A1↔A2 correlation of 0.32 OOS was paying for real diversification.** Current A2's 11% CAGR is the PRICE of that diversification, not evidence of underperformance. Replacing A2 with a higher-CAGR-higher-correlation strategy nets negative at book level.
+
+### A2 optimization — the "false alarm" resolution
+
+A separate scoping doc (`A2_OPTIMIZATION_SCOPE.md`, now deleted) claimed A2 was "underweighted" based on a pure-low-vol proxy showing 48% OOS CAGR. **That proxy was a DIFFERENT strategy** — simpler top-decile inverse vol, no momentum filter, no VIX gate, no position-level vol scaling, different exposure caps. Its -37.6% MaxDD (5× current A2) tells the honest story: 5× more risk for the higher return, not free alpha.
+
+**Real weight sweep on A2's actual MAT+LV components (scripts/a2_weight_sweep.py, now deleted):**
+- Current 30/70 MAT/LV at cap=1.0 reproduced exactly: OOS CAGR 11.0%, Calmar 1.51 (baseline sanity passed vs CLAUDE.md).
+- Best achievable by weight + cap tuning: **MAT=30%, cap=1.5 → OOS CAGR 16.6%, Calmar 1.54, MaxDD -10.8%**.
+- **Zero of 15 configs cleared the proposed 4-gate bar** — A1 correlation floor (~0.47-0.56) > 0.40 gate; CAGR ceiling (~16.6%) < 18% gate.
+
+**cap=1.5 engineering opportunity (real, but bounded):**
+- Current: `execution/rebalance.py:352` hardcodes `scalar_cap=1.0` regardless of config. Line 367 has hard invariant rejecting weight sums >1.0.
+- Comment cites "Alpaca paper is spot-only / no margin" — TRUE for A4 crypto (genuinely no margin), but NOT for A2 equity (Reg T margin available on Alpaca paper equity accounts).
+- Potential lift: **+5pp A2 CAGR → +2pp book CAGR** at 1/3 weight, if live can realize cap=1.5.
+- Engineering work: differentiate equity vs crypto in vol-scaling path, relax weight invariant, verify margin-account config. **3-5 days of careful work + full re-validation.** Not urgent, but flagged for future engineering sprint.
+
+**A2_OPTIMIZATION_SCOPE.md deleted 2026-04-23.** The "massive win" framing was based on measuring a different strategy out of book context. Current A2 design is validated. cap=1.5 remains a real future opportunity.
+
+### Options overlay and managed futures scouts (post-reframe round)
+
+After the user's "am I biased toward defending the book?" challenge, I named 7 implicit constraints I'd been treating as hard (1/3 weights, Calmar-first, Alpaca-equity-spot-only, S&P 500 universe, daily-rebal, etc.) and scouted 2 genuinely unexplored vectors in parallel.
+
+- **Options overlay (systematic PutWrite / covered calls):** HOLD — wrong mandate.
+  - [Israelov & Nielsen (AQR 2014), "Covered Calls Uncovered"](https://www.aqr.com/Insights/Research/Working-Paper/Covered-Calls-Uncovered) decomposes BXM returns into equity beta + short-vol + short-gamma. Not alpha — factor exposure.
+  - CBOE PUT index 2010-2024: ~9% CAGR. Below A1/A4.
+  - Covered calls on A1's 15 momentum names would have slashed 27% OOS CAGR to 12-14% in 2023-2024 (systematic right-tail clipping on the exact stocks held for their right tails).
+  - PUT ↔ SPY correlation 0.80 long-run, 0.95 in crashes — mostly equity beta with tail risk.
+  - Honest read: cash-drag replacement (converts idle cash at 4% yield to ~9% equity-beta-plus-VRP), not CAGR maximizer.
+
+- **Managed futures ETF proxies (DBMF / KMLM / CTA):** PASS with conditional trigger.
+  - 2022 was the story: DBMF +21.6%, KMLM +24.2%, SPY -18.6%. Conditional return on SPY worst-decile days: SPY -1.91%, DBMF -0.18% — genuine tail diversification.
+  - 2023-2024: DBMF cumulative -2%, KMLM -8% vs SPY +58%. Massive underperformance in bull.
+  - Book math: at 25% weight, combined CAGR drops 26.5% → 21.9% (-4.6pp). Option C (replace A2) is near-wash: 25.6%. Insurance against crisis that may not fire in 3.5-year bridge window.
+  - **Pre-committed trigger:** swap A2 → DBMF if A2 live Calmar < 1.0 at 2026-Q4 review OR a 2022-class equity crisis fires. Not prosecuted proactively.
+
+### Event-driven slow-drift scout (buyback drift) — GO verdict, SHELVED for scope
+
+Scouted after user specifically pushed back on event-driven ("Twitter bots and big shops will be faster"). Scout turned the concern into a filter: T+0 announcement reactions → HFT, concede entirely. T+5 to T+90 post-announcement drift → slow-capital only, viable for us.
+
+**Recommended candidate: mid-cap open-market buyback announcement drift.** Enter T+5 after 8-K filing, hold 63 trading days.
+
+- Academic basis: Ikenberry-Lakonishok-Vermaelen (1995) +12%/4yr, Peyer-Vermaelen (2009) +10%/4yr, **Manconi-Peyer-Vermaelen (2019 JFQA)** +6% 24-month BHAR post-2000, **Evgeniou et al. (2022)** 4-5% annualized in mid-cap, effectively zero in mega-cap.
+- **The asymmetric decay is the edge:** big shops arbed out mega-cap; mid-cap ($2-20B) retains the signal because big shops don't fish there. Our $50K size is an ADVANTAGE in this pocket.
+- Expected contribution: 6-9% sleeve CAGR, +2-3pp book CAGR at 20% weight.
+- Correlation with A1/A2/A4: counter-cyclical to A1 (buybacks trigger on low momentum names; A1 picks high momentum). Factor family not represented in current book.
+- **Implementation: ~700 LOC, 1.5-2 days** — heavy because no existing EDGAR infrastructure. EDGAR 8-K scraper + mid-cap universe filter + event-study engine.
+
+**User decision 2026-04-23: SHELVE (Option C).** Scope too heavy for current session. Scoping + verdict preserved here for future revisit. If/when we return: 1-day "minimal thesis test" path (scrape ~200 events from Finnhub company-news rather than EDGAR, run event-study, kill cheap if signal dead; build full EDGAR scraper only if minimal test passes).
+
+### Final A5 hunt scoreboard (12 vectors, 1 clean GO shelved)
+
+| Vector | Status | Reason |
+|---|---|---|
+| Crypto reversal | KILL | 80 configs, all failed min-Calmar 1.0 |
+| Commodity vol (producer XSM) | HOLD | A2-duplicative via MAT leg |
+| Rate vol (MOVE×TLT reversal) | KILL | Lost money in target hiking regime |
+| Jane Street / ETF mechanics | PASS | Greenwood-Sammon decay to zero |
+| DE Shaw / factor ensemble | HOLD | Factor-duplicative with A2 |
+| RenTech equal-weight ensemble | KILL | Dilutes signals |
+| RenTech K=4 signal-agreement | KILL | 0.84 correlated with A1+A2 |
+| AI-native FOMC overlay | NOT PROSECUTED | Look-ahead bias risk; Day-3 gate deferred |
+| low_ivol as A2 replacement | KILL | Book Calmar drops 3.13 → 2.09 |
+| A2 weight+cap optimization | DEFERRED | 3-5 day engineering sprint; ~2pp book CAGR |
+| Options overlay | HOLD | Wrong mandate (cash-drag, not CAGR) |
+| Managed futures ETFs | PASS w/ trigger | EV-negative at bridge horizon; crisis-conditional swap |
+| **Mid-cap buyback drift** | **GO (shelved)** | Scope 1.5-2 days; preserved for future |
+
+### Meta-finding for the full A5 hunt
+
+**The 3-account book is at or near the efficient frontier for our constraint set.** This isn't complacent defense — it's what 12 vectors of testing + 2 rounds of reframing produced. Anything genuinely new requires one of three moves:
+
+1. **Change the constraint set** — IBKR for futures (unlocks CTA family), margin-account config for cap=1.5, different broker for options-at-scale.
+2. **Extend into new data families** — event-driven (EDGAR 8-K for buybacks), macro-text parsing (FOMC hawkishness with proper look-ahead discipline).
+3. **Accept modest marginal improvements** — +2-3pp book CAGR via cap=1.5 engineering, or buyback-drift event-study when ready. No single "massive win" on the existing architecture.
+
+**Real opportunities flagged for future work (ordered by ROI-per-effort):**
+- **cap=1.5 engineering sprint** — 3-5 days for ~+2pp book CAGR (bounded, real, mechanical)
+- **Mid-cap buyback drift POC** — 1.5-2 days for ~+2-3pp book CAGR at 20% sleeve (shelved, GO verdict preserved)
+- **AI FOMC overlay with Day-3 gate** — 1 week if prosecuted; methodology check is load-bearing
+- **DBMF crisis-conditional swap** — 0 work until trigger fires (A2 underperformance or 2022-class event)
+- **A4 33% → 40% upgrade** — 0 new research; pre-committed path, counts from 2026-04-22 live entry
+
+**Research code retained:** `strategies/rentech_signals.py` (5-signal library, reusable), `scripts/rentech_poc.py`, `scripts/rentech_followup_tests.py`, `scripts/rentech_k4_robustness.py`. The RenTech experiment chain is the richest intellectual artifact of the session — signal-agreement K=4 works within equity-family but can't diversify our book; the signal library + combining logic are reusable if we ever add event-driven signals that genuinely expand the factor family.
+
+**Deleted:** `A2_OPTIMIZATION_SCOPE.md` (false alarm), `scripts/a2_weight_sweep.py`, `scripts/a2_replacement_measurement.py` (findings captured above).
