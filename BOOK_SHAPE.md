@@ -5,6 +5,26 @@
 
 This doc is the **pivot from "hunt for A5" to "complete the book's architecture."** It names what the book currently IS, what it IS NOT, and what we actually need to find next.
 
+**Updated 2026-04-23 after outside-review round:** three parallel independent agents (auditor, prioritizer, creative scout) read all strategic docs and produced honest synthesis. Their main correction: this doc was silent on OPERATIONAL / INFRASTRUCTURE levers. Phase 1 cloud deployment and the C3 survivorship fix are higher-priority than anything in the original Tier 1 list because the real-money clock can't start without them. See *"Priority corrections from outside review"* section below.
+
+---
+
+## Priority corrections from outside review (2026-04-23)
+
+All three outside agents independently flagged the same pattern: **infrastructure maturity is outpacing alpha evidence**, and the highest-EV moves in the next 30-90 days are OPERATIONAL, not research. Concrete corrections:
+
+1. **Phase 1 Fly.io deployment is the #1 lever, and this doc didn't name it.** Per `DEPLOYMENT_PLAN.md`, earliest real-money date is 2026-07-20, gated on ≥8 weeks of deployed-paper. Phase 1 target is ~2026-05-04. Every week Phase 1 slips, real money slips. Unlike all other levers which add CAGR *after* real money, Phase 1 is the gate *to* real money. Boring but existential.
+
+2. **C3 survivorship fix is a real-money prerequisite, and this doc treated it as "hygiene."** Actually subtractive to A1 CAGR (27.2% → ~25-26%) but required per CAPABILITIES.md before real capital. ~1 week of work using CRSP or Kenneth French point-in-time constituents.
+
+3. **AI FOMC overlay should be "skip, period" — not "skip unless."** Two prior AI-alpha kills in this system (Breakthrough #1, Mode 2 PEAD). The academic reproduction of macro regime classification is not evidence that IT works for US. Extrapolating is the exact optimism bias the discipline layer is designed to resist. Revisit only if the price-based regime composite (VIX term-structure + credit + curve) has been built AND proven insufficient.
+
+4. **"Do nothing new for 6 months" is a legitimate top-tier answer, not a counter-argument footnote.** All three agents landed on this. Let A1+A2+A4 run, ship to Fly, close C3, wait for live evidence. The bias-toward-action during the A5 hunt was itself a signal that operator fatigue is creating bored-operator risk.
+
+5. **The headline "26.5% CAGR / Calmar 4.28" leans heavily on A4, which has ~1 day of actual live signal exposure.** Drop A4 and the equity core is 19% / 3.13. Until A4 accumulates 6+ months of signal-trading days, the combined number is mostly backtest, not live evidence.
+
+6. **Consider a documentation freeze until real money.** 14+ markdown files. Docs are starting to lead reality (CAPABILITIES.md updated before capability is demonstrated live). The auditor's observation — "self-mythologizing risk" — is real and worth naming.
+
 ---
 
 ## The reframing
@@ -77,14 +97,23 @@ The three rows in bold are the real gaps.
 
 ## Ranked paths forward
 
-**Tier 1 — no broker change, prosecutable now:**
+**Tier 0 — OPERATIONAL, gates real-money graduation (must come first):**
+
+| Work | Effort | Why | Priors |
+|---|---|---|---|
+| **Phase 1 Fly.io deployment** | ~1 week | Clock is burning. Earliest real-money 2026-07-20 needs 8wk deployed-paper. | Deterministic. Plan fully scoped. |
+| **C3 survivorship fix** | ~1 week | A1's 27.2% is 1-2pp overstated. Hard prereq for real money per CAPABILITIES.md. | Mechanical. CRSP or Kenneth French data. |
+| -10% alert smoke test | ~1 afternoon | Alert was shipped 2026-04-21, never fired live. Synthetic test before first real stress. | Trivial. |
+
+**Tier 1 — strategy/research, prosecutable now:**
 
 | Work | Effort | Gap filled | Expected lift | Priors |
 |---|---|---|---|---|
-| cap=1.5 engineering sprint | 3-5 days | (existing account lift, not a gap) | ~2pp book CAGR | Deterministic — high confidence |
-| Mid-cap buyback drift POC | 1.5-2 days | Gap 2 | ~2-3pp book CAGR at 20% sleeve | Documented literature, minimum-test kill-switch — moderate confidence |
-| Macro regime composite (WALCL/DXY/M2/curve) | ~1 week | Gap 3 | Drawdown reduction, not CAGR lift | All price/macro data deterministic — moderate confidence |
-| AI FOMC overlay with Day-3 gate | ~1 week | Gap 3 | Drawdown reduction + methodology foundation | **LOW — two prior AI-alpha kills in this system; skip unless Gap 3 remains unsolved after price-based composite** |
+| cap=1.5 engineering sprint (reframed as book-level vol controller) | 3-5 days | (existing-account lift, not a gap) | ~2pp book CAGR | Deterministic — high confidence |
+| **VIX term-structure regime overlay** (NEW, from outside scout) | ~1 week | Gap 3 | Drawdown reduction (pre-triggers SPY 200d filter) | 20yr signal, pure FRED data, zero AI — MEDIUM-HIGH confidence |
+| Mid-cap buyback drift POC (1-day minimal test first) | 1 day → 1.5-2d | Gap 2 | ~2-3pp book CAGR at 20% sleeve if it clears | Documented literature, kill-switch at 2% drift — moderate confidence |
+| Price-based macro composite (WALCL/DXY/M2/curve) | ~1 week | Gap 3 | Drawdown reduction | Deterministic — moderate confidence |
+| AI FOMC overlay | — | Gap 3 | — | **SKIP — two prior AI-alpha kills; revisit only if price-based composites prove insufficient** |
 
 **Tier 2 — broker change required:**
 
@@ -100,6 +129,48 @@ The three rows in bold are the real gaps.
 | A2 live Calmar < 1.0 by 2026-Q4 OR 2022-class crisis fires | Swap A2 → DBMF for crisis alpha |
 | A4 signal-trading clock reaches 6 months (2026-10-22 earliest) with live Calmar ≥ 2.0 | A4 33% → 40% upgrade per pre-committed path |
 | Rate-vol regime re-emerges (MOVE > 120 sustained) | Revisit MOVE×TLT reversal Candidate A with updated data |
+
+---
+
+## Fresh creative ideas from outside scout (2026-04-23)
+
+These are genuinely new directions an independent creative scout proposed after reading the full project history. None are proposed for immediate prosecution — they're the **research surface for later**, after Tier 0 + Tier 1 are cleared. Ranked by scout's honest viability estimate:
+
+| Idea | Mechanism | Viability | Notes |
+|---|---|---|---|
+| **VIX term-structure regime overlay** | VIX9D/VIX3M ratio + backwardation sign → de-risk A1/A2 pre-trigger | HIGH | Already promoted to Tier 1 above. FRED data, zero AI, 20yr history. |
+| **Book-level vol controller (evolved cap=1.5 sprint)** | Aggregate book vol targeting, not per-account | HIGH | Evolve the cap=1.5 sprint into this — same engineering, better result. |
+| **Country momentum** (EWJ/EWZ/EWY/INDA/FXI/EWG/EWU/EZA) | Classic momentum across 8-12 country ETFs, top-3, monthly | MEDIUM | Hyper-US-coupled book; international momentum is genuinely different universe. 2 days to falsify. |
+| **CEF discount-to-NAV mean reversion** | Buy closed-end funds at 1yr-extreme discount, revert to median | MEDIUM | Truly orthogonal mechanism (structural capital flight), non-price signal in Gap 2. Pontiff (1997). |
+| **Commodity futures ETF momentum** (DBA/DBB/DBE/DBP/PDBC/USO/UNG/UUP) | Actual commodity factor, not producer-equity beta | MEDIUM | Different from the producer-XSM scouted; A2's MAT uses only DBC+GLD. |
+| **Duration-carry via Treasury term structure** (SHY/IEI/IEF/TLT) | Hold long duration when curve steep, short when flat — NOT the rate-vol reversal | MEDIUM | Different mechanism from the rate-vol KILL. Curve-carry, not mean-reversion. |
+| **Options on Alpaca** (cash-secured puts, defined-risk spreads) | VRP harvest, Level 1-3 available on Alpaca | MEDIUM | Self-imposed constraint; Alpaca now supports. Israelov-Nielsen caveat applies — mostly short-vol factor, not alpha. |
+| **Business Development Companies with credit-spread filter** | Hold 5-BDC equal-weight when HYG-SPY momentum positive | LOW | Interesting yield angle but 40-60% BDC drawdowns in 2020/2022 Q4 are unforgiving. |
+| **Merger-arb via MNA ETF** | Packaged merger-arb, 10-20% sleeve | LOW | Genuinely uncorrelated but deal volume has been weak post-2022; fees 0.77%. |
+
+**Scout's dealer's-choice top picks:** VIX term-structure overlay (cleanest Gap 3 shot), book-vol controller merged with cap=1.5 (highest ROI/hour), and country momentum as a 2-day falsifiability test of the hyper-US-coupling concentration risk.
+
+---
+
+## Prediction markets bookmark (2027+ revisit)
+
+**Kalshi (CFTC-regulated US)**: legitimate venue, API access, event contracts on macro (CPI, Fed, elections, weather). Two real alpha angles: (a) macro-data-release arb — CPI prints historically surprise Kalshi prices by measurable amounts (unsophisticated bettor base), (b) election market closing-price bias (favorite-longshot bias in Rothschild 2015, Forsythe et al. 1992). Contract sizes small; $50K book doesn't move markets.
+
+**Why NOT 2026:** (a) Kalshi's product surface is still small — ~50 live markets at a time, weak strategy diversification; (b) genuine alpha requires the same macro-text / LLM pipeline that Mode 2 would need, so scope is "whole new research program" not "small bookmark test"; (c) CFTC regulatory posture on expanded event contracts is in flux. Revisit 2027 when Kalshi has 200+ markets, CME ticker event contracts have launched, and systematic backtest papers exist.
+
+**Polymarket**: geo-blocked for US retail. VPN violates ToS + creates tax/withdrawal headaches. Skip.
+
+---
+
+## Non-instrument creative angles (reframes, not new strategies)
+
+From the outside scout's reframing work:
+
+1. **Bridge-capital as optionality acquisition, not return-chasing.** At $50K over 3.5 years, even perfect 40% CAGR → $192K, still short of existing NW anchor. The marginal CAGR point matters less than "what keeps me from liquidating in a crisis?" Crisis alpha allocation is buying optionality on NOT selling at the bottom — different objective function than Calmar-maximize.
+
+2. **Factor-timing via regime states, not strategy-selection.** A1/A2/A4 already span the return surface. A regime-conditional weight vector (risk-on / risk-off / crypto-bull) could extract 2-4pp book CAGR with zero new strategies. Same infrastructure; different allocator. This ties into Gap 3 (regime adaptivity) as a framework, not a new account.
+
+3. **The "reframe moment" from mid-session was the highest-value insight of the entire day.** When the user asked "am I defending the book vs. trying to expand it?" — that question flipped the low_ivol-as-A2-replacement test from assumed-good to actually-measured, and the book-level Calmar 3.13→2.09 degradation was the real finding. Generalize this: before prosecuting any future hunt, ask explicitly "am I testing this fairly or defending my priors?"
 
 ---
 
@@ -125,7 +196,11 @@ Note the Calmar target is LOWER than the current backtest 4.28 — that's intent
 
 **Is AI FOMC overlay just another hype candidate?** Probably. We have two prior AI-alpha kills in this system (Breakthrough #1 and Mode 2 PEAD). A third attempt on thin priors is not obviously warranted. The Day-3 look-ahead gate is designed to kill fast if the attempt is made, and the methodology check itself is a durable contribution regardless — but the honest default is **skip** until/unless the price-based regime composite proves regime adaptivity is the actual binding constraint. Don't be the third AI-alpha casualty on hope.
 
-**What if the honest answer is "do nothing new, let A1+A2+A4 run"?** That is a legitimate answer. The session's real finding is that the existing book is GOOD (efficient-frontier-ish under constraints), not broken. Patience + the pre-committed A4 upgrade path might be the highest-EV move for the next 6 months, regardless of what else gets built.
+**What if the honest answer is "do nothing new, let A1+A2+A4 run"?** That is a legitimate answer — **and all three outside-review agents independently arrived at some version of it.** The session's real finding is that the existing book is GOOD (efficient-frontier-ish under constraints), not broken. Patience + Phase 1 deployment + C3 fix + the pre-committed A4 upgrade path is plausibly the highest-EV move for the next 6 months, regardless of what else gets built.
+
+**Operator-fatigue signal:** The fact that the A5 hunt stretched to 12 vectors in a single session, and that each successive candidate was more exotic than the last, is itself evidence that the productive research space is getting thinner. The auditor's observation — "the operator is exhausted and knows it" — should be taken as the strongest argument for a 60-day hunting pause.
+
+**The documentation growing faster than capability.** 14+ strategic markdown files as of 2026-04-23. Consider a doc freeze until real money is on. Update CLAUDE.md and operational files as facts change; resist the urge to write new strategy docs until a strategy has generated a real-money trade.
 
 ---
 
