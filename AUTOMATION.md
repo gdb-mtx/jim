@@ -125,47 +125,47 @@ BTC flip, the next crypto filter monitor run sees `btc_scalar` already
 matches live and exits as a no-op — no duplicate trade on the flip
 day. Symmetric for the reverse case (launchd fires first).
 
-### Known oddity (2026-04-22) — one unexplained filter_state.json write
+### Solved oddity (2026-04-22) — the pre-3acc646 dry-run write
 
-On 2026-04-22 at 12:27:49 MDT (= 18:27:49 UTC), `filter_state.json`
+**Solved 2026-04-22 evening.** On 2026-04-22 at 12:27:49 MDT, `filter_state.json`
 was written (btc_scalar 0.0 → 1.0, `last_btc_flip` stamped — field
-was named `last_btc_change` at the time, renamed later that day) with
-no identified caller:
+was named `last_btc_change` at the time, renamed later that day).
+Initial investigation couldn't attribute it — see `git log --follow`
+for the detective work.
 
-- Only log entry at that second is a manual `filter_check.py --filter btc --dry-run`
-  invocation (`source=manual`), which a sandbox harness confirmed
-  does **not** write state through any code path (every `save` /
-  `update_fields` / `_atomic_write` call is gated by `if not args.dry_run:`).
-- launchd plists were installed at 12:57 MDT, **30 minutes after** the
-  write — they can't have fired at 12:27.
-- APScheduler's `_daily_crypto_rebalance` only fires at 00:05 UTC.
-- Dashboard manual rebalance never touches `filter_state.json` (exhaustive grep).
-- The old single-plist `com.fire.filter-check` was calendar-scheduled
-  at 16:30 local, never at 12:27.
+**Root cause:** pre-`3acc646` `filter_check.py` had an
+unconditional `save_state(current)` call at the end of the
+flip-detection branch (original commit `a710ac2`:292). Dry-runs
+correctly skipped order submission but **still wrote state**. On a
+`--dry-run --filter btc` invocation with a detected flip, the script
+would log "DRY RUN — skipping execution" (correct) but then persist
+`current` to `filter_state.json` (bug), stamping `last_btc_change = now`.
 
-The data landed correct (btc=1.0 matched live market), but provenance
-is unexplained. Most plausible: a forgotten human action (non-dry-run
-`filter_check.py` run in a parallel terminal, or a REPL call to
-`filter_state.update_fields` during debugging).
+- Commit `3acc646` (2026-04-22 12:54:23 MDT) added the
+  `if not args.dry_run:` gate that fixes this — 27 minutes after the
+  mystery write at 12:27:49 MDT.
+- The dry-run at 12:27:49 was running the old buggy code; the gates
+  in sandbox-verified code today only exist in the post-`3acc646`
+  version.
 
-**If this pattern repeats on a future flip day, here's how to
-diagnose quickly:**
+**Side effects:** only cosmetic — the written value (btc_scalar=1.0)
+matched what the next real-code run would have computed anyway, so
+A4 automation wasn't misled. The sole confusing artifact was the
+phantom `last_btc_change` timestamp we spent an afternoon chasing.
 
-- Both new launchd plists set `FIRE_FILTER_CHECK_SOURCE` env vars, so
-  any launchd-triggered run tags itself `launchd-crypto` or
-  `launchd-equity` in `data/filter_check.log`. A write with no
-  matching launchd-tagged log entry = human-invoked.
-- Correlate `filter_state.json` mtime against:
-  - `data/filter_check.log` (user + launchd filter_check.py runs)
-  - `data/filter_check_stderr.log` / `_stdout.log` (launchd stderr/stdout capture)
-  - `data/rebalance_log.jsonl` (entries with `source=scheduled` → APScheduler wrote)
-  - `uvicorn` server log (APScheduler `_daily_crypto_rebalance` entry/exit)
-- If none of those match, check shell history for a manual
-  `filter_check.py` invocation or a Python REPL session.
+**Defense against recurrence:** the gate exists, and both new launchd
+plists set `FIRE_FILTER_CHECK_SOURCE` env vars, so any launchd-triggered
+run tags itself `launchd-crypto` or `launchd-equity` in
+`data/filter_check.log`. Any future "where did this write come from?"
+question can cross-reference:
+- `data/filter_check.log` (user + launchd filter_check.py runs with
+  source tags)
+- `data/filter_check_stderr.log` / `_stdout.log` (launchd stderr/stdout)
+- `data/rebalance_log.jsonl` (`source=scheduled` → APScheduler wrote)
+- uvicorn server log (APScheduler `_daily_crypto_rebalance` entry/exit)
 
-Not currently blocking anything — documented here because one
-unexplained write on a flip day is the kind of thing that comes back
-to bite.
+Lesson: always `git log --follow` the file whose behavior is confusing
+before assuming a deep bug in the current code.
 
 ## What you have to do
 
