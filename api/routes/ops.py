@@ -33,11 +33,46 @@ VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
 # themselves (FIRE_FILTER_CHECK_SOURCE env var); see
 # `scripts/com.fire.filter-check-{equity,crypto}.plist`. Order matters for
 # stable UI rendering.
-LAUNCHD_JOBS: list[tuple[str, str, str]] = [
-    # (plist_label, source_tag, expected_scope)
-    ("com.fire.filter-check-equity", "launchd-equity", "spy"),
-    ("com.fire.filter-check-crypto", "launchd-crypto", "btc"),
+#
+# `schedule` mirrors the plist's StartCalendarInterval / StartInterval so
+# we can render a "next run" without shelling out to launchctl. Two shapes:
+#   ("daily_local", hour, minute)  -- mirrors StartCalendarInterval
+#   ("interval_seconds", seconds)  -- mirrors StartInterval (anchored on last_run)
+LAUNCHD_JOBS: list[tuple[str, str, str, tuple]] = [
+    # (plist_label, source_tag, expected_scope, schedule)
+    ("com.fire.filter-check-equity", "launchd-equity", "spy", ("daily_local", 16, 30)),
+    ("com.fire.filter-check-crypto", "launchd-crypto", "btc", ("interval_seconds", 14400)),
 ]
+
+
+def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Optional[str]:
+    """Compute the next expected fire time for a launchd job, as a UTC ISO string.
+
+    Mirrors the plist contracts in `scripts/com.fire.filter-check-*.plist` so
+    the Ops dashboard can show "next run" without `launchctl print` shelling.
+
+    - daily_local(hour, minute): next occurrence of that wall-clock time in
+      laptop-local TZ (today if not yet past, otherwise tomorrow). Reflects
+      the plist's StartCalendarInterval semantics.
+    - interval_seconds(s): last_run_local + s. None if we have no last_run
+      yet (interval-based plists fire on first load, then every s seconds).
+    """
+    kind = schedule[0]
+    now_local = datetime.now()
+    if kind == "daily_local":
+        _, hour, minute = schedule
+        candidate = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= now_local:
+            from datetime import timedelta
+            candidate = candidate + timedelta(days=1)
+        return candidate.astimezone(timezone.utc).isoformat()
+    if kind == "interval_seconds":
+        if last_run_local is None:
+            return None
+        from datetime import timedelta
+        candidate = last_run_local + timedelta(seconds=schedule[1])
+        return candidate.astimezone(timezone.utc).isoformat()
+    return None
 
 
 def _relative_time(seconds: float) -> str:
@@ -94,7 +129,7 @@ async def get_scheduler():
 
         latest = filter_check_log.latest_per_source(runs)
         launchd: list[dict] = []
-        for label, source_tag, expected_scope in LAUNCHD_JOBS:
+        for label, source_tag, expected_scope, schedule in LAUNCHD_JOBS:
             run = latest.get(source_tag)
             if run is None:
                 launchd.append({
@@ -107,6 +142,7 @@ async def get_scheduler():
                     "flips": [],
                     "accounts": [],
                     "last_run_relative": None,
+                    "next_run": _next_run_iso(schedule, None),
                 })
             else:
                 # Log timestamps are naive laptop-local. Localize to UTC
@@ -127,6 +163,7 @@ async def get_scheduler():
                     "flips": run.flips,
                     "accounts": run.accounts,
                     "is_dry_run": run.is_dry_run,
+                    "next_run": _next_run_iso(schedule, run.started_at),
                 })
 
         result: dict = {"apscheduler": aps, "launchd": launchd}

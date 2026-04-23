@@ -210,9 +210,15 @@ export default memo(function SchedulerPanel() {
                     <th className="pb-1.5 pr-3">Monitor</th>
                     <th className="pb-1.5 pr-3">Scope</th>
                     <th className="pb-1.5 pr-3">Last run</th>
+                    <th className="pb-1.5 pr-3">Next run</th>
                     <th className="pb-1.5 pr-3">Outcome</th>
                     <th className="pb-1.5 pr-3">Flips</th>
-                    <th className="pb-1.5 pr-3">Accounts</th>
+                    <th
+                      className="pb-1.5 pr-3 cursor-help"
+                      title="Accounts rebalanced when this monitor's filter last flipped. Empty on no_change runs (most days) — only populates on flip events."
+                    >
+                      Accounts
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,6 +243,9 @@ export default memo(function SchedulerPanel() {
                         </td>
                         <td className="py-2 pr-3 text-[#c0c0d0]">
                           {entry.last_run_relative ?? "never"}
+                        </td>
+                        <td className="py-2 pr-3 text-[#c0c0d0]">
+                          {formatRelativeFuture(entry.next_run)}
                         </td>
                         <td className="py-2 pr-3">
                           {entry.outcome ? (

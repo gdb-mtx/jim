@@ -318,6 +318,7 @@ export interface OpsLaunchdEntry {
   expected_scope: string;
   last_run: string | null;       // ISO (naive local-time) of the start line
   last_run_relative: string | null;
+  next_run: string | null;       // ISO UTC of the next expected fire (computed from plist schedule)
   outcome: "no_change" | "flip" | "first_run" | "error" | null;
   scope: string | null;
   flips: OpsLaunchdFlip[];
