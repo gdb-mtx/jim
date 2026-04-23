@@ -18,11 +18,6 @@ on:
         type: boolean
         default: false
 
-# Avoid overlapping runs.
-concurrency:
-  group: filter-watch
-  cancel-in-progress: false
-
 jobs:
   watch:
     runs-on: ubuntu-latest
