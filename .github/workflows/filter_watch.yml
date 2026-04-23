@@ -47,5 +47,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          FORCE_TEST: ${{ inputs.force_test == true && '1' || '' }}
+          # `inputs` is null for schedule triggers; gate on event name so the
+          # expression can't trip on a missing context.
+          FORCE_TEST: ${{ (github.event_name == 'workflow_dispatch' && inputs.force_test) && '1' || '' }}
         run: python3 scripts/watch_filters.py
