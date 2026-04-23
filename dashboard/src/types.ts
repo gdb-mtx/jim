@@ -376,6 +376,12 @@ export interface OpsEvent {
   source: string;
   account: number | null;
   summary: string;
+  // True for filter_flip events whose underlying filter_check.py run
+  // was a --dry-run (or the 2026-04-22 sandbox harness that produced
+  // `blocked_by_harness` status). Always false for rebalance events.
+  // Frontend renders these dimmed with a "DRY RUN" badge so phantom
+  // flips don't compete visually with real production flips.
+  is_dry_run?: boolean;
   details: Record<string, unknown>;
 }
 

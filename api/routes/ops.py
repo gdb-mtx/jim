@@ -109,17 +109,24 @@ async def get_scheduler():
                     "last_run_relative": None,
                 })
             else:
+                # Log timestamps are naive laptop-local. Localize to UTC
+                # so `last_run` serializes with an explicit +00:00 offset,
+                # matching the UTC convention used elsewhere (filter_state
+                # `last_checked`, rebalance_log timestamps) and letting
+                # downstream string comparisons sort correctly.
+                utc_started = run.started_at.astimezone(timezone.utc)
                 age_s = (datetime.now() - run.started_at).total_seconds()
                 launchd.append({
                     "label": label,
                     "source": source_tag,
                     "expected_scope": expected_scope,
-                    "last_run": run.started_at.isoformat(),
+                    "last_run": utc_started.isoformat(),
                     "last_run_relative": _relative_time(age_s),
                     "outcome": run.outcome,
                     "scope": run.scope,
                     "flips": run.flips,
                     "accounts": run.accounts,
+                    "is_dry_run": run.is_dry_run,
                 })
 
         result: dict = {"apscheduler": aps, "launchd": launchd}
@@ -290,6 +297,7 @@ async def get_events(
                 "source": src,
                 "account": r.get("account"),
                 "summary": summary,
+                "is_dry_run": False,
                 "details": r,
             })
 
@@ -303,17 +311,24 @@ async def get_events(
                 continue
             if since_naive is not None and run.started_at < since_naive:
                 continue
+            # Normalize naive log timestamp to UTC so it sorts correctly
+            # against rebalance timestamps (which are already UTC-aware).
+            # Without this, "15:30+00:00" string-compares greater than
+            # "15:08" even though the latter is actually 6h later in real
+            # time when the log tz is MDT (=UTC-6).
+            utc_started = run.started_at.astimezone(timezone.utc)
             for flip in run.flips:
                 summary = (
                     f"{flip['filter'].upper()} filter "
                     f"{flip['from']} → {flip['to']} ({flip['direction']})"
                 )
                 events.append({
-                    "timestamp": run.started_at.isoformat(),
+                    "timestamp": utc_started.isoformat(),
                     "type": "filter_flip",
                     "source": run.source,
                     "account": None,
                     "summary": summary,
+                    "is_dry_run": run.is_dry_run,
                     "details": {
                         "filter": flip["filter"],
                         "from": flip["from"],
@@ -321,6 +336,7 @@ async def get_events(
                         "direction": flip["direction"],
                         "scope": run.scope,
                         "accounts_in_run": run.accounts,
+                        "is_dry_run": run.is_dry_run,
                     },
                 })
 

@@ -73,6 +73,53 @@ def test_parses_flip_block(tmp_path):
     assert r.accounts == [
         {"account": 4, "status": "dry_run", "orders": 0}
     ]
+    # Flip detected in a --dry-run block must be flagged so the timeline
+    # can render it distinctly from production flips.
+    assert r.is_dry_run is True
+
+
+def test_is_dry_run_false_for_production_run(tmp_path):
+    production_flip = """2026-04-22 16:57:12,059 [INFO] ============================================================
+2026-04-22 16:57:12,065 [INFO] FIRE Filter Check starting (source=launchd-crypto, scope=btc)
+2026-04-22 16:57:12,896 [INFO] Filters computed in 0.8s: BTC=1.0 ($78580 vs MA $76975)
+2026-04-22 16:57:12,896 [INFO] BTC filter changed: 0.0 → 1.0 (BULLISH)
+2026-04-22 16:57:13,000 [INFO] Filter check complete: BTC → BULLISH
+2026-04-22 16:57:13,001 [INFO]   Account 4: executed (2 orders)
+"""
+    f = _write_log(tmp_path, production_flip)
+    runs = parse_filter_check_log(f)
+    assert len(runs) == 1
+    assert runs[0].is_dry_run is False
+    assert runs[0].accounts == [
+        {"account": 4, "status": "executed", "orders": 2}
+    ]
+
+
+def test_is_dry_run_true_for_harness_block(tmp_path):
+    # The 2026-04-22 sandbox harness produced `blocked_by_harness` status —
+    # a synthetic run, not a real flip. Flag it the same as dry_run so the
+    # timeline visually groups both as "not production."
+    harness = """2026-04-22 15:08:30,206 [INFO] ============================================================
+2026-04-22 15:08:30,206 [INFO] FIRE Filter Check starting (source=manual, scope=btc)
+2026-04-22 15:08:30,908 [INFO] Filters computed in 0.7s: BTC=1.0 ($78574 vs MA $76974)
+2026-04-22 15:08:30,908 [INFO] BTC filter changed: 0.0 → 1.0 (BULLISH)
+2026-04-22 15:08:31,095 [INFO] Filter check complete: BTC → BULLISH
+2026-04-22 15:08:31,095 [INFO]   Account 4: blocked_by_harness (0 orders)
+"""
+    f = _write_log(tmp_path, harness)
+    runs = parse_filter_check_log(f)
+    assert len(runs) == 1
+    assert runs[0].is_dry_run is True
+    assert runs[0].accounts == [
+        {"account": 4, "status": "blocked_by_harness", "orders": 0}
+    ]
+
+
+def test_is_dry_run_false_for_no_change_run(tmp_path):
+    f = _write_log(tmp_path, NO_CHANGE_BLOCK)
+    runs = parse_filter_check_log(f)
+    # No accounts section (no rebalance occurred); is_dry_run stays False.
+    assert runs[0].is_dry_run is False
 
 
 def test_parses_multi_block_log(tmp_path):

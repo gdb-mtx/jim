@@ -64,6 +64,13 @@ class FilterCheckRun:
     # [{"filter": "btc", "from": 0.0, "to": 1.0, "direction": "BULLISH"}]
     accounts: list[dict] = field(default_factory=list)
     # [{"account": 4, "status": "executed", "orders": 2}]
+    is_dry_run: bool = False
+    # True if the summary section shows any account in a non-production
+    # status — currently `dry_run` (from `--dry-run` CLI flag) or
+    # `blocked_by_harness` (from the 2026-04-22 sandbox harness used to
+    # verify dry-run semantics). Flips detected in such runs did NOT
+    # persist to filter_state.json, so timeline consumers should render
+    # them distinctly from real production flips.
 
 
 def _read_tail(path: Path, tail_bytes: int) -> str:
@@ -168,6 +175,11 @@ def _parse_block(lines: list[str]) -> Optional[FilterCheckRun]:
     if started_at is None:
         return None
 
+    is_dry_run = any(
+        a.get("status") in ("dry_run", "blocked_by_harness")
+        for a in accounts
+    )
+
     return FilterCheckRun(
         started_at=started_at,
         source=source,
@@ -175,6 +187,7 @@ def _parse_block(lines: list[str]) -> Optional[FilterCheckRun]:
         outcome=outcome or "error",
         flips=flips,
         accounts=accounts,
+        is_dry_run=is_dry_run,
     )
 
 

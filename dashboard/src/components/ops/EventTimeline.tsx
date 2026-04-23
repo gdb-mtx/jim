@@ -143,14 +143,17 @@ export default memo(function EventTimeline() {
               {filtered.map((e, i) => {
                 const isExpanded = expanded === i;
                 const tone = toneForEvent(e);
+                const isDryRun = Boolean(e.is_dry_run);
                 return (
                   <React.Fragment key={`${e.timestamp}-${i}`}>
                     <tr
-                      className="border-b border-[#2a2a3e]/50 cursor-pointer hover:bg-[#2a2a3e20]"
+                      className={`border-b border-[#2a2a3e]/50 cursor-pointer hover:bg-[#2a2a3e20] ${
+                        isDryRun ? "opacity-60" : ""
+                      }`}
                       onClick={() => setExpanded(isExpanded ? null : i)}
                     >
                       <td className="py-2 pr-3">
-                        <StatusDot tone={tone} />
+                        <StatusDot tone={isDryRun ? "gray" : tone} />
                       </td>
                       <td className="py-2 pr-3 tabular-nums text-[#c0c0d0]">
                         {formatTimestamp(e.timestamp)}
@@ -165,6 +168,14 @@ export default memo(function EventTimeline() {
                         >
                           {e.type}
                         </span>
+                        {isDryRun && (
+                          <span
+                            className="ml-1.5 rounded bg-[#8888a020] px-1.5 py-0.5 text-xs font-medium text-[#8888a0]"
+                            title="Run did not persist state — dry-run or debug harness"
+                          >
+                            DRY RUN
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         <span
