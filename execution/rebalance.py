@@ -18,6 +18,7 @@ import pandas as pd
 from dataclasses import dataclass, field
 from execution.alpaca_broker import AlpacaBroker, OrderRequest
 from execution.risk_manager import RiskManager, compute_drawdown
+from execution.validation_gate import require_validated
 
 log = logging.getLogger("fire.rebalance")
 from strategies.portfolio import (
@@ -266,6 +267,14 @@ def compute_rebalance(
     """
     if risk_manager is None:
         risk_manager = RiskManager()
+
+    # 0. Validation gate — hard safety net. Three call sites
+    # (API route, APScheduler, filter_check) already check before
+    # reaching here; this guarantees a future 4th call site can't
+    # silently bypass the gate. Retired accounts raise unconditionally
+    # (no override bypass possible — see validation_gate.check). T4,
+    # AUDIT_MONTH2_REVIEW §4.
+    require_validated(broker.account)
 
     # 1. Get current portfolio state
     portfolio_value = broker.get_portfolio_value()

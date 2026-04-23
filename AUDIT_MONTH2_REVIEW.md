@@ -4,7 +4,11 @@
 **Scope:** Adversarial review of the Month-2 audit arc (C1–C7, S1–S5, D1–D4, R1–R16). Independent reads of the code behind every closed Tier-1 and Tier-2 item, with an explicit mandate to surface bugs the audit didn't catch.
 **Method:** Two parallel adversarial agents + direct verification of their claims against source. Findings below include corrections where agent claims didn't hold up — this review is only useful if it's honest about its own signal-to-noise.
 
-**Post-review status (2026-04-21 Pass 1a, commit `d1b753b`):** N2 (SPY+BTC NaN guards) and N5 (plausibility ERROR log) resolved, with 2 regression tests added (suite: 90 → 92). N1 verified against source and **reclassified as miscast** — sim and live both use `sqrt(252)`, so the parity-break the review feared doesn't exist (see §3 N1 update). Pre-2026-05-04 rebalance scope is closed. T4, T1, N4, N3, O1–O4 remain.
+**Post-review status (2026-04-21 Pass 1a, commit `d1b753b`):** N2 (SPY+BTC NaN guards) and N5 (plausibility ERROR log) resolved, with 2 regression tests added (suite: 90 → 92). N1 verified against source and **reclassified as miscast** — sim and live both use `sqrt(252)`, so the parity-break the review feared doesn't exist (see §3 N1 update). Pre-2026-05-04 rebalance scope is closed.
+
+**2026-04-22:** T4 closed — `require_validated(broker.account)` is now step 0 of `compute_rebalance` (defense-in-depth alongside the three call-site guards), with 2 new tests pinning the retired-account block + override-not-bypassable semantics. Two stale `test_plausibility` assertions updated to the current "escapes band" error format. Suite now 113 passing.
+
+T1, N4, N3, O1–O4 remain.
 
 ---
 
@@ -200,7 +204,16 @@ The 3.4pp A4 drag is the headline number from the C6 fix — it's in CLAUDE.md a
 
 **Fix:** `test_a4_crypto_cost_drag_matches_audited_3_4pp()`. Slow (runs full A4 backtest), should be marked `@pytest.mark.slow` and excluded from quick-loop.
 
-### 🟡 T4. Retired-account block not tested through `compute_rebalance` itself
+### ✅ T4. Retired-account block not tested through `compute_rebalance` itself — CLOSED (2026-04-22)
+
+**Resolution:** `require_validated(broker.account)` added as step 0 of `compute_rebalance` in [execution/rebalance.py](execution/rebalance.py) — makes the gate a code-level invariant that future call sites inherit for free, rather than a call-site contract that can be silently skipped. Three existing call-sites (API route, APScheduler, filter_check) retained for early-rejection + layer-specific error translation (403, Ops telemetry, per-account-loop continue). Two new tests in [tests/test_rebalance.py](tests/test_rebalance.py):
+- `test_rebalance_against_retired_account_is_blocked` — calls `compute_rebalance` with `broker.account=3`, asserts `ValidationGateError` with "RETIRED" in message.
+- `test_rebalance_retired_block_not_bypassable_by_override` — confirms R2 semantics (global + per-account override env vars can't bypass retired status) hold at the `compute_rebalance` layer too.
+
+Eight existing rebalance tests patched with `@patch("execution.rebalance.require_validated")` — mechanical, no behavior change.
+
+**Original finding (retained for context):**
+
 **Files:** `tests/test_validation_gate.py` covers `require_validated(3)` raising; `tests/test_rebalance.py` does not exercise A3-equivalent account.
 
 The rebalance gate is enforced at the broker construction / API-route layer, not inside `compute_rebalance`. A future refactor could bypass the gate without tripping existing tests.
@@ -268,7 +281,7 @@ These spurious claims are called out to keep the signal-to-noise of this review 
 - ~~**N1:** verify ppy=252 vs ppy=365 parity~~ — **no action needed.** Verification (§3 N1) confirmed both sides use `sqrt(252)`; parity holds. Docstring clarification only.
 
 ### Month 3
-- **T4:** retired-account block tested through `compute_rebalance` (~20 lines). Tech-debt priority 28 — highest on the board because the invariant is catastrophic-fail.
+- ✅ **T4:** retired-account block tested through `compute_rebalance` — closed 2026-04-22. Moved the check into `compute_rebalance` itself (defense-in-depth rather than test-only) + 2 regression tests.
 - **T1:** journal-persists-through-execute-failure integration test (~40 lines). Priority 21.
 - **N4:** extend rebalance journal with pre-filter/pre-scalar weights. Enables post-mortems (~15 lines).
 - **T2:** vol-scaling parity test against real A2 snapshots (gated on fixture presence, ~30 lines).

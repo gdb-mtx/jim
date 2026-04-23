@@ -315,7 +315,6 @@ Dashboard polish from same session: post-execute auto-refresh of summary/positio
 **Next steps:**
 - **Mode 1 priority:** Tier 1 fully closed except C3 survivorship (C1, C2, C4, C5, C6, C7 all fixed). Tier 2 (S1-S5) + Tier 3 (D1-D4) + Tier 4 (R1, R3, R11, R12, R16) all fixed. **C6 resolved 2026-04-21** — per-strategy transaction costs in backtest via `backtesting/costs.py` (5 bps equity round-trip, 20 bps crypto round-trip); A4 drag came in at 3.4pp (vs audit's 0.5-1pp estimate) due to higher-than-assumed rotation frequency; all three accounts still PASS/MARGINAL. Combined headline re-issued: 3-acct @ 1/3 is **26.5% CAGR / -6.2% MaxDD / Calmar 4.28** OOS. Tier 4 R2, R4-R10, R13-R15 reporting hygiene remain as lower-priority cleanup.
 - **Find/build a new Account 4-class strategy** — user's directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
-- Mode 1: Add dashboard banner showing validation status per account (reads `data/risk_state/validation_state.json`).
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: Track C recommendation for 40 days (check price by 2026-05-25).

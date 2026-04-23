@@ -39,7 +39,7 @@ def test_good_btc_passes(tmp_state):
 def test_wrong_btc_values_raise(tmp_state):
     # Simulates the 2026-04-21 bug: yfinance returned $9-$29 range
     bad = pd.Series([9.0, 20.5, 24.5, 29.0], name="BTC-USD")
-    with pytest.raises(plausibility.PlausibilityError, match="below expected floor"):
+    with pytest.raises(plausibility.PlausibilityError, match="escapes band"):
         plausibility.assert_plausible(bad, "BTC-USD")
     state = plausibility.get_state()
     assert "BTC-USD" in state
@@ -50,7 +50,7 @@ def test_wrong_btc_values_raise(tmp_state):
 def test_above_cap_raises(tmp_state):
     # SPY min 50, max 2000 — values all above $2000
     way_too_high = pd.Series([3000, 3500, 4000], name="SPY")
-    with pytest.raises(plausibility.PlausibilityError, match="above expected cap"):
+    with pytest.raises(plausibility.PlausibilityError, match="escapes band"):
         plausibility.assert_plausible(way_too_high, "SPY")
 
 

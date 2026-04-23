@@ -44,8 +44,9 @@ def _mock_broker(
     return broker
 
 
+@patch("execution.rebalance.require_validated")
 @patch("execution.rebalance.get_current_signals")
-def test_basic_rebalance_generates_orders(mock_signals):
+def test_basic_rebalance_generates_orders(mock_signals, _gate):
     """Rebalance from empty portfolio to target weights generates buy orders."""
     mock_signals.return_value = {"AAPL": 0.10, "MSFT": 0.10}
 
@@ -63,8 +64,9 @@ def test_basic_rebalance_generates_orders(mock_signals):
     assert symbols == {"AAPL", "MSFT"}
 
 
+@patch("execution.rebalance.require_validated")
 @patch("execution.rebalance.get_current_signals")
-def test_rebalance_generates_sells(mock_signals):
+def test_rebalance_generates_sells(mock_signals, _gate):
     """Rebalance with excess positions generates sell orders."""
     mock_signals.return_value = {"AAPL": 0.10}  # Only want AAPL
 
@@ -85,9 +87,10 @@ def test_rebalance_generates_sells(mock_signals):
     assert any(o.symbol == "MSFT" for o in sell_orders)
 
 
+@patch("execution.rebalance.require_validated")
 @patch("data.snapshots.load_snapshots")
 @patch("execution.rebalance.get_current_signals")
-def test_catastrophe_halt_latches_and_blocks_rebalance(mock_signals, mock_load):
+def test_catastrophe_halt_latches_and_blocks_rebalance(mock_signals, mock_load, _gate):
     """Snapshots show peak $100k; live equity $60k = -40% DD → halt latches, orders empty."""
     mock_signals.return_value = {"AAPL": 0.10}
     mock_load.return_value = _snapshots([100_000, 95_000, 80_000])
@@ -106,9 +109,10 @@ def test_catastrophe_halt_latches_and_blocks_rebalance(mock_signals, mock_load):
     assert rm.halted is True
 
 
+@patch("execution.rebalance.require_validated")
 @patch("data.snapshots.load_snapshots")
 @patch("execution.rebalance.get_current_signals")
-def test_drawdown_alert_does_not_block_rebalance(mock_signals, mock_load):
+def test_drawdown_alert_does_not_block_rebalance(mock_signals, mock_load, _gate):
     """Snapshots peak $100k; live $88k = -12% DD → alert_active but NOT halted; orders flow."""
     mock_signals.return_value = {"AAPL": 0.10}
     mock_load.return_value = _snapshots([100_000, 95_000])
@@ -132,9 +136,10 @@ def test_drawdown_alert_does_not_block_rebalance(mock_signals, mock_load):
     assert len(result.orders) > 0
 
 
+@patch("execution.rebalance.require_validated")
 @patch("data.snapshots.load_snapshots")
 @patch("execution.rebalance.get_current_signals")
-def test_prelatched_halt_blocks_even_if_dd_recovered(mock_signals, mock_load):
+def test_prelatched_halt_blocks_even_if_dd_recovered(mock_signals, mock_load, _gate):
     """Once the halt is latched, recovered equity still can't trade until manual reset."""
     mock_signals.return_value = {"AAPL": 0.10}
     mock_load.return_value = _snapshots([100_000])
@@ -154,8 +159,9 @@ def test_prelatched_halt_blocks_even_if_dd_recovered(mock_signals, mock_load):
     assert result.risk_check["halted"] is True
 
 
+@patch("execution.rebalance.require_validated")
 @patch("execution.rebalance.get_current_signals")
-def test_no_orders_when_at_target(mock_signals):
+def test_no_orders_when_at_target(mock_signals, _gate):
     """No orders generated when already at target."""
     mock_signals.return_value = {"AAPL": 0.10}  # 10% = $10k = 100 shares at $100
 
@@ -174,8 +180,9 @@ def test_no_orders_when_at_target(mock_signals):
     assert result.orders == []
 
 
+@patch("execution.rebalance.require_validated")
 @patch("execution.rebalance.get_current_signals")
-def test_missing_prices_flagged(mock_signals):
+def test_missing_prices_flagged(mock_signals, _gate):
     """Missing target prices are warned but don't block execution.
 
     Missing prices for target-only symbols (not in current positions)
@@ -207,8 +214,9 @@ def test_missing_prices_flagged(mock_signals):
     assert any(o.symbol == "AAPL" for o in result.orders)
 
 
+@patch("execution.rebalance.require_validated")
 @patch("execution.rebalance.get_current_signals")
-def test_missing_current_position_prices_block_execution(mock_signals):
+def test_missing_current_position_prices_block_execution(mock_signals, _gate):
     """Missing prices for currently-held positions MUST block execution.
 
     If we hold a symbol but can't price it, sell sizing would be wrong.
@@ -329,3 +337,66 @@ def test_btc_filter_nan_raises_rather_than_liquidating(
 
     with pytest.raises(RuntimeError, match="BTC filter scalar is NaN"):
         get_current_signals("crypto_momentum_filtered")
+
+
+# ---- T4 (AUDIT_MONTH2_REVIEW §4): retired-account block through compute_rebalance ----
+#
+# The validation gate is enforced at three call sites (API route, APScheduler,
+# filter_check). If a future 4th call site forgets `require_validated`, the
+# hard safety net inside `compute_rebalance` must still reject account=3.
+# This pins the invariant: no order submission path to a retired account.
+
+
+def test_rebalance_against_retired_account_is_blocked(tmp_path, monkeypatch):
+    """compute_rebalance must refuse to run against a retired account, even if
+    the caller bypasses the call-site validation check. This is the hard safety
+    net — catastrophic-fail invariant, AUDIT_MONTH2_REVIEW T4.
+    """
+    from execution import validation_gate
+    from execution.validation_gate import ValidationGateError
+
+    # Point the gate at a fresh state file with A3 marked retired.
+    state_path = tmp_path / "validation_state.json"
+    state_path.write_text(
+        '{"account_3": {"status": "retired", "retired_reason": "test"}}'
+    )
+    monkeypatch.setattr(validation_gate, "STATE_PATH", state_path)
+
+    # Broker set to account=3. Construction itself succeeds (A3 is a valid
+    # account slot); the gate must catch it inside compute_rebalance.
+    broker = _mock_broker(positions={}, value=100_000)
+    broker.account = 3
+
+    with pytest.raises(ValidationGateError, match="RETIRED"):
+        compute_rebalance(
+            broker=broker,
+            strategy_id="test_strategy",
+            risk_manager=RiskManager(persist=False),
+        )
+
+
+def test_rebalance_retired_block_not_bypassable_by_override(tmp_path, monkeypatch):
+    """Even with FIRE_VALIDATION_OVERRIDE=1 set, the retired-account block
+    must still fire. Matches validation_gate's R2 semantics at the
+    compute_rebalance layer.
+    """
+    from execution import validation_gate
+    from execution.validation_gate import ValidationGateError
+
+    state_path = tmp_path / "validation_state.json"
+    state_path.write_text(
+        '{"account_3": {"status": "retired", "retired_reason": "test"}}'
+    )
+    monkeypatch.setattr(validation_gate, "STATE_PATH", state_path)
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE", "1")
+    monkeypatch.setenv("FIRE_VALIDATION_OVERRIDE_ACCT3", "1")
+
+    broker = _mock_broker(positions={}, value=100_000)
+    broker.account = 3
+
+    with pytest.raises(ValidationGateError, match="RETIRED"):
+        compute_rebalance(
+            broker=broker,
+            strategy_id="test_strategy",
+            risk_manager=RiskManager(persist=False),
+        )
