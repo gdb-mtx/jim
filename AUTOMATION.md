@@ -97,33 +97,55 @@ this has no impact on other code paths.
 
 ### Trigger vs work-done distinction
 
-| Layer | Trigger | Work done when triggered | Requires server? |
-|---|---|---|---|
-| APScheduler (in uvicorn) | Fires every day at 00:05 UTC, unconditionally | Full rebalance on A4: signal + filter + vol scaling | Yes |
-| Filter monitor — equity (launchd) | Fires at 4:30 PM laptop-local daily; rebalance only if SPY scalar differs from saved state | Full rebalance on A1/A2 (same `compute_rebalance` path) | No |
-| Filter monitor — crypto (launchd) | Fires every 4 hours; rebalance only if BTC scalar differs from saved state | Full rebalance on A4 (same `compute_rebalance` path) | No |
+| Layer | Trigger | Work done when triggered | Requires server? | Requires laptop on? |
+|---|---|---|---|---|
+| APScheduler (in uvicorn) | Fires every day at 00:05 UTC, unconditionally | Full rebalance on A4: signal + filter + vol scaling | Yes | Yes |
+| Filter monitor — equity (launchd) | Fires at 4:30 PM laptop-local daily; rebalance only if SPY scalar differs from saved state | Full rebalance on A1/A2 (same `compute_rebalance` path) | No | Yes |
+| Filter monitor — crypto (launchd) | Fires every 4 hours; rebalance only if BTC scalar differs from saved state | Full rebalance on A4 (same `compute_rebalance` path) | No | Yes |
+| Travel watcher (GitHub Actions) | Fires every ~30 min at `:07/:37` UTC | **Notifies phone only** (ntfy push on crossing + daily heartbeat) — does not trade | No | No |
 
-The crypto filter monitor is the safety net for the scenario that
-matters most: a BTC filter *flip* happening while the server was
-down. Worst-case detection lag is ~4 hours, not 24+.
+The crypto filter monitor is the safety net for a BTC filter *flip*
+happening while the server is down but the laptop is still on (worst-
+case detection lag ~4 hours). The travel watcher is the safety net for
+a filter flip happening while **the laptop is also off** — it turns
+the failure mode from "silent miss" into "phone buzz + 2-hour human-
+triggered rebalance."
 
 ### Closing the double-rebalance gap
 
 After any successful rebalance, the writer updates
-`data/risk_state/filter_state.json` with the BTC scalar it traded
-against. This is done by:
+`data/risk_state/filter_state.json` with the scalar it traded against.
+As of 2026-04-23 there are **three** writers, all file-locked via the
+shared `data/filter_state.py` module:
 
-- `filter_check.py` directly (via the shared `data/filter_state.py`
-  module), and
-- the APScheduler job in `api/main.py` (added 2026-04-22) after
-  `_daily_crypto_rebalance` completes successfully.
+- `filter_check.py` (launchd) — writes BTC + SPY scalars after its
+  own flip-triggered rebalance.
+- APScheduler in `api/main.py` after `_daily_crypto_rebalance` —
+  writes `btc_scalar` for A4.
+- `/api/orders/rebalance/execute` in `api/routes/orders.py` — writes
+  `spy_scalar` for A1/A2 manual rebalances, `btc_scalar` for A4
+  manual rebalances. **This matters most during travel**: when the
+  GitHub Actions watcher pings your phone and you open the laptop
+  to manually execute, the state file stays fresh without launchd
+  having to run.
 
-The write is serialized by a `fcntl` file lock, so concurrent writers
-(the two plists + APScheduler) cannot race. This closes the
-double-rebalance gap: if APScheduler at 00:05 UTC already acted on a
-BTC flip, the next crypto filter monitor run sees `btc_scalar` already
-matches live and exits as a no-op — no duplicate trade on the flip
-day. Symmetric for the reverse case (launchd fires first).
+The three writers serialize via `fcntl` so concurrent updates cannot
+race. This closes the double-rebalance gap: if APScheduler at 00:05
+UTC already acted on a BTC flip, the next crypto filter monitor run
+sees `btc_scalar` already matches live and exits as a no-op — no
+duplicate trade. Symmetric across all three writers.
+
+**Important subtlety (fixed 2026-04-23):** both APScheduler and the
+manual endpoint now **recompute the filter live** instead of reading
+`result.btc_filter_scalar`. The `crypto_momentum_filtered` portfolio
+config sets `btc_filter=False` at the portfolio level (filter is
+internal to CryptoMomentum to avoid double-filtering), which leaves
+`result.btc_filter_scalar` at its default `1.0` even when BTC is
+below the MA. A pre-2026-04-23 APScheduler run during a BTC bear
+would have silently written `btc_scalar=1.0` to the state file; the
+launchd 4-hourly corrected it, masking the bug. Both writers now
+mirror `filter_check.py:compute_filters` and recompute against live
+prices.
 
 ### Solved oddity (2026-04-22) — the pre-3acc646 dry-run write
 
@@ -167,6 +189,114 @@ question can cross-reference:
 Lesson: always `git log --follow` the file whose behavior is confusing
 before assuming a deep bug in the current code.
 
+## Travel-window safety net: GitHub Actions + ntfy.sh
+
+Added 2026-04-23. The launchd filter monitor still needs the laptop
+to be awake — a digital-nomad day where the laptop spends 24h in a
+bag means launchd misses the SPY/BTC check entirely, and the
+APScheduler 00:05 UTC rebalance never fires either. This is the
+failure mode that matters most when traveling: **an undetected BTC
+filter flip during a 7-day trip could leave A4 fully exposed through
+a crypto bear market start.**
+
+To cover that gap, a GitHub Actions workflow polls BTC and SPY prices
+every ~30 minutes, compares them to MA thresholds checked in to the
+repo, and pushes a phone notification via [ntfy.sh](https://ntfy.sh)
+on a state transition (above ↔ below MA). The runner is in GitHub's
+infrastructure, so it runs regardless of laptop state.
+
+### Architecture
+
+| Component | File | Role |
+|---|---|---|
+| Cron runner | [.github/workflows/filter_watch.yml](.github/workflows/filter_watch.yml) | GitHub-hosted schedule, fires at `7,37 * * * *` UTC (off-peak slots — the `*/30` pattern fires at the most congested moments of every hour per GitHub's docs) |
+| Checker script | [scripts/watch_filters.py](scripts/watch_filters.py) | Stdlib only (no uv install needed in the runner). Fetches BTC from CoinGecko (free, no key) and SPY from Alpaca data API, compares to thresholds, pushes ntfy on crossing |
+| Thresholds | [scripts/filter_watch_thresholds.json](scripts/filter_watch_thresholds.json) | `btc_125_ma` + `spy_200_ma`, refreshed before each trip by `travel_prep.sh` |
+| State cache | `scripts/filter_watch_state.json` (not committed — persisted across runs via `actions/cache@v4`) | `last_btc_above` / `last_spy_above` flags so a crossing alert fires exactly once, not every 30 min while still-below |
+| Pre-travel helper | [scripts/travel_prep.sh](scripts/travel_prep.sh) | Copies today's MAs from `filter_state.json` into the watcher's threshold file, commits, pushes. Refuses to run off `main` or with unrelated uncommitted changes |
+
+### Three kinds of notifications
+
+| Trigger | Priority | When | Purpose |
+|---|---|---|---|
+| **Crossing** (above → below, below → above) | `high` (bypasses phone DND) | Immediately on the first cron tick that observes the transition | Wake the user — they need to open the laptop within ~2h and rebalance |
+| **Daily heartbeat** | `low` (silent in-app) | One cron tick per UTC day in the 14:00-14:30 window | Positive "system alive" confirmation so the user knows the watcher is running when nothing has crossed |
+| **Manual `workflow_dispatch` test** | `default` | Anytime the user triggers via GitHub UI with `force_test=true` | Verify end-to-end pipeline is healthy |
+
+Heartbeat de-dup: `last_heartbeat_date` in the state cache. Second
+cron tick in the same UTC-day window silently skips.
+
+### Travel-day flow
+
+1. **Pre-travel**: run `bash scripts/travel_prep.sh` to refresh the
+   MA thresholds and push. The GitHub Actions watcher picks up the
+   new thresholds on its next run (within 30 min).
+2. **Laptop goes dark** (plane, hotel Wi-Fi off, etc.). No launchd,
+   no APScheduler. The GitHub runner keeps polling every ~30 min.
+3. **Daily 14:00 UTC**: phone gets a quiet heartbeat ping ("all
+   green, BTC $X above MA, SPY $Y above MA"). Reassurance.
+4. **Crossing happens** (e.g. BTC drops below 125d MA during NY
+   evening): phone buzzes with a high-priority ntfy within 0-30
+   minutes. Bypasses DND.
+5. **User opens laptop within ~2h**, opens the dashboard, clicks
+   Preview → Execute on the affected account. The new filter_state
+   sync (see previous section) keeps everything consistent so
+   post-travel launchd runs don't misdetect.
+6. **Daily A4 rotation that the user wants to keep collecting data
+   on**: user opens laptop whenever convenient each travel day and
+   manually triggers the A4 rebalance. The signal is 21d momentum
+   and barely shifts intraday — a ~20h offset vs. the 00:05 UTC
+   scheduled fire is well inside the noise (~0.1-0.3% cumulative
+   timing drift over a week).
+
+### What it doesn't cover
+
+- **It does not trade.** It only notifies. You still have to open
+  the laptop and press Execute. If you can't open the laptop within
+  ~24h of a crossing, A4 sits in its old positions through a bear
+  start. Bounded risk by design — the real fix for 24/7 unattended
+  trading is the Fly.io deployment in `DEPLOYMENT_PLAN.md`.
+- **GitHub Actions scheduled triggers have a documented warm-up
+  delay.** When the workflow was first added on 2026-04-23 at 16:09
+  UTC, the first scheduled run didn't fire until 18:44 UTC — ~2.5
+  hours after creation. This appears to be GitHub's scheduler being
+  lazy about new workflows on private free-tier repos; unrelated to
+  our YAML. Once activated, subsequent runs fire near-schedule (~7
+  min delay typical).
+- **Minute-precision is not guaranteed.** GitHub's own docs note
+  that scheduled workflows may be delayed during periods of high
+  load, especially at :00 and :30 of each hour. We use `:07` and
+  `:37` specifically to dodge those slots.
+
+### Pre-travel one-command
+
+```
+bash scripts/travel_prep.sh
+```
+
+Or alias it: `alias fire-travel-prep='/Users/george/Desktop/Projects/FIRE/scripts/travel_prep.sh'`
+in `~/.zshrc`. The script is a no-op when thresholds haven't drifted,
+so running it repeatedly is safe.
+
+### GitHub secrets required (one-time setup)
+
+In repo Settings → Secrets:
+- `NTFY_TOPIC` — the unguessable topic string you subscribed to in
+  the ntfy phone app.
+- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — any account's data-API
+  credentials; needed to fetch the SPY trade. A1's keys are fine.
+
+### Verifying the watcher is healthy
+
+From the laptop:
+```
+gh run list --workflow filter_watch.yml --limit 10
+gh run view <run-id> --log | grep "crossings\|Sent"
+```
+
+Or in the GitHub Actions tab in VS Code (with the GitHub Actions
+extension) → `filter_watch` workflow → most recent runs.
+
 ## What you have to do
 
 **Nothing, as long as the server stays up overnight.** Keep uvicorn
@@ -190,6 +320,24 @@ If you realize the next morning that the server was off overnight: just
 restart it and manually hit Execute on the A4 rebalance panel — same
 path as a manual first-time entry. You are at most one day late on the
 signal.
+
+### During travel (laptop off for days)
+
+1. Before leaving: `bash scripts/travel_prep.sh` — refreshes thresholds,
+   commits, pushes. Confirm one scheduled GitHub Actions run fires
+   afterwards (VS Code Actions panel or `gh run list ...`).
+2. Subscribe to the ntfy topic on your phone if you haven't already.
+3. During the trip:
+   - Expect one daily heartbeat ntfy around 14:00 UTC (low priority,
+     silent in-app).
+   - On a crossing, high-priority ntfy bypasses DND — open the laptop
+     within ~2h and click Execute on the affected account.
+   - Each day, open the laptop once to manually trigger the A4
+     rebalance (Preview → Execute). Takes 30 seconds and keeps the
+     live-tracking data flowing.
+4. After returning: launchd + APScheduler resume as normal. No state
+   reconciliation needed — `filter_state.json` stayed fresh via the
+   manual-rebalance sync path.
 
 ## Practical overnight checklist
 
@@ -262,6 +410,20 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   event (manual, scheduled, and filter-monitor-triggered)
 - `DEPLOYMENT_PLAN.md` — plan to migrate the scheduler to 24/7 cloud
   hosting so the "laptop must be awake" constraint goes away
+- [.github/workflows/filter_watch.yml](.github/workflows/filter_watch.yml)
+  — GitHub Actions cron (added 2026-04-23) that runs the
+  travel-window watcher regardless of laptop state
+- [scripts/watch_filters.py](scripts/watch_filters.py) — stdlib-only
+  BTC/SPY threshold checker that pushes ntfy on crossings + daily
+  heartbeat; invoked by the workflow
+- [scripts/filter_watch_thresholds.json](scripts/filter_watch_thresholds.json)
+  — committed MA thresholds, refreshed per trip
+- [scripts/travel_prep.sh](scripts/travel_prep.sh) — one-command
+  pre-travel refresh helper (copies thresholds from filter_state.json,
+  commits, pushes)
+- [api/routes/orders.py](api/routes/orders.py) — manual
+  `/rebalance/execute` endpoint; added filter_state.json sync
+  (2026-04-23) so travel-window manual trades keep state consistent
 - `OPS_DASHBOARD_PLAN.md` + Ops dashboard tab — built 2026-04-22
   (commits `79b957e` backend, `8f23750` frontend, `6b0d78b` cleanup).
   Single pane covering APScheduler jobs + launchd filter monitors +
