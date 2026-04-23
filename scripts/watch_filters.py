@@ -117,6 +117,25 @@ def main() -> int:
         )
         print("Test notification sent.")
 
+    # Daily heartbeat at 14:00 UTC -- one quiet ping per day so the user
+    # has positive confirmation the watcher is alive (otherwise scheduled
+    # runs are silent unless a flip happens, which is correct but feels
+    # like the system is broken). Window is the single cron tick that
+    # falls between 14:00 and 14:30 inclusive.
+    now = datetime.now(timezone.utc)
+    last_heartbeat_iso = state.get("last_heartbeat_date")
+    today_str = now.date().isoformat()
+    in_heartbeat_window = now.hour == 14 and now.minute < 30
+    if in_heartbeat_window and last_heartbeat_iso != today_str:
+        send_ntfy(
+            "FIRE Filter Watch - daily heartbeat",
+            f"All green. BTC ${btc_price:,.0f} ({'above' if btc_above else 'below'} ${btc_ma:,.0f}); "
+            f"SPY ${spy_price:,.2f} ({'above' if spy_above else 'below'} ${spy_ma:,.2f}).",
+            priority="low",
+            tags="white_check_mark",
+        )
+        print(f"Heartbeat sent ({today_str}).")
+
     if alerts:
         body = "\n".join(alerts) + "\n\nOpen laptop and rebalance affected accounts."
         send_ntfy("FIRE Filter Flip", body, priority="high", tags="rotating_light")
@@ -130,18 +149,16 @@ def main() -> int:
         )
 
     # Persist new state — the workflow's cache action picks this up.
-    STATE_PATH.write_text(
-        json.dumps(
-            {
-                "last_btc_above": btc_above,
-                "last_spy_above": spy_above,
-                "last_checked": datetime.now(timezone.utc).isoformat(),
-                "btc_price": btc_price,
-                "spy_price": spy_price,
-            },
-            indent=2,
-        )
-    )
+    new_state = {
+        "last_btc_above": btc_above,
+        "last_spy_above": spy_above,
+        "last_checked": datetime.now(timezone.utc).isoformat(),
+        "btc_price": btc_price,
+        "spy_price": spy_price,
+        "last_heartbeat_date": today_str if (in_heartbeat_window and last_heartbeat_iso != today_str)
+                               else last_heartbeat_iso,
+    }
+    STATE_PATH.write_text(json.dumps(new_state, indent=2))
     return 0
 
 
