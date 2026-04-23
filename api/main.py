@@ -51,6 +51,56 @@ def _record_run(job_id: str, started: str, status: str, error: str | None = None
     }
 
 
+def _backfill_last_run_from_journal() -> None:
+    """Populate `_last_run_info["daily_crypto_rebalance"]` from the most
+    recent scheduled entry in `rebalance_log.jsonl`.
+
+    Motivation: `_last_run_info` is in-memory only (per design — the
+    journal is the durable record). Uvicorn `--reload` wipes it on every
+    code change, so the Ops panel's APScheduler row shows "never" after
+    any restart until the next 00:05 UTC fire. This backfill closes that
+    gap by reconstructing the most recent execution from the journal.
+
+    Limitations: only captures journal-writing outcomes (success +
+    execute-time failures). Skip states (validation_gate, locked,
+    halted, price_error) and "no trades needed" no-ops don't write to
+    the journal, so after a restart the panel shows the most recent
+    EXECUTION instead of the most recent attempt. Acceptable — "last
+    executed" is the more useful signal, and the miss window is at most
+    one day given the 00:05 UTC daily cadence.
+    """
+    try:
+        from execution.rebalance_log import get_recent_rebalances
+        for r in get_recent_rebalances(limit=100):
+            if r.get("source") != "scheduled":
+                continue
+            ts = r.get("timestamp")
+            if not ts:
+                continue
+            failed = (
+                bool(r.get("execute_error"))
+                or (r.get("orders_failed", 0) or 0) > 0
+            )
+            _last_run_info["daily_crypto_rebalance"] = {
+                "started": ts,
+                # Journal records one timestamp close to job completion —
+                # use it for both started and finished as a best-effort
+                # reconstruction. Slightly lossy but good enough for
+                # "when did the last scheduled rebalance execute?".
+                "finished": ts,
+                "status": "failed" if failed else "success",
+                "error": r.get("execute_error"),
+            }
+            log.info(
+                f"Backfilled daily_crypto_rebalance last-run from journal: "
+                f"{ts} ({'failed' if failed else 'success'})"
+            )
+            return
+        log.info("No scheduled rebalance in journal; last-run stays empty")
+    except Exception as e:
+        log.warning(f"Journal backfill failed (non-fatal): {e}")
+
+
 async def _daily_crypto_rebalance():
     """Run daily crypto rebalance for Account 4 at 00:05 UTC.
 
@@ -245,6 +295,11 @@ async def lifespan(app: FastAPI):
     # Run backfill/snapshot in a background thread (non-blocking)
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _startup_backfill_and_snapshot)
+
+    # Seed the in-memory last-run cache from the durable journal so dev
+    # reloads and production restarts don't flash "never" on the Ops
+    # panel's APScheduler row between the restart and the next fire.
+    _backfill_last_run_from_journal()
 
     # Start APScheduler for daily crypto rebalance. Stored on the module
     # global so `api/routes/ops.py` can read `.get_jobs()` / `.running`.
