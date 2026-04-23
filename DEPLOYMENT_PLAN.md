@@ -101,7 +101,7 @@ Key insight (2026-04-20): the live module does not depend on `backtesting/` at r
 - `execution/` — rebalance, broker, risk manager, validation gate, rebalance log
 - `strategies/*.py` — but only `generate_signals()` methods + the filter functions + PORTFOLIOS config
 - `data/pipeline.py`, `data/crypto.py`, `data/sp500.py`, `data/snapshots.py`, `data/trading_dates.py`, `data/correlation.py`
-- `api/main.py` (trimmed), `api/locks.py`, `api/routes/portfolio.py`, `api/routes/orders.py`, `api/routes/strategies.py`
+- `api/main.py` (trimmed), `api/locks.py`, `api/routes/portfolio.py`, `api/routes/orders.py`, `api/routes/ops.py`
 - `scripts/filter_check.py`
 - `data/risk_state/*.json` + relevant `data/raw/*.parquet` on the persistent volume
 
@@ -109,7 +109,8 @@ Key insight (2026-04-20): the live module does not depend on `backtesting/` at r
 - `backtesting/` — all of it (metrics, validation, bootstrap, account_adapters)
 - `scripts/run_validation.py`, `scripts/walk_forward_refit_*.py`, `scripts/crypto_robust_opt.py`
 - `mode2/` — PEAD research, separate workstream
-- `api/routes/backtests.py` — dashboard's interactive backtest runner; hit the laptop API from the Backtests tab, not the cloud API
+- `api/research/backtests.py` — dashboard's interactive backtest runner; hit the laptop API from the Backtests tab, not the cloud API. (Moved from `api/routes/` in Phase 0 — `api/research/` is the laptop-only namespace.)
+- `api/research/strategies.py` — strategy-list endpoint that re-runs backtests at request time to compute live metrics. Same disposition as `backtests.py` — laptop-only, dashboard hits the laptop API for it.
 - `data/validation_reports/*.md` — produced by backtest, not read by live
 - `References/`
 
@@ -118,7 +119,7 @@ Key insight (2026-04-20): the live module does not depend on `backtesting/` at r
 - Workflow: run validation quarterly on laptop → commit or `fly volumes` sync the JSON → cloud picks it up on next rebalance.
 - This is the right shape: **research on laptop, execution in cloud, one flat file as the contract.**
 
-**Implied cleanup (Phase 0, below):** `strategies/portfolio.py` currently mixes live code (PORTFOLIOS config, `compute_spy_trend_filter`, `compute_btc_trend_filter`) with backtest code (`run_combined_portfolio`, `apply_vol_scaling`, `_generate_strategy_returns`, `run_equity_core`). Split into `strategies/portfolio_config.py` (live) + `strategies/portfolio_backtest.py` (research) so the dependency graph is legible and the cloud image doesn't pull in pandas ops it never executes.
+**Implied cleanup (Phase 0, below):** `strategies/portfolio.py` currently mixes live code (PORTFOLIOS config, `compute_spy_trend_filter`, `compute_btc_trend_filter`) with backtest code (`run_combined_portfolio`, `apply_vol_scaling`, `_generate_strategy_returns`, `run_equity_core`). Split into `strategies/portfolio_config.py` (live) + `strategies/portfolio_backtest.py` (research) so the dependency graph is legible and the cloud image doesn't pull in pandas ops it never executes. **Done 2026-04-23.** Same session also moved `api/routes/{backtests,strategies}.py` → `api/research/` because both files imported `from backtesting.metrics`, which would have made the §Phase 0 grep audit unprovable.
 
 ---
 
@@ -212,19 +213,22 @@ Anything unclassified needs a call before moving — don't guess.
 **Files to add**
 - `strategies/portfolio_config.py` — live-path surface only
 - `strategies/portfolio_backtest.py` — research surface only
+- `api/research/__init__.py` + move `api/routes/backtests.py` and `api/routes/strategies.py` into `api/research/`. Makes `api/routes/` mean "live, shippable" and `api/research/` mean "laptop-only" structurally, not by convention.
 
 **File to edit**
 - `strategies/portfolio.py` → re-export shim. Use explicit re-exports (`from .portfolio_config import PORTFOLIOS, compute_spy_trend_filter, ...`), **not** wildcard imports. Legibility > brevity here — the shim is the dependency-graph contract.
+- `api/main.py` — split the route imports into `from api.routes import portfolio, orders, ops` + `from api.research import strategies, backtests`. URL prefixes stay the same so the dashboard is untouched.
 
 **Hard invariant (enforces the cloud image boundary)**
 - `portfolio_backtest` MAY import from `portfolio_config` (one-way is fine — backtest uses live-safe primitives).
 - `portfolio_config` MUST NOT import from `portfolio_backtest`. If it needs to, something is in the wrong module — revisit the inventory.
 
-**Grep audit (must return 0 hits after split)**
+**Grep audit (must return 0 hits after split)** — scoped to `api/routes/` (not `api/`) since `api/research/` is laptop-only and is allowed to import backtest code:
 ```bash
-grep -rn "from strategies.portfolio_backtest" execution/ api/ scripts/filter_check.py
-grep -rn "from backtesting" execution/ api/ scripts/filter_check.py
-grep -rn "import backtesting" execution/ api/ scripts/filter_check.py
+grep -rn "from strategies.portfolio_backtest" execution/ api/routes/ scripts/filter_check.py
+grep -rn "from backtesting" execution/ api/routes/ scripts/filter_check.py
+grep -rn "import backtesting" execution/ api/routes/ scripts/filter_check.py
+grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backtest" strategies/portfolio_config.py
 ```
 
 **Laptop↔cloud contract (bullet for the brief — flesh out in the session)**
@@ -253,6 +257,8 @@ grep -rn "import backtesting" execution/ api/ scripts/filter_check.py
 - Unsafe: starting a multi-hour refactor after 16:00 MT on a day where the A4 scheduled rebalance is expected to matter.
 
 **Reversibility**: single `git revert` undoes the split. No live state is written or read differently during the refactor.
+
+**✅ Completed 2026-04-23.** Phase 0 closed: `strategies/portfolio.py` split into `portfolio_config.py` + `portfolio_backtest.py` (shim preserves all existing import paths); `api/routes/{backtests,strategies}.py` moved to `api/research/`; all four grep audits return 0 hits; pytest 115/115 green; APScheduler + launchd unchanged. Next gate: ≥2 weeks of stable laptop operation before Phase 1 begins.
 
 ### Phase 1 — Dockerize + deploy API to Fly, keep local cron
 - Write `Dockerfile` using `python:3.12-slim` + `uv sync`.

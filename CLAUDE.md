@@ -181,7 +181,9 @@ strategies/multi_asset_trend.py — Multi-asset trend following (SPY/TLT/GLD/DBC
 strategies/low_volatility.py — Low-vol anomaly + momentum quality filter
 strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
 strategies/crypto_momentum.py — Crypto momentum rotation (21-day, top 3, BTC filter)
-strategies/portfolio.py   — Portfolio combiner + SPY/BTC filter + vol-scaling + combined portfolios
+strategies/portfolio.py   — Re-export shim (split into _config + _backtest 2026-04-23, DEPLOYMENT_PLAN §Phase 0). Preserves existing import path so callers migrate at their own pace.
+strategies/portfolio_config.py   — LIVE surface: PORTFOLIOS dict + ETF/STOCK/CRYPTO_STRATEGIES factory maps + compute_spy_trend_filter + compute_btc_trend_filter. Hard invariant: zero imports from backtesting/ or mode2/.
+strategies/portfolio_backtest.py — RESEARCH surface: run_portfolio / run_equity_core / run_combined_portfolio / apply_vol_scaling / _generate_strategy_returns. May import from portfolio_config (one-way).
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests; + walk_forward_refit_analysis (true per-window param refit, added 2026-04-20)
 backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION_PLAN Test 4)
@@ -197,10 +199,11 @@ execution/rebalance.py   — Signal-to-order pipeline (target weights → trade 
 execution/rebalance_log.py — Structured JSONL rebalance audit trail. Post-N4 (2026-04-22) each entry carries `raw_signal_weights` (pre-overlay) + `post_filter_weights` (post-SPY/BTC, pre-vol) alongside the scalars and final orders — any rebalance can be reconstructed end-to-end from a single journal line without re-running signal generation against a since-overwritten cache.
 api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
 api/locks.py             — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
-api/routes/portfolio.py  — Account summary, positions, equity history, correlation, risk status, filter status
-api/routes/orders.py     — Rebalance preview/execute, order history, rebalance journal (?account=1|2|3|4)
-api/routes/backtests.py  — Backtest runner (individual + combined + crypto)
-api/routes/strategies.py — Strategy list with live metrics
+api/routes/portfolio.py  — Account summary, positions, equity history, correlation, risk status, filter status (LIVE — ships to cloud)
+api/routes/orders.py     — Rebalance preview/execute, order history, rebalance journal (LIVE — ships to cloud)
+api/routes/ops.py        — Scheduler status, filter state, validation, event timeline (LIVE — ships to cloud)
+api/research/backtests.py  — Backtest runner (individual + combined + crypto). LAPTOP-ONLY — moved out of api/routes/ 2026-04-23 because it imports from backtesting/. Will not ship to Fly.
+api/research/strategies.py — Strategy list with live metrics. LAPTOP-ONLY — same rationale. Dashboard hits laptop API for both /api/backtests/* and /api/strategies/*.
 dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
 dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
 dashboard/src/components/Toast.tsx — Global toast notification system (error/warning/info)

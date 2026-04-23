@@ -14,7 +14,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import portfolio, strategies, backtests, orders, ops
+from api.routes import portfolio, orders, ops
+from api.research import strategies, backtests
 from api.locks import RebalanceLockedError, dual_rebalance_lock
 
 log = logging.getLogger("fire.scheduler")
