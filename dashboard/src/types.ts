@@ -82,6 +82,7 @@ export interface Position {
   unrealized_pl: number;
   unrealized_plpc: number;
   change_today: number;
+  non_tradeable?: boolean;
 }
 
 export interface Order {

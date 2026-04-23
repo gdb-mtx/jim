@@ -12,6 +12,7 @@ import RiskStatusPanel from "./RiskStatusPanel";
 import RebalancePanel from "./RebalancePanel";
 import FilterStatusBanner from "./FilterStatusBanner";
 import DataFreshnessPill from "./DataFreshnessPill";
+import Tooltip from "./Tooltip";
 import { showToast } from "./Toast";
 
 type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3 retired, kept in type for history endpoints
@@ -333,7 +334,10 @@ const PositionsTable = memo(function PositionsTable({
               </tr>
             </thead>
             <tbody>
-              {positions.map((p) => (
+              {positions.map((p) => {
+                const nt = p.non_tradeable === true;
+                const dim = "text-[#5a5a70]";
+                return (
                 <tr
                   key={
                     isCombined
@@ -343,7 +347,16 @@ const PositionsTable = memo(function PositionsTable({
                   className="border-b border-[#2a2a3e]/50"
                 >
                   <td className="py-2.5 pr-4 font-medium text-[#e8e8f0]">
-                    {p.symbol}
+                    <div className="flex items-center gap-2">
+                      <span>{p.symbol}</span>
+                      {nt && (
+                        <Tooltip text="Contingent Value Right — a non-tradeable stub deposited from a merger/acquisition. Pays out cash if a future milestone is hit, otherwise expires worthless. Excluded from rebalancing.">
+                          <span className="cursor-help rounded bg-[#8888a020] px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-[#8888a0] uppercase">
+                            CVR
+                          </span>
+                        </Tooltip>
+                      )}
+                    </div>
                   </td>
                   {isCombined && (
                     <td className="py-2.5 pr-4">
@@ -357,27 +370,28 @@ const PositionsTable = memo(function PositionsTable({
                   <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
                     {p.qty}
                   </td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#8888a0]">
-                    {formatUsd(p.avg_entry_price)}
+                  <td className={`py-2.5 pr-4 text-right tabular-nums ${nt ? dim : "text-[#8888a0]"}`}>
+                    {nt ? "—" : formatUsd(p.avg_entry_price)}
                   </td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                    {formatUsd(p.current_price)}
+                  <td className={`py-2.5 pr-4 text-right tabular-nums ${nt ? dim : "text-[#e8e8f0]"}`}>
+                    {nt ? "—" : formatUsd(p.current_price)}
                   </td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums text-[#e8e8f0]">
-                    {formatUsd(p.market_value)}
-                  </td>
-                  <td
-                    className={`py-2.5 pr-4 text-right tabular-nums ${plColor(p.unrealized_pl)}`}
-                  >
-                    {formatUsd(p.unrealized_pl)}
+                  <td className={`py-2.5 pr-4 text-right tabular-nums ${nt ? dim : "text-[#e8e8f0]"}`}>
+                    {nt ? "—" : formatUsd(p.market_value)}
                   </td>
                   <td
-                    className={`py-2.5 text-right tabular-nums ${plColor(p.unrealized_plpc)}`}
+                    className={`py-2.5 pr-4 text-right tabular-nums ${nt ? dim : plColor(p.unrealized_pl)}`}
                   >
-                    {(p.unrealized_plpc * 100).toFixed(2)}%
+                    {nt ? "—" : formatUsd(p.unrealized_pl)}
+                  </td>
+                  <td
+                    className={`py-2.5 text-right tabular-nums ${nt ? dim : plColor(p.unrealized_plpc)}`}
+                  >
+                    {nt ? "—" : `${(p.unrealized_plpc * 100).toFixed(2)}%`}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="border-t border-[#2a2a3e]">
