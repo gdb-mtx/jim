@@ -6,9 +6,11 @@
 
 **Post-review status (2026-04-21 Pass 1a, commit `d1b753b`):** N2 (SPY+BTC NaN guards) and N5 (plausibility ERROR log) resolved, with 2 regression tests added (suite: 90 → 92). N1 verified against source and **reclassified as miscast** — sim and live both use `sqrt(252)`, so the parity-break the review feared doesn't exist (see §3 N1 update). Pre-2026-05-04 rebalance scope is closed.
 
-**2026-04-22:** T4 closed — `require_validated(broker.account)` is now step 0 of `compute_rebalance` (defense-in-depth alongside the three call-site guards), with 2 new tests pinning the retired-account block + override-not-bypassable semantics. Two stale `test_plausibility` assertions updated to the current "escapes band" error format. Suite now 113 passing.
+**2026-04-22:** T4 closed — `require_validated(broker.account)` is now step 0 of `compute_rebalance` (defense-in-depth alongside the three call-site guards), with 2 new tests pinning the retired-account block + override-not-bypassable semantics. Two stale `test_plausibility` assertions updated to the current "escapes band" error format.
 
-T1, N4, N3, O1–O4 remain.
+**2026-04-22 (later):** N4 closed — rebalance journal now persists `raw_signal_weights` (pre-overlay) and `post_filter_weights` (post-SPY/BTC, pre-vol-scaling) for every rebalance. Combined with the already-persisted scalars (`spy_filter_scalar`, `btc_filter_scalar`, `vol_scalar`) and final `orders` list, any journal entry can be fully reconstructed end-to-end without re-running `generate_signals` against a since-overwritten cache. Wired via a `stages_out: dict | None` out-param threaded through `get_current_signals` → `_get_portfolio_signals`, bubbled up through `RebalanceResult` to all three production log call sites (manual API, APScheduler, filter_monitor). Liquidation and halt-reset call sites unchanged (no strategy signals to log; fields persist as null). Suite now 115 passing.
+
+T1, N3, O1–O4 remain.
 
 ---
 
@@ -137,7 +139,14 @@ Called during `/api/portfolio/risk` polls (every 30s) and at `compute_rebalance`
 
 **Urgency:** astronomically unlikely on macOS local disk; becomes non-trivial on Fly.io with network-mounted volumes.
 
-### 🟡 N4. Rebalance journal does not persist pre-filter/pre-scalar signal weights
+### ✅ N4. Rebalance journal does not persist pre-filter/pre-scalar signal weights — CLOSED (2026-04-22)
+
+**Resolution:** `log_rebalance` in [execution/rebalance_log.py](execution/rebalance_log.py) now accepts (and persists) `raw_signal_weights` + `post_filter_weights` kwargs. `compute_rebalance` captures both via a `stages_out: dict | None` out-param threaded through `get_current_signals` → `_get_portfolio_signals`, and carries them through `RebalanceResult` to each production log call site (API manual, APScheduler A4, filter_monitor cron). Liquidation and halt-reset call sites don't set these — no strategy signals exist there — and the fields persist as null.
+
+Combined with the already-persisted `spy_filter_scalar`, `btc_filter_scalar`, `vol_scalar`, and final `orders`, any rebalance can now be fully reconstructed from a single journal entry. Two new tests in [tests/test_rebalance_log.py](tests/test_rebalance_log.py) pin: (a) the raw/post_filter roundtrip with a SPY filter applied, (b) backwards-compat — older callers that don't pass the new kwargs still journal cleanly with null fields.
+
+**Original finding (retained for context):**
+
 **File:** `execution/rebalance_log.py` + `execution/rebalance.py:285-306`
 
 Current journal records `portfolio_value`, `spy_filter_scalar`, `btc_filter_scalar`, `vol_scalar`, `orders`, `execute_error` (post-R4/R16). **Missing:** raw strategy signals before filter and scalar application.
@@ -283,7 +292,7 @@ These spurious claims are called out to keep the signal-to-noise of this review 
 ### Month 3
 - ✅ **T4:** retired-account block tested through `compute_rebalance` — closed 2026-04-22. Moved the check into `compute_rebalance` itself (defense-in-depth rather than test-only) + 2 regression tests.
 - **T1:** journal-persists-through-execute-failure integration test (~40 lines). Priority 21.
-- **N4:** extend rebalance journal with pre-filter/pre-scalar weights. Enables post-mortems (~15 lines).
+- ✅ **N4:** rebalance journal extended with `raw_signal_weights` + `post_filter_weights` — closed 2026-04-22. Enables one-read post-mortems.
 - **T2:** vol-scaling parity test against real A2 snapshots (gated on fixture presence, ~30 lines).
 - **N1:** docstring clarification on A4 vol annualization (1 line).
 - **O2:** launchd dead-man's-switch wrapper (~5 lines).

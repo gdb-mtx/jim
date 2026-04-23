@@ -59,6 +59,11 @@ class RebalanceResult:
     btc_filter_scalar: float = 1.0
     vol_scalar: float = 1.0
     vol_scalar_diagnostics: dict | None = None
+    # N4 (AUDIT_MONTH2_REVIEW): intermediate weight snapshots for post-mortem
+    # reconstruction. `raw_signal_weights` = strategy output pre-overlay;
+    # `post_filter_weights` = after SPY/BTC filter, before vol-scaling.
+    raw_signal_weights: dict[str, float] = field(default_factory=dict)
+    post_filter_weights: dict[str, float] = field(default_factory=dict)
     prices: dict[str, float] = field(default_factory=dict)
     missing_prices: list[str] = field(default_factory=list)
     price_error: bool = False
@@ -68,6 +73,7 @@ def get_current_signals(
     strategy_id: str,
     lookback_start: str = "2023-01-01",
     broker: "AlpacaBroker | None" = None,
+    stages_out: dict | None = None,
 ) -> dict[str, float]:
     """Run a strategy on recent data and return the latest target weights.
 
@@ -75,23 +81,34 @@ def get_current_signals(
         strategy_id: Strategy or portfolio ID
         lookback_start: How far back to fetch prices (strategies need history for signals)
         broker: Optional broker for real-time price quotes (used by trend filters)
+        stages_out: Optional dict; if provided, gets populated with keys
+            "raw" (pre-filter strategy output) and "post_filter" (after
+            SPY+BTC filter). Used by `compute_rebalance` to persist the
+            intermediate weight vectors to the rebalance journal (N4,
+            AUDIT_MONTH2_REVIEW). For non-portfolio paths no filter runs,
+            so raw == post_filter.
 
     Returns:
         Dict of {symbol: weight} for the most recent signal date.
     """
     if strategy_id in PORTFOLIOS:
-        return _get_portfolio_signals(strategy_id, lookback_start, broker=broker)
+        return _get_portfolio_signals(
+            strategy_id, lookback_start, broker=broker, stages_out=stages_out
+        )
 
     if strategy_id in CRYPTO_STRATEGIES:
-        return _get_crypto_strategy_signals(strategy_id, lookback_start)
+        weights = _get_crypto_strategy_signals(strategy_id, lookback_start)
+    elif strategy_id in STOCK_STRATEGIES:
+        weights = _get_stock_strategy_signals(strategy_id, lookback_start)
+    elif strategy_id in ETF_STRATEGIES:
+        weights = _get_etf_strategy_signals(strategy_id, lookback_start)
+    else:
+        raise ValueError(f"Unknown strategy: {strategy_id}")
 
-    if strategy_id in STOCK_STRATEGIES:
-        return _get_stock_strategy_signals(strategy_id, lookback_start)
-
-    if strategy_id in ETF_STRATEGIES:
-        return _get_etf_strategy_signals(strategy_id, lookback_start)
-
-    raise ValueError(f"Unknown strategy: {strategy_id}")
+    if stages_out is not None:
+        stages_out["raw"] = dict(weights)
+        stages_out["post_filter"] = dict(weights)
+    return weights
 
 
 def _get_stock_strategy_signals(
@@ -148,11 +165,14 @@ def _get_portfolio_signals(
     portfolio_id: str,
     lookback_start: str,
     broker: "AlpacaBroker | None" = None,
+    stages_out: dict | None = None,
 ) -> dict[str, float]:
     """Get latest signals from a portfolio blend.
 
     Combines component strategy signals with their portfolio weights,
-    then applies the SPY trend filter if configured.
+    then applies the SPY trend filter if configured. When `stages_out`
+    is provided, populates it with "raw" (pre-filter) and "post_filter"
+    snapshots for the rebalance journal (N4).
     """
     config = PORTFOLIOS[portfolio_id]
     weights = config["weights"]
@@ -208,6 +228,10 @@ def _get_portfolio_signals(
                 if abs(w) > 1e-6:
                     combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
 
+    # N4: snapshot the raw (pre-overlay) weights before any filter runs.
+    if stages_out is not None:
+        stages_out["raw"] = dict(combined_weights)
+
     # Apply SPY trend filter
     if use_spy_filter:
         live_spy = None
@@ -244,6 +268,10 @@ def _get_portfolio_signals(
                 f"Check BTC cache has >=125d of history."
             )
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
+
+    # N4: snapshot the post-filter weights (before vol-scaling in compute_rebalance).
+    if stages_out is not None:
+        stages_out["post_filter"] = dict(combined_weights)
 
     return combined_weights
 
@@ -303,8 +331,13 @@ def compute_rebalance(
             risk_check=risk_check,
         )
 
-    # 3. Get target weights from strategy (broker provides real-time prices for filters)
-    target_weights = get_current_signals(strategy_id, broker=broker)
+    # 3. Get target weights from strategy (broker provides real-time prices for filters).
+    # N4: capture the raw (pre-overlay) and post-filter (pre-vol-scaling) stages
+    # for the rebalance journal.
+    stages: dict = {}
+    target_weights = get_current_signals(strategy_id, broker=broker, stages_out=stages)
+    raw_signal_weights = stages.get("raw", dict(target_weights))
+    post_filter_weights = stages.get("post_filter", dict(target_weights))
 
     # 3a. Vol-scaling overlay (AUDIT_MONTH2 C4) — applies to strategies whose
     # backtest uses `apply_vol_scaling`. Keeps sim/live parity by multiplying
@@ -529,6 +562,8 @@ def compute_rebalance(
         btc_filter_scalar=btc_filter_scalar,
         vol_scalar=vol_scalar,
         vol_scalar_diagnostics=vol_scalar_diagnostics,
+        raw_signal_weights=raw_signal_weights,
+        post_filter_weights=post_filter_weights,
         prices=prices,
         missing_prices=missing_prices,
         price_error=price_error,

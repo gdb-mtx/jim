@@ -194,7 +194,7 @@ execution/vol_scaling.py  — Live vol-scaling scalar (AUDIT_MONTH2 C4 fix, 2026
 execution/validation_gate.py — Rebalance gate; blocks accounts without a passing validation record
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py   — Signal-to-order pipeline (target weights → trade list). Crypto orders use `time_in_force="gtc"` and notional (dollar-amount) sizing on buys — sidesteps the price-drift-between-preview-and-fill "insufficient balance" reject path. Notional total is capped to 99.9% of live Alpaca cash.
-execution/rebalance_log.py — Structured JSONL rebalance audit trail
+execution/rebalance_log.py — Structured JSONL rebalance audit trail. Post-N4 (2026-04-22) each entry carries `raw_signal_weights` (pre-overlay) + `post_filter_weights` (post-SPY/BTC, pre-vol) alongside the scalars and final orders — any rebalance can be reconstructed end-to-end from a single journal line without re-running signal generation against a since-overwritten cache.
 api/main.py              — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
 api/locks.py             — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
 api/routes/portfolio.py  — Account summary, positions, equity history, correlation, risk status, filter status

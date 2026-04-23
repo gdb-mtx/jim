@@ -110,3 +110,59 @@ def test_get_recent_rebalances_roundtrip(tmp_path):
         assert len(entries) == 1
         assert entries[0]["account"] == 2
         assert entries[0]["execute_error"] is None
+
+
+# ---- N4: raw + post-filter weight capture for post-mortem reconstruction ----
+
+
+def test_log_rebalance_captures_raw_and_post_filter_weights(tmp_path):
+    """N4: journal persists both the raw strategy output and the post-filter
+    weights so a future incident can reconstruct what the signal said before
+    any overlay, without re-running generate_signals against a cache that
+    has since been overwritten.
+    """
+    log_file = tmp_path / "rebalance_log.jsonl"
+    with patch("execution.rebalance_log.LOG_FILE", log_file):
+        log_rebalance(
+            account=1,
+            strategy_id="sm_filtered",
+            portfolio_value=100_000.0,
+            orders_submitted=2,
+            orders_failed=0,
+            order_details=[],
+            spy_filter_active=True,
+            spy_filter_scalar=0.5,
+            vol_scalar=1.0,
+            raw_signal_weights={"AAPL": 0.08, "MSFT": 0.08, "TSLA": 0.08},
+            post_filter_weights={"AAPL": 0.04, "MSFT": 0.04, "TSLA": 0.04},
+            source="manual",
+        )
+
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["raw_signal_weights"] == {
+            "AAPL": 0.08, "MSFT": 0.08, "TSLA": 0.08
+        }
+        assert entry["post_filter_weights"] == {
+            "AAPL": 0.04, "MSFT": 0.04, "TSLA": 0.04
+        }
+        # Ratio between raw and post_filter should recover spy_filter_scalar (0.5).
+        assert entry["post_filter_weights"]["AAPL"] == entry["raw_signal_weights"]["AAPL"] * 0.5
+
+
+def test_log_rebalance_omits_weights_gracefully_when_none(tmp_path):
+    """Backwards-compat: old callers that don't pass the new kwargs still
+    work, and the field persists as null in the journal."""
+    log_file = tmp_path / "rebalance_log.jsonl"
+    with patch("execution.rebalance_log.LOG_FILE", log_file):
+        log_rebalance(
+            account=2,
+            strategy_id="trend_lowvol",
+            portfolio_value=99_000.0,
+            orders_submitted=0,
+            orders_failed=0,
+            order_details=[],
+            source="manual",
+        )
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["raw_signal_weights"] is None
+        assert entry["post_filter_weights"] is None

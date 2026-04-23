@@ -28,6 +28,8 @@ def log_rebalance(
     btc_filter_scalar: float = 1.0,
     vol_scalar: float = 1.0,
     vol_scalar_diagnostics: dict | None = None,
+    raw_signal_weights: dict[str, float] | None = None,
+    post_filter_weights: dict[str, float] | None = None,
     execute_error: str | None = None,
     source: str = "manual",
 ):
@@ -50,6 +52,14 @@ def log_rebalance(
         vol_scalar_diagnostics: Diagnostics dict from `compute_live_vol_scalar`
             (realized_vol, n_obs, fallback_reason, etc.). None when the
             vol-scaling gate is skipped.
+        raw_signal_weights: Per-symbol weights the strategy produced before
+            any overlay (SPY/BTC filter, vol-scaling). Enables post-mortem
+            "what did the signal actually say?" without re-running
+            generate_signals on a cache that has been overwritten since.
+            N4, AUDIT_MONTH2_REVIEW.
+        post_filter_weights: Per-symbol weights after SPY/BTC filter, before
+            vol-scaling. Multiply by `vol_scalar` to recover the live
+            target weights (modulo tradeability pruning). N4.
         execute_error: Exception message if `execute_rebalance` raised mid-
             flight (AUDIT_MONTH2 R4). The `orders` list then reflects
             whatever was recorded before the raise (usually empty if the
@@ -71,6 +81,14 @@ def log_rebalance(
         "btc_filter_scalar": btc_filter_scalar,
         "vol_scalar": vol_scalar,
         "vol_scalar_diagnostics": vol_scalar_diagnostics,
+        # N4 (AUDIT_MONTH2_REVIEW): capture the two intermediate weight
+        # vectors — raw strategy output and post-SPY/BTC-filter — so
+        # post-mortems don't have to re-run generate_signals against a
+        # price cache that has since been overwritten. Combined with
+        # the already-persisted scalars + final orders, this lets any
+        # rebalance be fully reconstructed from one journal entry.
+        "raw_signal_weights": raw_signal_weights,
+        "post_filter_weights": post_filter_weights,
         "execute_error": execute_error,
         "orders": [
             {

@@ -192,6 +192,8 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                     btc_filter_scalar=result.btc_filter_scalar,
                     vol_scalar=result.vol_scalar,
                     vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+                    raw_signal_weights=result.raw_signal_weights,
+                    post_filter_weights=result.post_filter_weights,
                     execute_error=execute_error,
                     source="filter_monitor",
                 )
