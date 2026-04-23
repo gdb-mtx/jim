@@ -243,6 +243,56 @@ async def _execute_under_lock(account: int, strategy_id: str):
     except Exception as e:
         log.warning(f"Post-rebalance snapshot failed for account {account}: {e}")
 
+    # Sync filter_state.json so the dashboard banner reflects the decision we
+    # just traded against, and so launchd's next filter_check run doesn't
+    # compare against a stale "previous" value (which would misdetect or miss
+    # flips that happened between launchd runs while the user was manually
+    # rebalancing — the travel-window failure mode).
+    #
+    # Recompute live instead of trusting `result.{spy,btc}_filter_scalar`:
+    # PORTFOLIOS["crypto_momentum_filtered"] sets `btc_filter=False` because
+    # the filter is internal to CryptoMomentum, which leaves
+    # `result.btc_filter_scalar` at the default 1.0 even when BTC is below
+    # its 125d MA. Recomputing mirrors `scripts/filter_check.py:compute_filters`.
+    try:
+        from data import filter_state
+        from strategies.portfolio_config import (
+            compute_spy_trend_filter,
+            compute_btc_trend_filter,
+        )
+
+        updates: dict = {}
+        track_keys: tuple[str, ...] = ()
+
+        if account in (1, 2):
+            live_spy = None
+            try:
+                live_spy = await asyncio.to_thread(broker.get_latest_price, "SPY")
+            except Exception:
+                pass
+            spy_filter = await asyncio.to_thread(compute_spy_trend_filter, live_price=live_spy)
+            updates["spy_scalar"] = float(spy_filter.iloc[-1])
+            track_keys = track_keys + ("spy_scalar",)
+
+        if account == 4:
+            live_btc = None
+            try:
+                live_btc = await asyncio.to_thread(broker.get_latest_price, "BTC/USD")
+            except Exception:
+                pass
+            btc_filter = await asyncio.to_thread(compute_btc_trend_filter, live_price=live_btc)
+            updates["btc_scalar"] = float(btc_filter.iloc[-1])
+            track_keys = track_keys + ("btc_scalar",)
+
+        if updates:
+            await asyncio.to_thread(
+                filter_state.update_fields,
+                updates,
+                track_flips=track_keys,
+            )
+    except Exception as e:
+        log.warning(f"Post-rebalance filter_state sync failed for account {account} (non-fatal): {e}")
+
     return {
         "account": account,
         "strategy_id": result.strategy_id,

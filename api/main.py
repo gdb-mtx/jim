@@ -208,16 +208,28 @@ async def _daily_crypto_rebalance():
 
                     await asyncio.to_thread(take_snapshot, 4)
 
-                    # Sync filter_state.json with the BTC scalar we just
-                    # traded against. Without this, the launchd filter
-                    # monitor would see a stale scalar later the same day
-                    # and fire a no-op second rebalance (the "double
-                    # rebalance" gap). `update_fields` is file-locked and
-                    # stamps `last_btc_flip` only if the scalar actually
-                    # differs from the saved value.
+                    # Sync filter_state.json with the live BTC scalar so the
+                    # launchd filter monitor doesn't see a stale value later
+                    # and fire a no-op second rebalance ("double rebalance"
+                    # gap). `update_fields` is file-locked and stamps
+                    # `last_btc_flip` only if the scalar actually differs.
+                    #
+                    # Recompute live instead of using `result.btc_filter_scalar`:
+                    # PORTFOLIOS["crypto_momentum_filtered"] has
+                    # `btc_filter=False` (filter is internal to CryptoMomentum),
+                    # so result.btc_filter_scalar is the default 1.0 even when
+                    # BTC is below its 125d MA. Mirrors filter_check.py:
+                    # compute_filters.
                     try:
                         from data import filter_state
-                        btc_scalar = float(result.btc_filter_scalar)
+                        from strategies.portfolio_config import compute_btc_trend_filter
+                        live_btc = None
+                        try:
+                            live_btc = await asyncio.to_thread(broker.get_latest_price, "BTC/USD")
+                        except Exception:
+                            pass
+                        btc_filter = await asyncio.to_thread(compute_btc_trend_filter, live_price=live_btc)
+                        btc_scalar = float(btc_filter.iloc[-1])
                         await asyncio.to_thread(
                             filter_state.update_fields,
                             {"btc_scalar": btc_scalar},
