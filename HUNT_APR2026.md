@@ -264,3 +264,35 @@ Research code deleted (value is in the finding, not the ~250 LOC of template wor
 **Rate-vol, defensively.** Minimum MOVE-conditional TLT reversal backtest per scout's recommendation (1 day of work, not four). Kill-switch: if the naive sketch returns <10% CAGR or <1.0 Calmar, kill the vector. Honest expectation 15-18% CAGR / Calmar 1.2-1.8 — a diversifier, not an A4-killer.
 
 If rate-vol also returns null, two remaining paths: (1) accept the 3-account book is the right shape and redirect to Mode 2 PEAD ops (C recommendation holding period, BAC/MS/PNC transcripts pending Insider Monkey, weekly report generator); (2) separate hunt on expanded quality-L1 crypto universe (TAO/SUI candidates if Alpaca coverage has grown since probe date).
+
+### Rate-vol minimum backtest result — KILL 2026-04-23
+
+Ran the scout's naive Candidate A sketch exactly as specified: z-score TLT trailing-5d return < -1.0 × MOVE (lagged 1 day) > 80th percentile trailing 252d × 5d hold, 2010-04 to 2026-04, 5 bps round-trip cost. All RATE_VOL_SCOPE.md gotchas honored (percentile MOVE, z-scored TLT, 1d MOVE lag, auto-adjusted TLT).
+
+| Metric | Net | Gross | Gate |
+|---|---|---|---|
+| CAGR | **+0.5%** | +0.7% | ≥10% kill / ≥12% go |
+| Calmar | **0.03** | 0.04 | ≥1.0 kill / ≥1.3 go |
+| Sharpe | 0.11 | 0.14 | — |
+| MaxDD | -19.1% | — | — |
+| Entries | 52 (3.2/yr) | — | Scout: <5/yr = unobservable |
+
+**The 2022-2023 hiking cycle is the damnation.** That regime was the thesis target (elevated MOVE, TLT "overshooting"), and the strategy delivered **-5.4% CAGR / Calmar -0.30** in it. TLT in 2022-2023 wasn't mean-reverting — it was a sustained 40%+ decline as rates rose, and "buy the 5d dip" kept catching falling knives. The Nagel liquidity-provision mechanism that works on retail-margin-driven equity selloffs doesn't port to institutional bond flow.
+
+- 2010-2021 quiet rates: +1.8% CAGR, Calmar 0.15 (near-null across 11 years)
+- 2022-2023 hiking: **-5.4% CAGR** (the target regime, and it lost money)
+- 2024-2026 post-hike: -1.0% CAGR
+
+Costs aren't the issue (gross = +0.7%). No amount of parameter tuning rescues a thesis that loses money in its own target regime. Candidates B (MOVE-amplified trend follow) and C (cross-curve rank) from RATE_VOL_SCOPE.md are not prosecuted — B is A2-duplicative per its own scoping, C needs shorting (violates the "no shorting" project rule).
+
+**Research code (data/rates.py, scripts/rate_vol_minimum_backtest.py) deleted.** Null preserved here.
+
+### A5 hunt score after three vectors
+
+| Vector | Status | Reason |
+|---|---|---|
+| Narrative crypto (reversal) | KILL 2026-04-23 | Null across 80 configs; universe too compressed |
+| Commodity vol (producer XSM) | HOLD (never prosecuted) | A2 already holds GLD+DBC — factor-duplicative |
+| Rate vol (MOVE×TLT reversal) | KILL 2026-04-23 | Lost money in the target hiking regime |
+
+Standing directive (2026-04-18) unchanged: the user wants another few months of hunting before accepting the 3-account book is the right shape. Next round: draw inspiration from elite quant shops (Jane Street, DE Shaw, RenTech, Two Sigma) via public tribal knowledge, filter for what a solo builder with an AI partner can plausibly capture in the narrow window before those firms fully integrate AI themselves.
