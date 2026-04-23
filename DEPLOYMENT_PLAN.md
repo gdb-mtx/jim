@@ -191,6 +191,69 @@ This is the near-term work. Everything happens on the laptop; the existing stack
 - **Success:** all tests + dashboard still green; grep proves no live→backtest imports; laptop continues executing scheduled rebalances correctly for at least 2 weeks post-refactor before we start Phase 1.
 - **Reversible:** the split is pure refactor; a single git revert undoes it.
 
+#### Phase 0 — starter checklist (queued 2026-04-23)
+
+Ready-to-run brief for the next session. Read this + the §Phase 0 prose above + `portfolio.py` before starting.
+
+**Pre-read (≤15 min)**
+- This section + §Phase 0 prose above
+- `strategies/portfolio.py` (understand the current shape — what's live, what's research)
+- `CLAUDE.md` §"Architecture" (for the surrounding context of where portfolio.py plugs in)
+
+**Inventory — classify every top-level symbol in `strategies/portfolio.py`**
+
+| Destination | Symbols |
+|---|---|
+| `portfolio_config.py` (LIVE) | `PORTFOLIOS` dict, `compute_spy_trend_filter`, `compute_btc_trend_filter`, `ETF_STRATEGIES`, `STOCK_STRATEGIES`, `CRYPTO_STRATEGIES` (strategy factory maps) |
+| `portfolio_backtest.py` (RESEARCH) | `run_combined_portfolio`, `apply_vol_scaling`, `run_equity_core`, `marginal_portfolio_contribution`, `_generate_strategy_returns` |
+
+Anything unclassified needs a call before moving — don't guess.
+
+**Files to add**
+- `strategies/portfolio_config.py` — live-path surface only
+- `strategies/portfolio_backtest.py` — research surface only
+
+**File to edit**
+- `strategies/portfolio.py` → re-export shim. Use explicit re-exports (`from .portfolio_config import PORTFOLIOS, compute_spy_trend_filter, ...`), **not** wildcard imports. Legibility > brevity here — the shim is the dependency-graph contract.
+
+**Hard invariant (enforces the cloud image boundary)**
+- `portfolio_backtest` MAY import from `portfolio_config` (one-way is fine — backtest uses live-safe primitives).
+- `portfolio_config` MUST NOT import from `portfolio_backtest`. If it needs to, something is in the wrong module — revisit the inventory.
+
+**Grep audit (must return 0 hits after split)**
+```bash
+grep -rn "from strategies.portfolio_backtest" execution/ api/ scripts/filter_check.py
+grep -rn "from backtesting" execution/ api/ scripts/filter_check.py
+grep -rn "import backtesting" execution/ api/ scripts/filter_check.py
+```
+
+**Laptop↔cloud contract (bullet for the brief — flesh out in the session)**
+- `data/risk_state/validation_state.json` is the only file that crosses. Produced by `scripts/run_validation.py` (laptop), consumed by `execution/validation_gate.py` (laptop now, cloud post-Phase-1).
+- Add a one-paragraph section somewhere visible (either here in DEPLOYMENT_PLAN.md or a new `PHASE1_RUNBOOK.md` stub) describing the sync step: "after running validation, copy the JSON to the Fly volume at `/data/risk_state/validation_state.json` via `fly ssh sftp`." Exact command TBD in Phase 1.
+
+**Success gates (all must hold)**
+- Full test suite green (115/115 at time of queuing, may grow before session)
+- Dashboard rebalance preview works end-to-end on A1, A2, A4
+- `uv run python3 scripts/run_validation.py --account 1` completes without import errors
+- APScheduler + launchd keep firing on schedule during and after the refactor (no downtime)
+
+**Gotchas**
+- `scripts/filter_check.py` imports from `strategies.portfolio` — the shim must preserve every existing export name or the launchd-triggered rebalance path breaks.
+- `tests/` import from the same path — same constraint.
+- `PORTFOLIOS` references the strategy factory maps (ETF/STOCK/CRYPTO_STRATEGIES). Keep those maps in `portfolio_config.py` — don't let them drift into backtest, or the live surface pulls in research code.
+- `apply_vol_scaling` is research-side, but `execution/vol_scaling.py:compute_live_vol_scalar` mirrors its math for live. They share `vol_target`/`vol_halflife`/`scalar_cap` semantics — when editing either, the other must stay in 1e-6 parity (AUDIT_MONTH2 C4).
+
+**Non-goals for this refactor**
+- No behavior change. Pure reorganization.
+- No edits to `execution/`, `api/`, or `scripts/` — except imports that trivially follow the shim. Any deeper change is out of scope.
+- No Fly.io work. Phase 1 waits for ≥2 weeks of stable local operation post-refactor.
+
+**Timing**
+- Safe window: any morning or early afternoon. No automation fires before 16:30 MT (launchd-SPY) except the 4-hourly BTC check, which noops 99% of the time.
+- Unsafe: starting a multi-hour refactor after 16:00 MT on a day where the A4 scheduled rebalance is expected to matter.
+
+**Reversibility**: single `git revert` undoes the split. No live state is written or read differently during the refactor.
+
 ### Phase 1 — Dockerize + deploy API to Fly, keep local cron
 - Write `Dockerfile` using `python:3.12-slim` + `uv sync`.
 - `fly launch --no-deploy`, create 1GB volume at `/data`, set secrets, set TZ, deploy.
