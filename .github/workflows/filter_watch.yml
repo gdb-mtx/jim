@@ -6,9 +6,11 @@ name: filter_watch
 
 on:
   schedule:
-    # Every 30 minutes. GitHub Actions queues cron triggers under load,
-    # so actual cadence may be 30-60 min — fine for a daily-cadence filter.
-    - cron: "*/30 * * * *"
+    # Every ~30 min, deliberately off the top/bottom of the hour. GitHub's
+    # docs warn that :00 and :30 are the most-delayed cron slots due to
+    # everyone scheduling there; :07 and :37 dodge that congestion while
+    # keeping a ~30-min cadence (fine for a daily-cadence filter).
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       force_test:
