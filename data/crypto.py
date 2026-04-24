@@ -77,6 +77,14 @@ def download_crypto_prices(
     """
     import time
 
+    # Clamp to the crypto-universe data floor. Several 9-coin universe
+    # members launched 2016-2021, so a pre-2020 fetch returns sparse data
+    # that gets dropped by the 50% coverage gate — silently shrinking the
+    # universe to 2 coins. Mirrors the 2018 clamp in download_btc_prices.
+    if start < "2020-01-01":
+        print(f"download_crypto_prices: clamping start {start} → 2020-01-01")
+        start = "2020-01-01"
+
     cache_path = DATA_DIR / "raw" / "crypto_prices.parquet"
     max_age_hours = 16
 
@@ -149,6 +157,16 @@ def download_btc_prices(
         Series of BTC/USD closing prices
     """
     import time
+
+    # Clamp to the BTC-FIRE data floor. yfinance serves BTC back to ~2014 at
+    # ~$400, but the project's plausibility band (and all real use cases —
+    # live trading, IS+OOS validation, crypto_robust_opt) anchor at 2018.
+    # Accepting older data would force either a loose $50 band (worse
+    # cross-contamination guard) or backtests that silently differ based on
+    # cache state. Clamping here keeps the invariant clean.
+    if start < "2018-01-01":
+        print(f"download_btc_prices: clamping start {start} → 2018-01-01")
+        start = "2018-01-01"
 
     cache_path = DATA_DIR / "raw" / "btc_prices.parquet"
     max_age_hours = 16

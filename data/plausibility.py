@@ -66,8 +66,13 @@ BANDS: dict[str, tuple[float, float, str]] = {
     "BTC-USD": (
         1000.0,
         500_000.0,
-        "BTC has not closed below $1,000 since Dec 2017. $500k upper is 4-5x "
-        "current ATH (~$100k) — generous headroom for multi-year growth.",
+        "BTC has not closed below $1,000 since Dec 2017, and FIRE clamps all "
+        "BTC data fetches to start=2018-01-01 (see data/crypto.py) — so a "
+        "real BTC series cannot legitimately contain values below $1k. "
+        "Tight floor preserves the cross-contamination guard: a stock "
+        "at $60-700 or most ETFs would trip this band immediately. "
+        "$500k upper is 4-5x current ATH (~$100k) — generous headroom for "
+        "multi-year growth.",
     ),
     "ETH-USD": (
         50.0,
