@@ -183,12 +183,12 @@ async def combined_summary():
 
 ```bash
 # Start backend
-$UV run uvicorn api.main:app --reload --port 8000 &
+$UV run uvicorn api.main:app --reload --port 8001 &
 BACKEND_PID=$!
 
 # Wait for backend health check BEFORE starting frontend
 for i in $(seq 1 30); do
-  curl -s --max-time 2 http://localhost:8000/api/health > /dev/null 2>&1 && break
+  curl -s --max-time 2 http://localhost:8001/api/health > /dev/null 2>&1 && break
   kill -0 $BACKEND_PID 2>/dev/null || { echo "Backend crashed"; exit 1; }
   sleep 1
 done

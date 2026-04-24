@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8000/api";
+const BASE_URL = "http://localhost:8001/api";
 const DEFAULT_TIMEOUT_MS = 20_000;
 // Rebalance execute submits orders serially to Alpaca (~0.5-1s per order);
 // a 40-order rebalance needs 40-50s. Use a generous timeout so the frontend

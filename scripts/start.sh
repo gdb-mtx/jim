@@ -11,13 +11,13 @@ cd "$PROJECT_DIR"
 
 # Kill any stale processes on our ports
 echo "Cleaning up stale processes..."
-lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+lsof -ti:8001 | xargs kill -9 2>/dev/null || true
 lsof -ti:5174 | xargs kill -9 2>/dev/null || true
 sleep 1
 
 # Start backend
-echo "Starting backend on :8000..."
-$UV run uvicorn api.main:app --reload --port 8000 &
+echo "Starting backend on :8001..."
+$UV run uvicorn api.main:app --reload --port 8001 &
 BACKEND_PID=$!
 
 # Ensure cleanup on exit
@@ -27,7 +27,7 @@ trap "kill $BACKEND_PID 2>/dev/null; kill $FRONTEND_PID 2>/dev/null; exit 0" INT
 echo "Waiting for backend..."
 BACKEND_READY=false
 for i in $(seq 1 30); do
-  if curl -s --max-time 2 http://localhost:8000/api/health > /dev/null 2>&1; then
+  if curl -s --max-time 2 http://localhost:8001/api/health > /dev/null 2>&1; then
     echo "Backend ready."
     BACKEND_READY=true
     break
@@ -59,8 +59,8 @@ cd "$PROJECT_DIR"
 echo ""
 echo "FIRE is running:"
 echo "  Dashboard: http://localhost:5174"
-echo "  API:       http://localhost:8000/api/health"
-echo "  API Docs:  http://localhost:8000/docs"
+echo "  API:       http://localhost:8001/api/health"
+echo "  API Docs:  http://localhost:8001/docs"
 echo ""
 echo "Press Ctrl+C to stop both servers."
 

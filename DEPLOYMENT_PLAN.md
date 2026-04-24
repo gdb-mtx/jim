@@ -78,7 +78,7 @@ Why:
 
 - **Dashboard** (static Vite build): Vercel or Cloudflare Pages. Either works; Vercel is fine for this role.
 - **API + scheduler + filter cron**: Fly.io with `/data` volume.
-- **Local dev**: unchanged. `VITE_API_BASE_URL` picks backend (`http://localhost:8000` or `https://fire.fly.dev`).
+- **Local dev**: unchanged. `VITE_API_BASE_URL` picks backend (`http://localhost:8001` or `https://fire.fly.dev`).
 
 Why split:
 - Static dashboard on edge CDN is cheap, fast, trivially reliable.
@@ -267,7 +267,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - Add auth middleware (see above).
 - Point dashboard at Fly URL via `VITE_API_BASE_URL` feature flag.
 - **Success:** dashboard loads portfolio data from Fly; `/api/health` returns 200; APScheduler log shows 00:05 UTC job registered; auth rejects unauthed requests.
-- **Reversible:** flip `VITE_API_BASE_URL=http://localhost:8000`. Nothing destructive.
+- **Reversible:** flip `VITE_API_BASE_URL=http://localhost:8001`. Nothing destructive.
 
 ### Phase 2 — Cut over APScheduler crypto rebalance
 - Add env flag `FIRE_SCHEDULER_ENABLED=0` (disables APScheduler on laptop dev runs, keeps it on in Fly).
