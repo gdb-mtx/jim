@@ -12,7 +12,7 @@ cd "$PROJECT_DIR"
 # Kill any stale processes on our ports
 echo "Cleaning up stale processes..."
 lsof -ti:8000 | xargs kill -9 2>/dev/null || true
-lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+lsof -ti:5174 | xargs kill -9 2>/dev/null || true
 sleep 1
 
 # Start backend
@@ -47,7 +47,7 @@ if [ "$BACKEND_READY" = false ]; then
 fi
 
 # Start frontend only after backend is confirmed ready
-echo "Starting frontend on :5173..."
+echo "Starting frontend on :5174..."
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 cd "$PROJECT_DIR/dashboard"
@@ -58,7 +58,7 @@ cd "$PROJECT_DIR"
 
 echo ""
 echo "FIRE is running:"
-echo "  Dashboard: http://localhost:5173"
+echo "  Dashboard: http://localhost:5174"
 echo "  API:       http://localhost:8000/api/health"
 echo "  API Docs:  http://localhost:8000/docs"
 echo ""

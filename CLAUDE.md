@@ -248,7 +248,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 ### Running the Project
 - **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
 - **Backend only**: `uv run uvicorn api.main:app --reload` (from project root)
-- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5173
+- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5174
 - **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6 (OOS holdout, rolling OOS, parameter stability for crypto, block bootstrap, portfolio fit, walk-forward REFIT). Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION_PLAN.md`.
   - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
   - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` (StockMomentum) and `walk_forward_refit_a2.py` (LowVolatility leg). Support `--grid small|medium|large`.

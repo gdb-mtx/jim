@@ -240,7 +240,7 @@ The dashboard is well above average for a personal project — the memoization a
 
 ## 7. Security
 
-**Current state**: No authentication, no rate limiting, CORS allows localhost:5173 only.
+**Current state**: No authentication, no rate limiting, CORS allows localhost:5174 only.
 
 **For localhost paper trading**: Acceptable. The API only listens on 127.0.0.1 and trades paper money.
 
