@@ -53,6 +53,18 @@ const CHART_OPTS = {
 const priceFormatter = (price: number) =>
   "$" + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+// ET is the system reference timezone (CLAUDE.md). Snapshots are stored
+// with ET dates, so rebalance markers must bucket by ET too — otherwise the
+// 00:05 UTC A4 scheduled job (= previous evening ET) lands on a UTC day the
+// snapshot series doesn't have until the next close, and the marker collapses
+// onto the last existing bar.
+const ET_DATE_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 /** Convert rebalance history entries to TradingView chart markers.
  *
  * Filters out retired accounts (ACCT_COLOR is the active-account source of
@@ -61,15 +73,19 @@ const priceFormatter = (price: number) =>
 function toRebalanceMarkers(
   entries: RebalanceHistoryEntry[],
   accountView: AccountView,
+  seriesDates: Set<string>,
 ): SeriesMarker<string>[] {
-  // Group by date — multiple rebalances on same day become one marker
+  // Group by ET date — multiple rebalances on same day become one marker
   const byDate = new Map<
     string,
     { totalOrders: number; hasFails: boolean; accounts: Set<number> }
   >();
   for (const e of entries) {
     if (!(e.account in ACCT_COLOR)) continue;
-    const date = e.timestamp.slice(0, 10);
+    const date = ET_DATE_FMT.format(new Date(e.timestamp));
+    // Skip markers whose date has no matching bar — TradingView otherwise
+    // collapses them onto the last existing bar, producing stacked markers.
+    if (!seriesDates.has(date)) continue;
     const existing = byDate.get(date) ?? {
       totalOrders: 0,
       hasFails: false,
@@ -283,9 +299,12 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
           }
 
           // Set rebalance markers on combined series
+          const combinedDates = new Set(
+            (resp.equity_curve ?? []).map((p) => p.time),
+          );
           markerPluginRefs.current
             .get("combined")
-            ?.setMarkers(toRebalanceMarkers(entries, 0));
+            ?.setMarkers(toRebalanceMarkers(entries, 0, combinedDates));
 
           // Store performance summary + per-account data
           setPerformance(resp.performance ?? []);
@@ -317,9 +336,12 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
           }
 
           // Set rebalance markers on main series
+          const mainDates = new Set(
+            (resp.equity_curve ?? []).map((p) => p.time),
+          );
           markerPluginRefs.current
             .get("main")
-            ?.setMarkers(toRebalanceMarkers(entries, account));
+            ?.setMarkers(toRebalanceMarkers(entries, account, mainDates));
 
           // Clear breakdown chart + performance
           setPerformance([]);
