@@ -91,6 +91,57 @@ def download_with_retry(
                     f"extras={sorted(extras)}"
                 )
 
+            # Silent-drop guard. yfinance returns fewer columns than
+            # requested when individual tickers fail mid-batch (no error
+            # raised, just a smaller DataFrame). The per-batch coverage
+            # gate below only catches gross failures (>50% missing).
+            # Reproduced 2026-04-26: a 503-ticker S&P 500 refresh silently
+            # dropped 13 long-history names (BEN, FE, FOXA, FSLR, FTV, GL,
+            # GPC, GRMN, HAL, HAS, HBAN, HLT, HSIC) — all at 100% coverage
+            # in yfinance when re-requested individually. Cache landed at
+            # 488 stocks instead of the canonical 501.
+            #
+            # Recover the dropped names with a single follow-up download
+            # of just the missing tickers. If the follow-up *also* drops
+            # them, treat the absence as legitimate (likely a real ticker
+            # issue) and let the downstream coverage gate decide.
+            missing = requested - set(prices.columns)
+            if missing and len(missing) < len(symbols):
+                print(
+                    f"  yfinance silently dropped {len(missing)}/{len(symbols)} "
+                    f"tickers; retrying just those: {sorted(missing)}"
+                )
+                with _YFINANCE_LOCK:
+                    fill_df = yf.download(
+                        list(missing),
+                        start=start,
+                        end=end,
+                        interval=interval,
+                        auto_adjust=True,
+                        progress=False,
+                    )
+                if isinstance(fill_df.columns, pd.MultiIndex):
+                    fill_prices = fill_df["Close"]
+                else:
+                    fill_prices = fill_df[["Close"]]
+                    fill_prices.columns = list(missing)
+                fill_extras = set(fill_prices.columns) - missing
+                if fill_extras:
+                    raise RuntimeError(
+                        f"missing-ticker retry returned unexpected columns: "
+                        f"requested={sorted(missing)}, got={sorted(fill_prices.columns)}"
+                    )
+                recovered = sorted(set(fill_prices.columns) & missing)
+                if recovered:
+                    print(f"  recovered {len(recovered)}/{len(missing)}: {recovered}")
+                    prices = pd.concat([prices, fill_prices], axis=1)
+                still_missing = missing - set(fill_prices.columns)
+                if still_missing:
+                    print(
+                        f"  {len(still_missing)} ticker(s) absent on retry "
+                        f"(likely legitimate): {sorted(still_missing)}"
+                    )
+
             coverage = prices.shape[1] / len(symbols)
             if coverage < min_coverage_ratio:
                 raise RuntimeError(
