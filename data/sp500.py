@@ -14,6 +14,7 @@ slightly optimistic. See PLAN.md Section 5: Data Quality.
 import io
 import json
 import logging
+import threading
 import time
 import pandas as pd
 import yfinance as yf
@@ -22,6 +23,14 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
+
+# Single-flight refresh of the S&P 500 price cache. The inner `yf.download`
+# lock in `data.pipeline._YFINANCE_LOCK` only serializes individual batches —
+# concurrent callers of `download_sp500_prices` would still each enter the
+# refresh path and interleave 11×N batches, hammering Yahoo into 429s and
+# corrupting yfinance's internal SQLite cache. This lock ensures one full
+# refresh runs at a time; subsequent callers wait, then read the fresh cache.
+_SP500_REFRESH_LOCK = threading.Lock()
 
 
 def get_sp500_tickers() -> list[str]:
@@ -99,88 +108,107 @@ def download_sp500_prices(
     # incremental refresh will eventually replace this full-rebuild path.
     max_age_hours = 24
 
-    if cache_path.exists():
+    def _is_fresh() -> bool:
+        if not cache_path.exists():
+            return False
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
-        if age_hours < max_age_hours:
+        return age_hours < max_age_hours
+
+    # Fast path: lock-free read for the common case where the cache is fresh.
+    if _is_fresh():
+        prices = pd.read_parquet(cache_path)
+        print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
+        return prices
+
+    # Stale path: serialize refresh across threads (concurrent dashboard
+    # endpoints fired 5 simultaneous refreshes on 2026-04-26 → Yahoo 429s
+    # + yfinance SQLite cache corruption). Double-checked locking so callers
+    # waiting on the lock can read the freshly-refreshed cache without
+    # re-doing the download themselves.
+    with _SP500_REFRESH_LOCK:
+        if _is_fresh():
             prices = pd.read_parquet(cache_path)
-            print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
+            print(f"Loaded S&P 500 prices from cache (after waiting on refresh): {prices.shape[0]} rows, {prices.shape[1]} stocks")
             return prices
-        print(f"S&P 500 cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing (slow)...")
 
-    tickers = get_sp500_tickers()
-    if max_tickers:
-        tickers = tickers[:max_tickers]
+        if cache_path.exists():
+            age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+            print(f"S&P 500 cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing (slow)...")
 
-    print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {start}...")
-    print("This may take a few minutes on first run...")
+        tickers = get_sp500_tickers()
+        if max_tickers:
+            tickers = tickers[:max_tickers]
 
-    # Download in batches to avoid yfinance timeouts. Retry + >=50%-per-batch
-    # coverage guard live in data.pipeline.download_with_retry (S4). If a
-    # batch still fails after retries, we raise rather than silently write
-    # a truncated cache (prior bug: Apr 20 refresh returned 91/451 tickers
-    # and corrupted signals).
-    from data.pipeline import download_with_retry
-    batch_size = 50
-    all_prices = []
-    failed_batches: list[int] = []
+        print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {start}...")
+        print("This may take a few minutes on first run...")
 
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
-        batch_num = i // batch_size + 1
-        total_batches = (len(tickers) - 1) // batch_size + 1
-        print(f"  Batch {batch_num}/{total_batches}: {len(batch)} tickers")
+        # Download in batches to avoid yfinance timeouts. Retry + >=50%-per-batch
+        # coverage guard live in data.pipeline.download_with_retry (S4). If a
+        # batch still fails after retries, we raise rather than silently write
+        # a truncated cache (prior bug: Apr 20 refresh returned 91/451 tickers
+        # and corrupted signals).
+        from data.pipeline import download_with_retry
+        batch_size = 50
+        all_prices = []
+        failed_batches: list[int] = []
 
-        try:
-            batch_prices = download_with_retry(
-                batch, start=start, end=end, min_coverage_ratio=0.5
+        for i in range(0, len(tickers), batch_size):
+            batch = tickers[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(tickers) - 1) // batch_size + 1
+            print(f"  Batch {batch_num}/{total_batches}: {len(batch)} tickers")
+
+            try:
+                batch_prices = download_with_retry(
+                    batch, start=start, end=end, min_coverage_ratio=0.5
+                )
+            except Exception as e:
+                print(f"  Batch {batch_num} exhausted retries: {e}")
+                failed_batches.append(batch_num)
+            else:
+                all_prices.append(batch_prices)
+
+        if failed_batches:
+            raise RuntimeError(
+                f"S&P 500 download failed for batches {failed_batches} after "
+                f"retries exhausted. Refusing to write a truncated cache. "
+                f"Retry later (likely yfinance rate-limit) or investigate."
             )
-        except Exception as e:
-            print(f"  Batch {batch_num} exhausted retries: {e}")
-            failed_batches.append(batch_num)
-        else:
-            all_prices.append(batch_prices)
 
-    if failed_batches:
-        raise RuntimeError(
-            f"S&P 500 download failed for batches {failed_batches} after "
-            f"retries exhausted. Refusing to write a truncated cache. "
-            f"Retry later (likely yfinance rate-limit) or investigate."
-        )
+        prices = pd.concat(all_prices, axis=1)
 
-    prices = pd.concat(all_prices, axis=1)
+        # Coverage gate: trailing-window instead of full-history. The old rule
+        # (≥80% of days since `start`) locked the live universe to pre-2013
+        # IPOs, so recent S&P additions could never be picked even once they
+        # had plenty of scoreable history. Measuring coverage over the last
+        # ~2 years lets newer names qualify once they're live-trading-ready,
+        # without corrupting backtests: ranks and vol-scaling use NaN-safe
+        # operations that exclude a ticker from a given day when it has no
+        # price for that day (pre-IPO rows stay NaN → can't be picked).
+        coverage_window = min(500, len(prices))
+        min_coverage = 0.80
+        coverage = prices.tail(coverage_window).notna().sum() / coverage_window
+        good_stocks = coverage[coverage >= min_coverage].index
+        prices = prices[good_stocks].dropna(how="all")
 
-    # Coverage gate: trailing-window instead of full-history. The old rule
-    # (≥80% of days since `start`) locked the live universe to pre-2013
-    # IPOs, so recent S&P additions could never be picked even once they
-    # had plenty of scoreable history. Measuring coverage over the last
-    # ~2 years lets newer names qualify once they're live-trading-ready,
-    # without corrupting backtests: ranks and vol-scaling use NaN-safe
-    # operations that exclude a ticker from a given day when it has no
-    # price for that day (pre-IPO rows stay NaN → can't be picked).
-    coverage_window = min(500, len(prices))
-    min_coverage = 0.80
-    coverage = prices.tail(coverage_window).notna().sum() / coverage_window
-    good_stocks = coverage[coverage >= min_coverage].index
-    prices = prices[good_stocks].dropna(how="all")
+        # Forward-fill small gaps (weekends, holidays already handled by yfinance)
+        prices = prices.ffill(limit=5)
 
-    # Forward-fill small gaps (weekends, holidays already handled by yfinance)
-    prices = prices.ffill(limit=5)
+        print(f"Final universe: {prices.shape[1]} stocks with {min_coverage:.0%}+ coverage")
+        print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
-    print(f"Final universe: {prices.shape[1]} stocks with {min_coverage:.0%}+ coverage")
-    print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
+        # Plausibility guard (AUDIT_MONTH2 S5). Individual S&P 500 stocks don't
+        # have per-ticker bands (prices legitimately span $5-$1000+ and change
+        # after splits), so most columns pass silently. Any banded symbols
+        # present (e.g. if SPY ended up here) get checked.
+        from data.pipeline import write_parquet_atomic
+        from data.plausibility import assert_plausible_df
+        assert_plausible_df(prices)
 
-    # Plausibility guard (AUDIT_MONTH2 S5). Individual S&P 500 stocks don't
-    # have per-ticker bands (prices legitimately span $5-$1000+ and change
-    # after splits), so most columns pass silently. Any banded symbols
-    # present (e.g. if SPY ended up here) get checked.
-    from data.pipeline import write_parquet_atomic
-    from data.plausibility import assert_plausible_df
-    assert_plausible_df(prices)
+        write_parquet_atomic(prices, cache_path)
+        print(f"Cached to {cache_path}")
 
-    write_parquet_atomic(prices, cache_path)
-    print(f"Cached to {cache_path}")
-
-    return prices
+        return prices
 
 
 def download_vix(
