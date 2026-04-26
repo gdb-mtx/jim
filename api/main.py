@@ -325,6 +325,11 @@ async def lifespan(app: FastAPI):
         id="daily_crypto_rebalance",
         name="Daily crypto momentum rebalance (00:05 UTC)",
         replace_existing=True,
+        # Default APScheduler grace is 1s — any event-loop stall, brief sleep,
+        # or worker reload past the cron instant drops the run and advances
+        # next_run_time by a full day. 1h absorbs those without ever firing a
+        # same-day duplicate (cadence is 24h).
+        misfire_grace_time=3600,
     )
     scheduler.start()
     log.info("APScheduler started — crypto rebalance at 00:05 UTC daily")

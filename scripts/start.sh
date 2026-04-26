@@ -15,9 +15,18 @@ lsof -ti:8001 | xargs kill -9 2>/dev/null || true
 lsof -ti:5174 | xargs kill -9 2>/dev/null || true
 sleep 1
 
-# Start backend
-echo "Starting backend on :8001..."
-$UV run uvicorn api.main:app --reload --port 8001 &
+# Rotate previous server log so we keep one prior run for post-mortem
+LOG_FILE="$PROJECT_DIR/data/api_server.log"
+[ -f "$LOG_FILE" ] && mv "$LOG_FILE" "$LOG_FILE.prev"
+
+# Start backend under `caffeinate -is`:
+#   -i prevents idle sleep, -s prevents sleep on AC, AND the spawned child
+#   inherits the power assertion which neutralizes macOS App Nap timer
+#   throttling on the uvicorn process. Without this, a backgrounded
+#   Terminal lets App Nap delay APScheduler timers past their misfire grace.
+echo "Starting backend on :8001 (logging to $LOG_FILE)..."
+caffeinate -is $UV run uvicorn api.main:app --reload --port 8001 \
+  >> "$LOG_FILE" 2>&1 &
 BACKEND_PID=$!
 
 # Ensure cleanup on exit
