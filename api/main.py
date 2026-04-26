@@ -7,8 +7,24 @@ Includes APScheduler for daily crypto rebalance at 00:05 UTC.
 import asyncio
 import logging
 import time
+import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
+# yfinance still calls pandas's deprecated Timestamp.utcnow(), spamming the
+# server log on every fetch. Silence the message at the source — must run
+# before yfinance is transitively imported via api.routes.*.
+#
+# REMOVE THIS FILTER when yfinance migrates to Timestamp.now('UTC').
+# If pandas 5.0 is bumped before yfinance ships the fix, this filter becomes
+# a no-op and the underlying AttributeError will surface immediately — which
+# is the safer failure mode. uv.lock pins both packages, so the bite can
+# only happen when we deliberately upgrade pandas across major versions;
+# coordinate that with a yfinance bump.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Timestamp\.utcnow is deprecated.*",
+)
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger

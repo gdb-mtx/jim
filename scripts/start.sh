@@ -15,9 +15,25 @@ lsof -ti:8001 | xargs kill -9 2>/dev/null || true
 lsof -ti:5174 | xargs kill -9 2>/dev/null || true
 sleep 1
 
-# Rotate previous server log so we keep one prior run for post-mortem
+# Rotate previous server log into a per-session archive so each restart
+# starts a clean file (no session mixing) but we keep recent history for
+# post-mortems. Filenames are stamped at rotation time.
 LOG_FILE="$PROJECT_DIR/data/api_server.log"
-[ -f "$LOG_FILE" ] && mv "$LOG_FILE" "$LOG_FILE.prev"
+ARCHIVE_DIR="$PROJECT_DIR/data/api_server_logs"
+KEEP_LAST=10
+mkdir -p "$ARCHIVE_DIR"
+if [ -f "$LOG_FILE" ]; then
+  STAMP=$(date +%Y%m%dT%H%M%S)
+  mv "$LOG_FILE" "$ARCHIVE_DIR/api_server_$STAMP.log"
+  # Prune to KEEP_LAST most recent archives
+  ls -t "$ARCHIVE_DIR"/api_server_*.log 2>/dev/null \
+    | tail -n +$((KEEP_LAST + 1)) \
+    | xargs rm -f 2>/dev/null || true
+fi
+# One-time migration: fold the legacy .prev rotation into the new archive
+if [ -f "$LOG_FILE.prev" ]; then
+  mv "$LOG_FILE.prev" "$ARCHIVE_DIR/api_server_legacy_prev.log"
+fi
 
 # Start backend under `caffeinate -is`:
 #   -i prevents idle sleep, -s prevents sleep on AC, AND the spawned child
@@ -26,6 +42,7 @@ LOG_FILE="$PROJECT_DIR/data/api_server.log"
 #   Terminal lets App Nap delay APScheduler timers past their misfire grace.
 echo "Starting backend on :8001 (logging to $LOG_FILE)..."
 caffeinate -is $UV run uvicorn api.main:app --reload --port 8001 \
+  --log-config "$PROJECT_DIR/scripts/log_config.json" \
   >> "$LOG_FILE" 2>&1 &
 BACKEND_PID=$!
 
