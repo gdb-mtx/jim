@@ -11,9 +11,21 @@ import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-# yfinance still calls pandas's deprecated Timestamp.utcnow(), spamming the
-# server log on every fetch. Silence the message at the source — must run
-# before yfinance is transitively imported via api.routes.*.
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from api.routes import portfolio, orders, ops
+from api.research import strategies, backtests
+from api.locks import RebalanceLockedError, dual_rebalance_lock
+
+# Silence yfinance's pandas Timestamp.utcnow() deprecation spam. This MUST
+# come AFTER the imports above — yfinance registers its own
+# `('default', DeprecationWarning, '^yfinance')` filter at import time, and
+# `warnings.filterwarnings` prepends to the filter list. If we set our
+# filter first, yfinance's filter ends up ahead of ours and wins (first
+# match emits). Setting it last puts our ignore-rule at the head of the
+# list so it fires before yfinance's default-action filter.
 #
 # REMOVE THIS FILTER when yfinance migrates to Timestamp.now('UTC').
 # If pandas 5.0 is bumped before yfinance ships the fix, this filter becomes
@@ -25,14 +37,6 @@ warnings.filterwarnings(
     "ignore",
     message=r"Timestamp\.utcnow is deprecated.*",
 )
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from api.routes import portfolio, orders, ops
-from api.research import strategies, backtests
-from api.locks import RebalanceLockedError, dual_rebalance_lock
 
 log = logging.getLogger("fire.scheduler")
 
