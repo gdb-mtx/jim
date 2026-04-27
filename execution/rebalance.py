@@ -21,6 +21,17 @@ from execution.risk_manager import RiskManager, compute_drawdown
 from execution.validation_gate import require_validated
 
 log = logging.getLogger("fire.rebalance")
+
+# Minimum dollar value for any order we'll actually submit. Set above
+# Alpaca's per-asset-class minimums (~$10 crypto, $1 equity) with a
+# margin so we don't send orders that get rejected for "cost basis must
+# be >= minimal amount of order 10" — observed 2026-04-26 on the daily
+# A4 fire when BTC drift produced a $9 buy. Anything below this floor is
+# economically dust (slippage > expected gain) and noisy in the journal.
+# Surfaced as `skipped_orders` on RebalanceResult and in the journal so
+# you can see what *would* have been traded but wasn't.
+MIN_NOTIONAL_USD = 25.0
+
 from strategies.portfolio import (
     PORTFOLIOS,
     compute_spy_trend_filter,
@@ -67,6 +78,12 @@ class RebalanceResult:
     prices: dict[str, float] = field(default_factory=dict)
     missing_prices: list[str] = field(default_factory=list)
     price_error: bool = False
+    # Orders the engine computed but filtered out before submission because
+    # their dollar value was below MIN_NOTIONAL_USD. Each entry records the
+    # symbol, side, computed notional, and reason. Surfaced in the journal
+    # and the preview so quiet-day "no trades needed" vs. "all trades were
+    # dust" can be distinguished.
+    skipped_orders: list[dict] = field(default_factory=list)
 
 
 def get_current_signals(
@@ -548,13 +565,43 @@ def compute_rebalance(
         btc_filter_scalar = float(btc_filter.iloc[-1])
         btc_filter_active = btc_filter_scalar < 1.0
 
+    # Min-notional filter: split `orders` into submit-list and skip-list.
+    # Crypto buys carry an explicit `notional`; everything else uses
+    # `qty * live_price`. Orders below MIN_NOTIONAL_USD never get submitted
+    # — they'd be Alpaca-rejected anyway and clutter the journal as
+    # `orders_failed`. Skipped entries are preserved so the operator can
+    # tell "all trades were dust" apart from "no trades needed."
+    submit_orders: list[OrderRequest] = []
+    skipped_orders: list[dict] = []
+    for o in orders:
+        if o.notional is not None:
+            est_notional = float(o.notional)
+        else:
+            price = prices.get(o.symbol, 0.0) or 0.0
+            est_notional = float(o.qty or 0) * price
+        if est_notional < MIN_NOTIONAL_USD:
+            skipped_orders.append({
+                "symbol": o.symbol,
+                "side": o.side,
+                "notional": round(est_notional, 2),
+                "reason": f"below_min_notional_${int(MIN_NOTIONAL_USD)}",
+            })
+        else:
+            submit_orders.append(o)
+    if skipped_orders:
+        log.info(
+            f"min-notional filter dropped {len(skipped_orders)}/{len(orders)} "
+            f"order(s) below ${MIN_NOTIONAL_USD:.0f}: "
+            f"{[(s['symbol'], s['side'], s['notional']) for s in skipped_orders]}"
+        )
+
     return RebalanceResult(
         strategy_id=strategy_id,
         portfolio_value=portfolio_value,
         target_weights=target_weights,
         target_positions=target_positions,
         current_positions=current_positions,
-        orders=orders,
+        orders=submit_orders,
         risk_check=risk_check,
         spy_filter_active=spy_filter_active,
         spy_filter_scalar=spy_filter_scalar,
@@ -567,6 +614,7 @@ def compute_rebalance(
         prices=prices,
         missing_prices=missing_prices,
         price_error=price_error,
+        skipped_orders=skipped_orders,
     )
 
 

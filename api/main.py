@@ -218,13 +218,40 @@ async def _daily_crypto_rebalance():
                                 post_filter_weights=result.post_filter_weights,
                                 execute_error=execute_error,
                                 source="scheduled",
+                                skipped_orders=result.skipped_orders,
                             )
 
                         if execute_error:
                             # Re-raise so the outer retry loop picks it up.
                             raise RuntimeError(f"execute_rebalance failed: {execute_error}")
                     else:
-                        log.info("Crypto rebalance: no trades needed")
+                        # Distinguish "no drift" from "all drift was dust": if
+                        # the engine filtered everything below MIN_NOTIONAL, we
+                        # still want a journal entry so the operator can see it.
+                        if result.skipped_orders:
+                            log.info(
+                                f"Crypto rebalance: all {len(result.skipped_orders)} "
+                                f"computed order(s) below min-notional — nothing submitted"
+                            )
+                            log_rebalance(
+                                account=4,
+                                strategy_id="crypto_momentum_filtered",
+                                portfolio_value=result.portfolio_value,
+                                orders_submitted=0,
+                                orders_failed=0,
+                                order_details=[],
+                                btc_filter_active=result.btc_filter_active,
+                                btc_filter_scalar=result.btc_filter_scalar,
+                                vol_scalar=result.vol_scalar,
+                                vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+                                raw_signal_weights=result.raw_signal_weights,
+                                post_filter_weights=result.post_filter_weights,
+                                execute_error=None,
+                                source="scheduled",
+                                skipped_orders=result.skipped_orders,
+                            )
+                        else:
+                            log.info("Crypto rebalance: no trades needed")
 
                     await asyncio.to_thread(take_snapshot, 4)
 
