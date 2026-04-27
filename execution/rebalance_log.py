@@ -32,7 +32,6 @@ def log_rebalance(
     post_filter_weights: dict[str, float] | None = None,
     execute_error: str | None = None,
     source: str = "manual",
-    skipped_orders: list[dict] | None = None,
 ):
     """Append a rebalance event to the JSONL log.
 
@@ -67,11 +66,6 @@ def log_rebalance(
             raise was at the Alpaca submit-orders entry point; potentially
             populated for partial failures that escape the per-order guard).
         source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
-        skipped_orders: Orders the rebalance computed but didn't submit
-            because their dollar value was below MIN_NOTIONAL_USD. Each
-            entry: {symbol, side, notional, reason}. Lets the operator see
-            "we wanted to trade X but it was dust" — distinguishes from
-            "no trades needed."
     """
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -106,7 +100,6 @@ def log_rebalance(
             }
             for o in order_details
         ],
-        "skipped_orders": skipped_orders or [],
     }
 
     try:

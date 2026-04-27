@@ -111,7 +111,6 @@ async def preview_rebalance(
         ],
         "num_buys": sum(1 for o in result.orders if o.side == "buy"),
         "num_sells": sum(1 for o in result.orders if o.side == "sell"),
-        "skipped_orders": result.skipped_orders,
         "risk_check": result.risk_check,
         "spy_filter_active": result.spy_filter_active,
         "spy_filter_scalar": result.spy_filter_scalar,
@@ -196,38 +195,6 @@ async def _execute_under_lock(account: int, strategy_id: str):
             )
 
     if not result.orders:
-        # If everything was filtered out by the min-notional gate, journal
-        # it so the operator can see "we wanted to trade X but it was dust"
-        # rather than misreading silence as "portfolio is perfectly aligned."
-        if result.skipped_orders:
-            log_rebalance(
-                account=account,
-                strategy_id=result.strategy_id,
-                portfolio_value=result.portfolio_value,
-                orders_submitted=0,
-                orders_failed=0,
-                order_details=[],
-                spy_filter_active=result.spy_filter_active,
-                spy_filter_scalar=result.spy_filter_scalar,
-                btc_filter_active=result.btc_filter_active,
-                btc_filter_scalar=result.btc_filter_scalar,
-                vol_scalar=result.vol_scalar,
-                vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-                raw_signal_weights=result.raw_signal_weights,
-                post_filter_weights=result.post_filter_weights,
-                execute_error=None,
-                source="manual",
-                skipped_orders=result.skipped_orders,
-            )
-            return {
-                "message": (
-                    f"No trades submitted — all {len(result.skipped_orders)} "
-                    f"computed order(s) below min-notional"
-                ),
-                "account": account,
-                "strategy_id": strategy_id,
-                "skipped_orders": result.skipped_orders,
-            }
         return {
             "message": "No trades needed — portfolio already at target",
             "account": account,
@@ -261,7 +228,6 @@ async def _execute_under_lock(account: int, strategy_id: str):
             post_filter_weights=result.post_filter_weights,
             execute_error=execute_error,
             source="manual",
-            skipped_orders=result.skipped_orders,
         )
 
     if execute_error:

@@ -196,7 +196,6 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                     post_filter_weights=result.post_filter_weights,
                     execute_error=execute_error,
                     source="filter_monitor",
-                    skipped_orders=result.skipped_orders,
                 )
 
             if execute_error:
