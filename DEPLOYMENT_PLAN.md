@@ -9,7 +9,7 @@
 ## Guiding principles
 
 1. **ET is the system reference timezone.** Codified in CLAUDE.md. All scheduled times use `TZ=America/New_York` or `CRON_TZ=America/New_York`. Only A4's crypto APScheduler stays on UTC (crypto is 24/7 — UTC is the honest anchor there).
-2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. `VITE_API_BASE_URL` + `FIRE_SCHEDULER_ENABLED` flags toggle between local-only and cloud-backed.
+2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. `FIRE_SCHEDULER_ENABLED` flag keeps APScheduler off in laptop dev runs once Fly is the canonical scheduler host.
 3. **Boring tech.** Prefer documented, well-trodden tools over shiny. One CLI, one Dockerfile, one config file.
 4. **Every phase is reversible.** No one-way doors until Phase 5 pre-real-money split.
 5. **Paper-first — and paper *on the deployed infra* is itself a validation phase, not just a rehearsal.** The whole point of running paper on Fly before real money is that infrastructure bugs (cron fires at wrong time, volume unmounts, log drain silently breaks, auth middleware has a bypass, `fly scale count 2` slips through) only surface on production infra. We already found that our local backtest and local live didn't agree (AUDIT_MONTH2 C4). The equivalent for deployment is: laptop-paper and Fly-paper won't agree in ways we can't predict until Fly-paper has been running for weeks. **Real money requires deployed-paper time, not just laptop-paper time.**
@@ -48,7 +48,7 @@ George's initial ask was "deploy to Vercel." Vercel is serverless functions + ed
 - **Ephemeral filesystem.** Everything in `data/risk_state/` and `data/raw/` vanishes between invocations. **Circuit-breaker state silently resetting is a real-money-graduation disqualifier** — we explicitly chose file-persistence for this in S3.
 - **`fcntl.flock` is meaningless in serverless.** `api/locks.py` relies on flock to serialize FastAPI + APScheduler + filter_check across processes. Serverless spawns parallel isolated instances with independent tmpfs — the lock protects nothing.
 
-**Verdict:** Vercel is good for the **dashboard static bundle only**. Wrong for API + scheduler + cron.
+**Verdict:** Vercel is structurally wrong for the live service (API + scheduler + cron). Vercel is *able* to host the dashboard static bundle, but on review (see Architecture section below) we co-locate the dashboard with the API on Fly instead — single Dockerfile, same-origin auth, no CORS, fewer moving parts. **Net: Vercel is not used in this deployment.**
 
 ---
 
@@ -74,22 +74,36 @@ Why:
 
 ---
 
-## Architecture — split deployment (Option C)
+## Architecture — co-locate dashboard + API on Fly (revised 2026-04-26)
 
-- **Dashboard** (static Vite build): Vercel or Cloudflare Pages. Either works; Vercel is fine for this role.
-- **API + scheduler + filter cron**: Fly.io with `/data` volume.
-- **Local dev**: unchanged. `VITE_API_BASE_URL` picks backend (`http://localhost:8001` or `https://fire.fly.dev`).
+**Decision:** one Fly app serves both the FastAPI backend (`/api/*`) and the built dashboard static bundle (`/`). Single Dockerfile, single deploy, single auth surface, same-origin browser → server.
 
-Why split:
-- Static dashboard on edge CDN is cheap, fast, trivially reliable.
-- Trading logic on always-on Linux box is the right primitive for APScheduler + fcntl + file state.
-- Clear failure domains. CDN blip ≠ trading halt; Fly deploy ≠ dashboard shell broken.
+**Original plan was split (Vercel for dashboard, Fly for API).** Reverted on review because the engineering case didn't survive scrutiny for a one-user system:
+- Edge CDN speed advantage (~30ms vs ~100-150ms TTFB to Lisbon) is invisible against API-call latency that already round-trips to Fly.
+- Failure-domain isolation cuts both ways: a Fly outage stops trading either way; a dashboard-only outage on Vercel just hides state and arguably misleads ops more than co-located downtime would.
+- Cross-origin auth (CORS preflights, cookie SameSite, bearer-token plumbing) is real complexity we'd be paying for no operational benefit.
+- Two vendors = two billing relationships, two CLIs, two log streams, two status pages.
+- The Vercel scale/edge story matters for many-user public sites; FIRE is one nomadic user.
 
-Rejected:
-- **Option A (single VPS, everything):** simpler but doesn't leverage the right tools for each job. Fine fallback if the split adds too much cognitive load.
-- **Option B (live on cloud, API+dashboard local):** strictly worse. API needs to be where state is, otherwise every dashboard request tunnels into a server that may be off.
+The honest driver of the original split was "George prefers the Vercel DX" — a fine taste-based reason but not an architecture reason. Recorded as a decision-making lesson in the project's memory; this doc reflects the engineering recommendation.
 
-**Dashboard target: Vercel (decided).** George has used Vercel extensively and prefers the DX. Cloudflare Pages was functionally equivalent but Vercel wins on familiarity. Dashboard stays a static Vite build — none of the Vercel-incompatible pieces (APScheduler, fcntl, persistent disk) are in the dashboard anyway.
+**What co-located looks like:**
+- Dockerfile multi-stage: `node` stage runs `npm ci && npm run build` in `dashboard/`; `python` stage `uv sync --frozen` and copies `dashboard/dist/` to `/app/static/`.
+- `api/main.py` mounts `StaticFiles(directory="static", html=True)` at `/`; FastAPI router prefixes (`/api/*`) stay unchanged. Vite dev server still proxies `/api` → `localhost:8001` in development, so local dev is untouched.
+- One Fly app, one volume at `/data`, one `flyctl deploy`. Auth is a same-origin session cookie set by FastAPI middleware — no CORS, no cross-origin token plumbing.
+- Dashboard route serves `index.html` for unknown paths so React Router works.
+
+**Local dev: unchanged.** `npm run dev` on :5174 with Vite proxy → `:8001`. No `VITE_API_BASE_URL` flag needed since prod is also same-origin.
+
+**Trade-offs accepted:**
+- ~5-15s of dashboard unavailability during a Fly machine replacement on deploy. For a one-user system, fine. (Vercel would have given zero-downtime static deploys.)
+- Static asset serving uses Fly machine CPU. Negligible at one user.
+- No PR-preview URL ergonomics out of the box. If we want them later, Fly review apps are ~clunkier-but-doable.
+
+**Rejected:**
+- **Split (dashboard on Vercel, API on Fly):** original plan, reconsidered above.
+- **Single VPS (Hetzner et al.):** simpler hosting bill but you own systemd, Caddy, ufw, upgrades, backups. Fly's primitives map cleaner; pick a VPS only for ops practice, not as default.
+- **API+dashboard local, only live trading on cloud:** strictly worse. API needs to be where state is.
 
 ---
 
@@ -170,13 +184,13 @@ Laptop uses `osascript` macOS notifications. Server needs:
 
 ## API authentication — open concern, must address in Phase 1
 
-Current FastAPI runs on localhost with **no auth**. Once it's on Fly on a public URL, anyone with the URL can hit `POST /api/orders/rebalance/execute` and trigger trades. This is a real security gap. Options:
+Current FastAPI runs on localhost with **no auth**. Once it's on Fly on a public URL, anyone with the URL can hit `POST /api/orders/rebalance/execute` and trigger trades. This is a real security gap. Options (eased by the co-located decision — same-origin makes session cookies trivial):
 
-- **Simplest:** shared secret in header (`X-API-Key`), checked by FastAPI middleware. Dashboard sends it from `VITE_API_KEY` env. Not great (key in browser), but bounded blast radius on paper.
-- **Better:** OAuth via Cloudflare Access or Tailscale Funnel in front of Fly. Dashboard still public, API gated by identity provider.
-- **Pre-real-money:** required. Cannot graduate without it. Cloudflare Access free tier covers one user.
+- **Simplest:** username + password login form serving a `Set-Cookie: session=...; Secure; HttpOnly; SameSite=Strict` from FastAPI; middleware checks the cookie on every `/api/*`. Same-origin means no CORS, no token plumbing, no `VITE_API_KEY` in the browser. Dashboard is gated by being behind the same login.
+- **Better (pre-real-money):** Cloudflare Access in front of the whole Fly app (dashboard + API). Free tier covers one user; identity provider does the auth, FastAPI just trusts the `CF-Access-*` headers. Replaces password handling entirely.
+- **Pre-real-money:** Cloudflare Access required. Cannot graduate without it.
 
-**Decision needed before Phase 1.** Flag: add an auth layer even for paper — it's practice for the real-money discipline and costs nothing now.
+**Decision needed before Phase 1.** Lean toward starting with the simple session cookie for paper (15 min of work, validates the same-origin pattern) and graduating to Cloudflare Access in Phase 5 alongside the paper/live app split.
 
 ---
 
@@ -260,14 +274,15 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 
 **✅ Completed 2026-04-23.** Phase 0 closed: `strategies/portfolio.py` split into `portfolio_config.py` + `portfolio_backtest.py` (shim preserves all existing import paths); `api/routes/{backtests,strategies}.py` moved to `api/research/`; all four grep audits return 0 hits; pytest 115/115 green; APScheduler + launchd unchanged. Next gate: ≥2 weeks of stable laptop operation before Phase 1 begins.
 
-### Phase 1 — Dockerize + deploy API to Fly, keep local cron
-- Write `Dockerfile` using `python:3.12-slim` + `uv sync`.
-- `fly launch --no-deploy`, create 1GB volume at `/data`, set secrets, set TZ, deploy.
+### Phase 1 — Dockerize + deploy API+dashboard to Fly, keep local cron
+- Write multi-stage `Dockerfile`: `node` stage runs `npm ci && npm run build` in `dashboard/`; `python:3.12-slim` stage runs `uv sync --frozen` and copies `dashboard/dist/` to `/app/static/`.
+- Mount `StaticFiles(directory="static", html=True)` at `/` in `api/main.py`. SPA fallback so unknown paths serve `index.html` (React Router).
+- `fly launch --no-deploy`, create 1GB volume at `/data`, set secrets, set `TZ=America/New_York`, deploy.
 - Copy current `data/risk_state/` state files onto the Fly volume (one-time seeding — otherwise filter_state.json is empty on first run and the cron will "seed" it without triggering rebalance, which is actually the desired first-run behavior; pick one).
-- Add auth middleware (see above).
-- Point dashboard at Fly URL via `VITE_API_BASE_URL` feature flag.
-- **Success:** dashboard loads portfolio data from Fly; `/api/health` returns 200; APScheduler log shows 00:05 UTC job registered; auth rejects unauthed requests.
-- **Reversible:** flip `VITE_API_BASE_URL=http://localhost:8001`. Nothing destructive.
+- Add same-origin session-cookie auth middleware (no CORS needed — dashboard and API share the Fly hostname).
+- Local dev unchanged: `npm run dev` on :5174 still proxies `/api` → `localhost:8001`.
+- **Success:** the Fly URL serves the dashboard; `/api/health` returns 200; portfolio panels render from the same origin; APScheduler log shows 00:05 UTC job registered; auth rejects unauthed requests.
+- **Reversible:** dashboard reverts to local-only by hitting `http://localhost:5174` instead of the Fly URL. Nothing destructive on the laptop.
 
 ### Phase 2 — Cut over APScheduler crypto rebalance
 - Add env flag `FIRE_SCHEDULER_ENABLED=0` (disables APScheduler on laptop dev runs, keeps it on in Fly).
@@ -310,15 +325,14 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 **Decided:**
 - ✅ ET is the reference timezone (codified in CLAUDE.md).
 - ✅ Fly.io as primary platform for the live service.
-- ✅ Vercel for the dashboard static bundle (user preference, good DX fit).
-- ✅ Option C split architecture (dashboard on Vercel, live on Fly, local dev unchanged).
+- ✅ **Co-located deployment on Fly (revised 2026-04-26).** One app serves the FastAPI backend and the built dashboard static bundle. Reverses the prior split-on-Vercel decision after honest review — Vercel was a preference call, not an engineering call. See Architecture section.
 - ✅ File-based state on Fly volume; skip Postgres in Phase 1.
 - ✅ Phase 0 refactor (decouple live from backtest) happens locally first; no cloud work until that's stable for weeks.
 - ✅ Timeline: cloud deployment is weeks out. Refactor + local validation first.
 
 **Open — need decisions before Phase 1 (not Phase 0):**
 
-1. **API authentication mechanism.** Shared secret header for Phase 1, or invest in Cloudflare Access / Tailscale Funnel from the start? Cloudflare Access is free for one user and is the right long-term answer; shared secret is ~15 min of work.
+1. **API authentication mechanism.** Same-origin session cookie for Phase 1 (15 min of work, no token-in-browser anti-pattern thanks to co-located deploy), or jump straight to Cloudflare Access? Cloudflare Access is free for one user and is the right long-term answer; the session cookie is the simpler bridge.
 2. **Alerting channel.** Pushover ($5 one-time, reliable push notifications to phone) or Telegram bot (free, but requires installed Telegram app)? Need to pick one to implement in Phase 4.
 3. **CI/CD for deploys.** Manual `flyctl deploy` from laptop, or GitHub Actions on push to `main`? Manual is fine for Phase 1–2; automation is a Phase 4/5 polish item.
 4. **Budget ceiling.** Estimated $5-8/mo Fly + free tiers for everything else. Any hard cap?
