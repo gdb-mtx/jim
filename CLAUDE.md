@@ -163,6 +163,8 @@ The dashboard's RiskStatusPanel and FilterStatusBanner show current status. Filt
 
 **Backtest parity:** `backtesting/drawdown_halt.py` provides `simulate_drawdown_halt(returns, halt_threshold=0.35)` — a post-hoc halt-and-hold layer. For the -35% threshold it's a no-op on every current strategy's historical returns (sim/live parity exact), but the scaffolding exists for stress-test scenarios or future threshold experiments.
 
+**Sub-broker-minimum order rejections are expected, not a bug.** Small drift on A4's daily crypto rebalance can produce sub-$10 BTC orders that Alpaca rejects with `cost basis must be >= minimal amount of order 10`. First observed 2026-04-26; the journal correctly captured `orders_submitted: 2, orders_failed: 1` with the broker error message in the failed order. The other leg (ETH) executed normally, so net financial impact was zero. A client-side $25 notional floor + `skipped_orders` journaling was built and reverted (commits `da068eb` → `2b7ed8e`) as YAGNI: Alpaca's broker-side validation is authoritative, and one occurrence isn't an alarm-fatigue problem yet. Treat single-order rejections in the daily A4 fire as expected when the failed order's notional is < ~$10. **Revisit the floor only if dust rejections become recurring** (e.g., daily for >30 days) and start obscuring real failures in the `orders_failed` field.
+
 ### Architecture
 ```
 # Mode 1: Factor Trading System
