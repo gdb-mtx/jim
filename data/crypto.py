@@ -100,7 +100,9 @@ def download_crypto_prices(
             # from concurrent-download cross-contamination; a read-time
             # refusal would have stopped the bad rebalance preview.
             extras = set(prices.columns) - set(CRYPTO_UNIVERSE)
-            if extras:
+            if len(prices) == 0:
+                print("Crypto cache has 0 rows — refreshing")
+            elif extras:
                 print(
                     f"Crypto cache has non-crypto tickers {sorted(extras)} "
                     f"— refreshing"
@@ -176,7 +178,9 @@ def download_btc_prices(
         if age_hours < max_age_hours:
             cached_df = pd.read_parquet(cache_path)
             # Schema check — file must contain exactly the BTC-USD column.
-            if list(cached_df.columns) != ["BTC-USD"]:
+            if len(cached_df) == 0:
+                print("BTC cache has 0 rows — refreshing")
+            elif list(cached_df.columns) != ["BTC-USD"]:
                 print(
                     f"BTC cache has unexpected columns {list(cached_df.columns)} "
                     f"— refreshing"

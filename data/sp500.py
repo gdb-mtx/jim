@@ -117,8 +117,11 @@ def download_sp500_prices(
     # Fast path: lock-free read for the common case where the cache is fresh.
     if _is_fresh():
         prices = pd.read_parquet(cache_path)
-        print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
-        return prices
+        if len(prices) == 0:
+            print("S&P 500 cache has 0 rows — refreshing")
+        else:
+            print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
+            return prices
 
     # Stale path: serialize refresh across threads (concurrent dashboard
     # endpoints fired 5 simultaneous refreshes on 2026-04-26 → Yahoo 429s
@@ -128,8 +131,11 @@ def download_sp500_prices(
     with _SP500_REFRESH_LOCK:
         if _is_fresh():
             prices = pd.read_parquet(cache_path)
-            print(f"Loaded S&P 500 prices from cache (after waiting on refresh): {prices.shape[0]} rows, {prices.shape[1]} stocks")
-            return prices
+            if len(prices) == 0:
+                print("S&P 500 cache has 0 rows — refreshing (after waiting on lock)")
+            else:
+                print(f"Loaded S&P 500 prices from cache (after waiting on refresh): {prices.shape[0]} rows, {prices.shape[1]} stocks")
+                return prices
 
         if cache_path.exists():
             age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
@@ -233,7 +239,9 @@ def download_vix(
         if age_hours < max_age_hours:
             cached_df = pd.read_parquet(cache_path)
             # Schema check — file must contain exactly the renamed VIX column.
-            if list(cached_df.columns) != ["VIX"]:
+            if len(cached_df) == 0:
+                print("VIX cache has 0 rows — refreshing")
+            elif list(cached_df.columns) != ["VIX"]:
                 print(
                     f"VIX cache has unexpected columns {list(cached_df.columns)} "
                     f"— refreshing"

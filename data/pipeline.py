@@ -148,7 +148,13 @@ def download_with_retry(
                     f"coverage {prices.shape[1]}/{len(symbols)} below "
                     f"min_coverage_ratio={min_coverage_ratio}"
                 )
-            return prices.dropna(how="all")
+            prices = prices.dropna(how="all")
+            if len(prices) == 0:
+                raise RuntimeError(
+                    f"download returned 0 rows for {len(symbols)} symbols "
+                    f"(likely no internet or yfinance outage)"
+                )
+            return prices
         except Exception as e:
             last_err = e
             print(f"  download attempt {attempt}/{max_retries} failed: {e}")
@@ -223,7 +229,9 @@ def download_and_cache(
             # and re-download rather than serving a subset that happens
             # to look right.
             extras = set(cached.columns) - set(symbols)
-            if extras:
+            if len(cached) == 0:
+                print(f"Cache {cache_path.name} has 0 rows — refreshing")
+            elif extras:
                 print(
                     f"Cache {cache_path.name} has unexpected columns "
                     f"{sorted(extras)} — refreshing"

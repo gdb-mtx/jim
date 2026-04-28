@@ -276,6 +276,25 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - **Virtual env**: `.venv/` managed by uv (already set up)
 - **Node**: managed by nvm, dashboard uses Vite + React + TypeScript
 - **Async endpoints**: All FastAPI `async def` endpoints MUST use `asyncio.to_thread()` for blocking calls (Alpaca API, yfinance downloads, parquet I/O, pandas computations). Calling blocking functions directly freezes the event loop and makes the entire server unresponsive to concurrent requests. This applies to route handlers and scheduled jobs alike.
+- **Maintainability is a first-class constraint.** George works on this alone with AI partners and re-enters the codebase after gaps. A clever optimization that requires holding three files in your head is worse than a boring implementation a future session can grok cold. Optimize for: fewer surfaces to remember, fewer invariants to re-verify, fewer places a change has to land. Before adding a new file/abstraction/mirror, ask whether it makes the next person's job easier or harder. If a "mirrors X" docstring is needed, the two implementations should probably be one.
+
+### Working with Claude — behavioral defaults
+
+Rules promoted from session memory because they failed concretely in past work. Each one fired at least once. CLAUDE.md is loaded as instruction every session; memory is softer "context I might use" — behavioral guardrails belong here.
+
+- **Preference ≠ requirement.** When the user mentions a tool, library, or platform offhand ("I like X", "use Y"), ask whether it's a hard requirement or a preference before designing around it. Default to the engineering recommendation; surface preference deviations as labeled trade-offs ("if you'd rather X, here's what it costs"). Don't backfill engineering justifications around taste — that produced a Vercel-split deployment plan that didn't survive 5 minutes of re-reading (rewritten in commit `7f618d4`).
+
+- **Stop and confirm before any change >50 lines or any new file/architecture decision.** State the smallest viable alternative + what you're proposing + why, and wait for a yes. The 119-line min-notional patch (commit `da068eb` → reverted `2b7ed8e`) and the original Vercel split both bypassed this checkpoint.
+
+- **Don't duplicate authoritative external validation.** When the broker / upstream / external system already enforces a rule, do not preemptively re-implement it client-side. One occurrence is not a problem to solve. The bar for adding a local check is recurring noise that obscures real signal — weeks of repeated false alarms, not a single instance.
+
+- **Diagnose before workaround.** When something looks broken, run the diagnostic that shows what the upstream actually thinks before proposing infrastructure to route around it. Surface "we could just wait" or "the broker handled it" as peer options, not fallback footnotes.
+
+- **Reset triggers.** If George says "reset stance" / "smallest version" / "do you really need all this?" — drop what's being built, restate the actual problem in one sentence, propose the leanest possible response.
+
+- **Honesty over flattery in commits and docs.** When a decision is driven by preference rather than engineering merit, label it as such ("user prefers X; trade-off is Y"). Future-you re-reading a doc should see what was actually decided and why.
+
+- **Simplicity and clarity over complexity.** When two designs both work, take the smaller one. Prefer one obvious code path over two clever ones; prefer reading values from snapshots over recomputing them; prefer a single source of truth over parallel implementations whose equivalence has to be re-proven. Complexity in this system has consistently been the failure mode — `compute_live_vol_scalar` mirroring `apply_vol_scaling` with subtly different inputs (open-loop vs closed-loop) is exactly the kind of "same math, different reality" trap that simplicity prevents.
 
 ### Current Phase & Next Steps
 
