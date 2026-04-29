@@ -97,7 +97,7 @@ def get_current_signals(
         )
 
     if strategy_id in CRYPTO_STRATEGIES:
-        weights = _get_crypto_strategy_signals(strategy_id, lookback_start)
+        weights = _get_crypto_strategy_signals(strategy_id, lookback_start, broker=broker)
     elif strategy_id in STOCK_STRATEGIES:
         weights = _get_stock_strategy_signals(strategy_id, lookback_start)
     elif strategy_id in ETF_STRATEGIES:
@@ -142,8 +142,34 @@ def _get_etf_strategy_signals(
     return {sym: w for sym, w in latest.items() if abs(w) > 1e-6}
 
 
+def _live_augmented_btc(broker, btc_prices):
+    """Overwrite the last row of `btc_prices` with the live BTC quote.
+
+    The strategy's internal BTC trend filter operates on `set_btc()`'d
+    daily closes, which lag real-time by up to a day. Augmenting the
+    latest close with the live Alpaca quote keeps in-session previews
+    and executes consistent with `filter_check.py` and
+    `compute_btc_trend_filter(live_price=...)`, which already use the
+    live quote for the same flip detection.
+
+    No-op if broker is None (e.g. backtest paths) or the live fetch
+    fails — falls back to whatever cached close we have.
+    """
+    if broker is None or btc_prices is None or len(btc_prices) == 0:
+        return btc_prices
+    try:
+        live_btc = broker.get_latest_price("BTC/USD")
+    except Exception:
+        return btc_prices
+    if live_btc is None:
+        return btc_prices
+    btc_prices = btc_prices.copy()
+    btc_prices.iloc[-1] = float(live_btc)
+    return btc_prices
+
+
 def _get_crypto_strategy_signals(
-    strategy_id: str, lookback_start: str
+    strategy_id: str, lookback_start: str, broker=None
 ) -> dict[str, float]:
     """Get latest signals from a crypto strategy.
 
@@ -151,6 +177,7 @@ def _get_crypto_strategy_signals(
     """
     crypto_prices = download_crypto_prices(start=lookback_start)
     btc_prices = download_btc_prices()
+    btc_prices = _live_augmented_btc(broker, btc_prices)
 
     strategy = CRYPTO_STRATEGIES[strategy_id]()
     strategy.set_btc(btc_prices)
@@ -195,6 +222,7 @@ def _get_portfolio_signals(
     if any(sid in CRYPTO_STRATEGIES for sid in weights):
         crypto_prices = download_crypto_prices(start=lookback_start)
         btc_prices = download_btc_prices()
+        btc_prices = _live_augmented_btc(broker, btc_prices)
 
     # Get latest signals from each component
     combined_weights: dict[str, float] = {}
