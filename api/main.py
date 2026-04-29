@@ -5,11 +5,13 @@ Includes APScheduler for daily crypto rebalance at 00:05 UTC.
 """
 
 import asyncio
+import json
 import logging
 import time
 import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -45,20 +47,59 @@ log = logging.getLogger("fire.scheduler")
 # and after shutdown.
 scheduler: AsyncIOScheduler | None = None
 
-# In-memory cache of each APScheduler job's last invocation. Reset on server
-# restart — the durable record is `data/rebalance_log.jsonl`. Schema:
+# In-memory cache of each APScheduler job's last invocation. Persisted to
+# `_LAST_RUN_STATE_PATH` on every `_record_run` so server restarts don't
+# wipe the Ops panel's last-run signal — including no-op runs that don't
+# write to `data/rebalance_log.jsonl`. Schema:
 # {job_id: {"started": iso, "finished": iso|None,
-#           "status": "running"|"success"|"skipped"|"failed",
+#           "status": "running"|"success"|"partial"|"skipped"|"failed",
 #           "error": str|None}}
+# "partial" = orders submitted with ≥1 broker rejection but no execute_error
+# (e.g. expected sub-broker-minimum dust rejections — see CLAUDE.md).
 _last_run_info: dict[str, dict] = {}
+
+_LAST_RUN_STATE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "data" / "risk_state" / "scheduler_last_run.json"
+)
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _persist_last_run_state() -> None:
+    """Write `_last_run_info` to disk. Called from `_record_run` on every
+    terminal status change so the Ops panel can render the actual last
+    fire time across server restarts — including no-op runs (cash mode)
+    that the journal-based backfill can't see."""
+    try:
+        _LAST_RUN_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_RUN_STATE_PATH.write_text(json.dumps(_last_run_info, indent=2))
+    except Exception as e:
+        log.warning(f"Persist scheduler last-run state failed (non-fatal): {e}")
+
+
+def _load_last_run_state() -> None:
+    """Load persisted last-run state into `_last_run_info` on startup."""
+    try:
+        if not _LAST_RUN_STATE_PATH.exists():
+            return
+        data = json.loads(_LAST_RUN_STATE_PATH.read_text())
+        if isinstance(data, dict):
+            _last_run_info.update(data)
+            for job_id, info in data.items():
+                log.info(
+                    f"Loaded last-run state for {job_id}: "
+                    f"{info.get('finished') or info.get('started')} ({info.get('status')})"
+                )
+    except Exception as e:
+        log.warning(f"Load scheduler last-run state failed (non-fatal): {e}")
+
+
 def _record_run(job_id: str, started: str, status: str, error: str | None = None) -> None:
-    """Stamp the end of a job invocation in `_last_run_info`.
+    """Stamp the end of a job invocation in `_last_run_info` and persist
+    to disk so the Ops panel survives restarts.
 
     `started` is captured at function entry and threaded through so the
     recorded window reflects the full invocation, not just the terminal
@@ -70,6 +111,7 @@ def _record_run(job_id: str, started: str, status: str, error: str | None = None
         "status": status,
         "error": error,
     }
+    _persist_last_run_state()
 
 
 def _backfill_last_run_from_journal() -> None:
@@ -98,10 +140,16 @@ def _backfill_last_run_from_journal() -> None:
             ts = r.get("timestamp")
             if not ts:
                 continue
-            failed = (
-                bool(r.get("execute_error"))
-                or (r.get("orders_failed", 0) or 0) > 0
-            )
+            execute_error = r.get("execute_error")
+            orders_failed = (r.get("orders_failed", 0) or 0)
+            if execute_error:
+                status = "failed"
+            elif orders_failed > 0:
+                # Partial fail = some orders rejected but execute returned
+                # cleanly (e.g. dust rejections). Distinct from "failed".
+                status = "partial"
+            else:
+                status = "success"
             _last_run_info["daily_crypto_rebalance"] = {
                 "started": ts,
                 # Journal records one timestamp close to job completion —
@@ -109,12 +157,12 @@ def _backfill_last_run_from_journal() -> None:
                 # reconstruction. Slightly lossy but good enough for
                 # "when did the last scheduled rebalance execute?".
                 "finished": ts,
-                "status": "failed" if failed else "success",
-                "error": r.get("execute_error"),
+                "status": status,
+                "error": execute_error,
             }
             log.info(
                 f"Backfilled daily_crypto_rebalance last-run from journal: "
-                f"{ts} ({'failed' if failed else 'success'})"
+                f"{ts} ({status})"
             )
             return
         log.info("No scheduled rebalance in journal; last-run stays empty")
@@ -149,6 +197,7 @@ async def _daily_crypto_rebalance():
 
     max_retries = 3
     final_error: str | None = None
+    partial_fail = False
     for attempt in range(1, max_retries + 1):
         try:
             from execution.alpaca_broker import AlpacaBroker
@@ -195,6 +244,7 @@ async def _daily_crypto_rebalance():
                             log.error(f"Crypto execute raised: {execute_error}", exc_info=True)
                         finally:
                             failed = [o for o in order_results if o.get("status") == "error"]
+                            partial_fail = bool(failed) and not execute_error
                             log.info(
                                 f"Crypto rebalance: {len(order_results)} orders submitted"
                                 + (f" ({len(failed)} failed)" if failed else "")
@@ -259,7 +309,7 @@ async def _daily_crypto_rebalance():
                         log.warning(f"filter_state.json sync failed (non-fatal): {e}")
 
                     log.info("Daily crypto rebalance complete")
-                    _record_run(job_id, started, "success")
+                    _record_run(job_id, started, "partial" if partial_fail else "success")
                     return  # Success — exit retry loop
             except RebalanceLockedError as e:
                 log.warning(f"Crypto rebalance skipped — {e}")
@@ -331,10 +381,14 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _startup_backfill_and_snapshot)
 
-    # Seed the in-memory last-run cache from the durable journal so dev
-    # reloads and production restarts don't flash "never" on the Ops
-    # panel's APScheduler row between the restart and the next fire.
-    _backfill_last_run_from_journal()
+    # Seed the in-memory last-run cache so dev reloads and production
+    # restarts don't flash "never" on the Ops panel's APScheduler row
+    # between the restart and the next fire. Prefer the persisted state
+    # file (covers no-op cash-mode runs); fall back to the journal scan
+    # if absent — covers fresh installs and pre-persistence histories.
+    _load_last_run_state()
+    if "daily_crypto_rebalance" not in _last_run_info:
+        _backfill_last_run_from_journal()
 
     # Start APScheduler for daily crypto rebalance. Stored on the module
     # global so `api/routes/ops.py` can read `.get_jobs()` / `.running`.

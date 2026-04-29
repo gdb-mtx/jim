@@ -40,6 +40,10 @@ function toneForApschedulerJob(
 ): StatusTone {
   if (!running) return "gray";
   if (job.last_status === "failed") return "red";
+  // "partial" = orders submitted with ≥1 broker rejection (e.g. expected
+  // sub-broker-minimum dust rejections — see CLAUDE.md). Same tone as
+  // EventTimeline uses for `orders_failed > 0` so the two surfaces agree.
+  if (job.last_status === "partial") return "amber";
   if (job.last_status === "skipped") return "amber";
   if (job.last_status === "running") return "blue";
   // success or null (never fired yet) both count as healthy — the job is

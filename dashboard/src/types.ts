@@ -295,7 +295,7 @@ export interface OpsSchedulerJob {
   next_run_time: string | null;
   last_started: string | null;
   last_finished: string | null;
-  last_status: "running" | "success" | "skipped" | "failed" | null;
+  last_status: "running" | "success" | "partial" | "skipped" | "failed" | null;
   error: string | null;
 }
 
