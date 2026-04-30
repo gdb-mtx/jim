@@ -40,7 +40,7 @@ VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
 #   ("interval_seconds", seconds)  -- mirrors StartInterval (anchored on last_run)
 LAUNCHD_JOBS: list[tuple[str, str, str, tuple]] = [
     # (plist_label, source_tag, expected_scope, schedule)
-    ("com.fire.filter-check-equity", "launchd-equity", "spy", ("daily_local", 16, 30)),
+    ("com.fire.filter-check-equity", "launchd-equity", "spy", ("interval_seconds", 14400)),
     ("com.fire.filter-check-crypto", "launchd-crypto", "btc", ("interval_seconds", 14400)),
 ]
 

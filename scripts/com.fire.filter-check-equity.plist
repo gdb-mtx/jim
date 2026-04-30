@@ -6,9 +6,14 @@
     <string>com.fire.filter-check-equity</string>
 
     <!-- Equity-scope filter check: SPY 200d MA filter for A1/A2.
-         Runs once daily at 4:30 PM laptop-local time (post-NYSE close).
-         SPY filter is only meaningful on daily closes, so a single
-         end-of-day check is sufficient. -->
+         Fires every 4h via StartInterval (matching the crypto plist).
+         Was StartCalendarInterval(16:30) but macOS silently dropped the
+         once-daily fire after a deferred run from a closed-laptop day,
+         leaving the agent unfired for >24h with no error. StartInterval
+         is a relative timer that re-arms reliably on wake and isn't
+         susceptible to that bookkeeping bug. Whipsaw risk from intraday
+         fires is negligible (SPY 7% above MA at install). Pre-Fly.io
+         migration only — Fly cron is the durable answer. -->
 
     <key>ProgramArguments</key>
     <array>
@@ -23,13 +28,8 @@
     <key>WorkingDirectory</key>
     <string>/Users/george/Desktop/Projects/FIRE</string>
 
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>16</integer>
-        <key>Minute</key>
-        <integer>30</integer>
-    </dict>
+    <key>StartInterval</key>
+    <integer>14400</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/george/Desktop/Projects/FIRE/data/filter_check_stdout.log</string>

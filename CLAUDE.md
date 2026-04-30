@@ -70,7 +70,7 @@ Account 4 standalone (OOS 2023-01-03 → 2026-04-20):
 Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials. Account 3 is retired; orders endpoint `_require_active()` guard + validation_gate both block rebalance attempts against it.
 
 Rebalance schedule (two layers — exposure management + signal rotation):
-- **Daily at 4:30 PM ET**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips (launchd, no server needed).
+- **Every 4 hours (launchd)**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips. Both equity and crypto plists use `StartInterval=14400`. Was once-daily-at-16:30 for equity but macOS dropped a fire after a closed-laptop deferred run; relative-interval re-arms reliably on wake. Pre-Fly.io measure.
 - **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via APScheduler (requires server).
 - **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual).
 
@@ -127,7 +127,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 **When are filters and circuit breakers checked?**
 Risk controls are checked at two levels:
 
-1. **Filter monitor (daily, automated)**: `scripts/filter_check.py` runs via macOS launchd at **4:30 PM ET daily** — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
+1. **Filter monitor (every 4h, automated)**: `scripts/filter_check.py` runs via macOS launchd every 4 hours (both equity and crypto plists, `StartInterval=14400`) — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
 
 2. **Scheduled rebalance (signal rotation)**: Rotates *which* stocks/assets to hold at the strategy's native cadence:
    - **Account 4** (daily): APScheduler at 00:05 UTC (crypto signal + BTC filter)
@@ -212,7 +212,7 @@ scripts/run_validation.py — VALIDATION_PLAN Tests 1-6 runner; updates data/ris
 scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config
 scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
 scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
-scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (daily 4:30 PM laptop-local, `--filter spy`)
+scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (every 4h, `--filter spy`)
 scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
 scripts/watch_filters.py  — GitHub Actions travel-window watcher; pushes ntfy.sh alerts on SPY/BTC crossings while the laptop is asleep.
 
@@ -245,7 +245,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
   - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
   - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` and `walk_forward_refit_a2.py`. Support `--grid small|medium|large`.
   - **Strategy-discovery workflow** — how to evaluate a new candidate strategy: see `VALIDATION_PLAN.md` → "Test 6 → Recipe for a new candidate strategy" (5-step process: write class → pick grid → run standalone refit → decide → wire into adapter).
-- **Filter monitor**: Runs automatically via launchd at 4:30 PM ET daily (no server needed)
+- **Filter monitor**: Runs automatically via launchd every 4h (no server needed)
   - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
   - Check status: `launchctl list | grep fire`
   - View logs: `cat data/filter_check.log` or `cat data/risk_state/filter_state.json`
@@ -309,7 +309,7 @@ Rules promoted from session memory because they failed concretely in past work. 
 - Data caching: ETF/SPY/S&P500/VIX/crypto parquets with staleness checks
 - Daily equity snapshots, Alpaca backfill, circuit breaker monitoring, filter status
 - Rebalance UI: preview → confirm → execute, action-classified orders, per-account locks
-- Filter monitor: `scripts/filter_check.py` via launchd at 4:30 PM ET daily
+- Filter monitor: `scripts/filter_check.py` via launchd every 4h
 - Ticker mapping: yfinance hyphens → Alpaca dots via `to_alpaca_equity_symbol()`
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
