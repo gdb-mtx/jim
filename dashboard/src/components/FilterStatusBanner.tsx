@@ -199,7 +199,7 @@ export default memo(function FilterStatusBanner({
             Monitor checked {timeAgo(monitorState.last_checked)}
             {monitorState.recent_auto_rebalances.length > 0 && (
               <span className="text-[#4d8eff]">
-                {" — "}auto-rebalanced{" "}
+                {" — last filter flip rebalanced "}
                 {[...new Set(monitorState.recent_auto_rebalances.map((r) => r.account))]
                   .sort()
                   .map((a) => `Acct ${a}`)
