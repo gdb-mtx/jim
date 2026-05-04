@@ -400,3 +400,59 @@ def test_rebalance_retired_block_not_bypassable_by_override(tmp_path, monkeypatc
             strategy_id="test_strategy",
             risk_manager=RiskManager(persist=False),
         )
+
+
+# ---- Rotation-day sizing regression (2026-05-03 incident) ----
+#
+# A4's first true rotation (sell ETH → buy XRP) had the buy notional capped
+# to pre-sell cash because `available_cash = broker.get_cash()` was queried
+# before sells freed their proceeds. ETH sell freed $47K; XRP buy got $134
+# notional; $47K sat idle for 24h. Fix sums in `expected_sell_proceeds` so
+# the buy can be funded from the same-batch sells. This test pins the
+# invariant: a fully-invested rotation does NOT collapse the buy.
+
+@patch("execution.rebalance.require_validated")
+@patch("execution.rebalance.get_current_signals")
+def test_crypto_rotation_buy_notional_uses_post_sell_cash(mock_signals, _gate):
+    """Rotation day: hold 100% in ETH, signal flips to BTC+XRP, near-zero cash.
+    Buy notionals must be sized against (cash + sell proceeds), not pre-sell
+    cash alone — otherwise the buys collapse to dust and the rotation strands
+    the sell proceeds in cash for a full day.
+    """
+    mock_signals.return_value = {"BTC/USD": 0.5, "XRP/USD": 0.5}
+
+    # Fully invested in ETH ($100K), ~nothing in cash.
+    broker = _mock_broker(
+        positions={"ETH/USD": 40.0},
+        value=100_000,
+        prices={"ETH/USD": 2500.0, "BTC/USD": 50_000.0, "XRP/USD": 1.0},
+    )
+    broker.account = 4
+    broker.get_cash.return_value = 10.0  # pre-sell cash, mostly invested
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="crypto_momentum",  # in CRYPTO_STRATEGIES, not PORTFOLIOS
+        risk_manager=RiskManager(persist=False),
+    )
+
+    sells = [o for o in result.orders if o.side == "sell"]
+    buys = [o for o in result.orders if o.side == "buy"]
+
+    # Sell: full ETH position liquidated.
+    assert len(sells) == 1
+    assert sells[0].symbol == "ETH/USD"
+    assert sells[0].qty == 40.0
+    assert sells[0].notional is None  # sells use qty, not notional
+
+    # Buys: each ≈ 50% of portfolio. With sell proceeds folded in, the cash
+    # budget covers ~$100K of buys (× 0.999 safety), so each buy lands at
+    # ~$49,950, NOT the ~$5 the bug produced.
+    assert len(buys) == 2
+    by_symbol = {o.symbol: o for o in buys}
+    assert set(by_symbol) == {"BTC/USD", "XRP/USD"}
+    for sym in ("BTC/USD", "XRP/USD"):
+        n = by_symbol[sym].notional
+        assert n is not None, f"{sym} buy missing notional (notional path is the live behavior)"
+        # Tight band: must be > 99% of intended $50K and ≤ $50K.
+        assert 49_500 < n <= 50_000, f"{sym} notional {n} collapsed — sell proceeds not credited?"

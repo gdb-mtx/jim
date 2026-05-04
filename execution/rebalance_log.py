@@ -95,6 +95,14 @@ def log_rebalance(
                 "symbol": o.get("symbol", "?"),
                 "side": o.get("side", "?"),
                 "qty": o.get("qty") or o.get("requested_qty"),
+                # Crypto buys submit a dollar `notional` instead of qty;
+                # the broker echoes back qty=None at pending_new, so the
+                # `qty` field above falls back to a stale preview-time
+                # qty. Logging notional lets a reader see what dollar
+                # amount was actually submitted (and reconcile against
+                # the eventual fill). Surfaced 2026-05-03 on A4 — see
+                # rebalance.py 5b. None for non-notional orders.
+                "notional": o.get("notional"),
                 "status": o.get("status", "unknown"),
                 "error": o.get("error"),
             }

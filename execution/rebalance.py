@@ -481,6 +481,17 @@ def compute_rebalance(
     crypto_buy_notionals: dict[str, float] = {}
     if is_crypto and target_positions:
         available_cash = broker.get_cash()
+        # Sells run before buys in `submit_orders`, so the proceeds they
+        # free fund the buys in the same batch. Without including them in
+        # the cap, a rotation day (sell A → buy B) sizes B against pre-sell
+        # cash (~$0 when fully invested), leaving the proceeds stranded.
+        # Surfaced 2026-05-03 on A4's first ETH→XRP rotation: ETH sell
+        # freed $47K, XRP buy got notional $134, $47K idle for 24h.
+        expected_sell_proceeds = sum(
+            (current_qty - target_positions.get(s, 0)) * prices[s]
+            for s, current_qty in current_positions.items()
+            if current_qty > target_positions.get(s, 0) and prices.get(s, 0) > 0
+        )
         # Raw dollar target = weight × portfolio_value (not qty × price,
         # so we aren't re-exposed to stale prices).
         raw_target_notionals = {
@@ -494,13 +505,14 @@ def compute_rebalance(
             for s, n in raw_target_notionals.items()
         }
         total_buy_notional = sum(remaining_buy_notionals.values())
-        cash_budget = available_cash * 0.999
+        cash_budget = (available_cash + expected_sell_proceeds) * 0.999
         if total_buy_notional > 0:
             scale = min(1.0, cash_budget / total_buy_notional)
             if scale < 1.0:
                 log.warning(
                     f"Crypto buy notional ${total_buy_notional:.2f} exceeds "
-                    f"cash budget ${cash_budget:.2f} (cash=${available_cash:.2f}). "
+                    f"cash budget ${cash_budget:.2f} "
+                    f"(cash=${available_cash:.2f} + sells=${expected_sell_proceeds:.2f}). "
                     f"Scaling by {scale:.4f}."
                 )
             for s, n in remaining_buy_notionals.items():

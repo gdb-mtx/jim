@@ -166,3 +166,71 @@ def test_log_rebalance_omits_weights_gracefully_when_none(tmp_path):
         entry = json.loads(log_file.read_text().strip())
         assert entry["raw_signal_weights"] is None
         assert entry["post_filter_weights"] is None
+
+
+# ---- Crypto buy notional persistence (2026-05-03 incident) ----
+#
+# Crypto buys submit a dollar `notional` instead of qty; Alpaca echoes back
+# qty=None at pending_new, so the journal's `qty` field (which falls back to
+# the stale preview-time qty) doesn't reflect what was actually submitted.
+# Logging notional alongside qty lets a reader reconcile journal vs broker
+# fill without cross-checking Alpaca directly.
+
+def test_log_rebalance_records_crypto_buy_notional(tmp_path):
+    """Crypto buy entries carry the submitted notional; sells carry None."""
+    log_file = tmp_path / "rebalance_log.jsonl"
+    with patch("execution.rebalance_log.LOG_FILE", log_file):
+        log_rebalance(
+            account=4,
+            strategy_id="crypto_momentum_filtered",
+            portfolio_value=95_080.0,
+            orders_submitted=2,
+            orders_failed=0,
+            order_details=[
+                # Crypto sell — qty path, no notional.
+                {
+                    "symbol": "ETH/USD", "side": "sell",
+                    "qty": "20.490072913", "notional": None,
+                    "status": "pending_new",
+                },
+                # Crypto buy — notional path. Alpaca returns qty=None at
+                # pending_new; the stale preview qty lands in `qty` via
+                # the requested_qty fallback, while notional carries the
+                # dollar amount actually submitted.
+                {
+                    "symbol": "XRP/USD", "side": "buy",
+                    "qty": None, "notional": 47_539.95,
+                    "requested_qty": 34_100.82,
+                    "status": "pending_new",
+                },
+            ],
+            source="scheduled",
+        )
+
+        entry = json.loads(log_file.read_text().strip())
+        sell, buy = entry["orders"]
+        assert sell["symbol"] == "ETH/USD"
+        assert sell["notional"] is None
+        assert buy["symbol"] == "XRP/USD"
+        assert buy["notional"] == 47_539.95
+        # The stale preview qty still appears in `qty` for reference.
+        assert buy["qty"] == 34_100.82
+
+
+def test_log_rebalance_notional_absent_for_equity_orders(tmp_path):
+    """Equity orders never set notional; field persists as null."""
+    log_file = tmp_path / "rebalance_log.jsonl"
+    with patch("execution.rebalance_log.LOG_FILE", log_file):
+        log_rebalance(
+            account=1,
+            strategy_id="sm_filtered",
+            portfolio_value=100_000.0,
+            orders_submitted=1,
+            orders_failed=0,
+            order_details=[
+                {"symbol": "AAPL", "side": "buy", "qty": 10, "status": "filled"},
+            ],
+            source="manual",
+        )
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["orders"][0]["notional"] is None
