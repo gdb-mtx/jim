@@ -230,9 +230,13 @@ export interface FilterStatusResponse {
 export interface DataCacheInfo {
   name: string;
   file: string;
+  asset_class: "crypto" | "equity";
   age_h: number | null;
   threshold_h: number;
   stale: boolean;
+  mtime_stale: boolean;
+  content_stale: boolean;
+  latest_bar: string | null;
   missing: boolean;
 }
 

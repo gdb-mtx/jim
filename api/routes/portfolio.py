@@ -439,38 +439,102 @@ async def filter_status():
 
 @router.get("/data-freshness")
 async def data_freshness():
-    """Age of each data cache in hours. Dashboard uses this to flag
-    staleness — a value > stale_threshold_hours means refreshes aren't
-    happening and the filter monitor / rebalances may be running on
-    old data (as happened Mar 10 → Apr 18, 2026)."""
+    """Age and content freshness of each data cache. Dashboard uses this
+    to flag two distinct staleness modes:
+
+    - **mtime-stale**: cache file hasn't been re-written in `threshold_h`.
+      Means the refresh job is dead. Caught the Mar 10 → Apr 18 2026
+      incident where the daily refresh stopped firing entirely.
+
+    - **content-stale**: cache file mtime is fresh but the latest
+      *settled* bar inside it is older than expected. Means upstream
+      (yfinance) returned incomplete data — the refresh job ran but the
+      bar we needed wasn't yet published. Caught (in the future, after
+      this fix) the C10 yfinance settled-bar publishing-delay incident
+      from 2026-05-06 where the cache held only "two-days-ago + today's
+      partial" with yesterday entirely missing.
+
+    The two modes have different remediation: mtime-stale needs the
+    cron/launchd job restored, content-stale needs either a later fire
+    time or a different data source. Distinguishing them on the
+    dashboard makes the diagnostic obvious.
+
+    Content check is asset-class aware:
+    - crypto (24/7 markets): latest *settled* bar (i.e. ignoring today's
+      partial) should be ≥ yesterday UTC.
+    - equity (M-F + holidays): latest bar should be within 4 calendar
+      days. The wider window covers weekends + a long weekend's holiday
+      without false-positive flagging.
+    """
     import time
+    import pandas as pd
     from pathlib import Path
 
     raw_dir = Path(__file__).parent.parent.parent / "data" / "raw"
     # Files the live-trading paths depend on. Source of truth here, not in code.
     # stale_threshold_hours mirrors the cache's max_age_hours (see data/crypto.py etc.)
     files = [
-        {"name": "BTC prices",      "file": "btc_prices.parquet",    "threshold_h": 20},
-        {"name": "Crypto universe", "file": "crypto_prices.parquet", "threshold_h": 20},
-        {"name": "VIX",             "file": "vix.parquet",           "threshold_h": 20},
-        {"name": "S&P 500",         "file": "sp500_prices.parquet",  "threshold_h": 30},
-        {"name": "SPY filter",      "file": "spy_filter.parquet",    "threshold_h": 20},
-        {"name": "ETF universe",    "file": "etf_prices.parquet",    "threshold_h": 20},
+        {"name": "BTC prices",      "file": "btc_prices.parquet",    "threshold_h": 20, "asset_class": "crypto"},
+        {"name": "Crypto universe", "file": "crypto_prices.parquet", "threshold_h": 20, "asset_class": "crypto"},
+        {"name": "VIX",             "file": "vix.parquet",           "threshold_h": 20, "asset_class": "equity"},
+        {"name": "S&P 500",         "file": "sp500_prices.parquet",  "threshold_h": 30, "asset_class": "equity"},
+        {"name": "SPY filter",      "file": "spy_filter.parquet",    "threshold_h": 20, "asset_class": "equity"},
+        {"name": "ETF universe",    "file": "etf_prices.parquet",    "threshold_h": 20, "asset_class": "equity"},
     ]
     now = time.time()
+    today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+    yesterday_utc = today_utc - pd.Timedelta(days=1)
+    # 4 calendar days covers Sat+Sun+Mon-holiday + a buffer day for equity caches
+    equity_oldest_acceptable = today_utc - pd.Timedelta(days=4)
+
     caches = []
     for f in files:
         p = raw_dir / f["file"]
         if not p.exists():
-            caches.append({**f, "age_h": None, "stale": True, "missing": True})
+            caches.append({
+                "name": f["name"], "file": f["file"], "asset_class": f["asset_class"],
+                "age_h": None, "threshold_h": f["threshold_h"],
+                "stale": True, "mtime_stale": True, "content_stale": False,
+                "latest_bar": None, "missing": True,
+            })
             continue
+
         age_h = (now - p.stat().st_mtime) / 3600
+        mtime_stale = age_h > f["threshold_h"]
+
+        # Content check: read the parquet and look at the latest bar date.
+        # Drop today's partial bar from consideration (consistent with the
+        # C9 fix in CryptoMomentum.generate_signals) — we want to know
+        # whether the latest *settled* bar is recent.
+        content_stale = False
+        latest_bar: Optional[str] = None
+        try:
+            df = await asyncio.to_thread(pd.read_parquet, p)
+            if len(df) > 0:
+                latest_ts = pd.Timestamp(df.index[-1])
+                if latest_ts >= today_utc and len(df) > 1:
+                    latest_ts = pd.Timestamp(df.index[-2])
+                latest_bar = latest_ts.strftime("%Y-%m-%d")
+                if f["asset_class"] == "crypto":
+                    content_stale = latest_ts < yesterday_utc
+                else:
+                    content_stale = latest_ts < equity_oldest_acceptable
+        except Exception:
+            # Parquet read failure isn't a freshness issue per se — the
+            # schema check in the data layer handles corruption. Don't
+            # fail the dashboard endpoint over a single bad file.
+            pass
+
         caches.append({
             "name": f["name"],
             "file": f["file"],
+            "asset_class": f["asset_class"],
             "age_h": round(age_h, 1),
             "threshold_h": f["threshold_h"],
-            "stale": age_h > f["threshold_h"],
+            "stale": mtime_stale or content_stale,
+            "mtime_stale": mtime_stale,
+            "content_stale": content_stale,
+            "latest_bar": latest_bar,
             "missing": False,
         })
     any_stale = any(c["stale"] for c in caches)

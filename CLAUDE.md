@@ -19,6 +19,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
 - `OPS_DASHBOARD_PLAN.md` — design spec for a new "Ops" tab consolidating scheduler status, filter state, validation, and event timeline into a single dashboard view. Motivated by killing macOS notifications and prepping for cloud migration. Not yet built — next session.
 - `DATA_SOURCES.md` — standing observation that yfinance is the root cause of nearly every cache-corruption incident, with an incident log and candidate replacements (Alpaca/Polygon/hybrid). Becomes load-bearing at Phase 5 (real money).
+- `HANDOFF_ALPACA_BARS.md` — self-contained brief for migrating live crypto signal computation from yfinance to Alpaca's bars endpoint. Backtest historical stays on yfinance. Drafted 2026-05-06 to be picked up by a fresh session that hasn't seen the live↔backtest reconciliation context.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions

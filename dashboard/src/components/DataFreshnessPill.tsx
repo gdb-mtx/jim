@@ -37,11 +37,19 @@ export default memo(function DataFreshnessPill() {
   const borderColor = stale ? "border-[#ff4d6a40]" : "border-[#2a2a3e]";
   const bgColor = stale ? "bg-[#ff4d6a08]" : "bg-[#1a1a2e]";
 
+  // Show both stale modes distinctly in the tooltip — they have different
+  // remediation. mtime-stale = refresh job is dead. content-stale =
+  // upstream returned incomplete data (e.g. yfinance hadn't published
+  // yesterday's settled bar yet at fire time — the C10 incident).
   const tooltip = data.caches
-    .map(
-      (c) =>
-        `${c.name}: ${formatAge(c.age_h)}${c.stale ? " (STALE)" : ""}`
-    )
+    .map((c) => {
+      const flags: string[] = [];
+      if (c.mtime_stale) flags.push("MTIME-STALE");
+      if (c.content_stale) flags.push("CONTENT-STALE");
+      const tail = flags.length ? ` (${flags.join(", ")})` : "";
+      const bar = c.latest_bar ? ` latest: ${c.latest_bar}` : "";
+      return `${c.name}: ${formatAge(c.age_h)}${bar}${tail}`;
+    })
     .join("\n");
 
   return (
