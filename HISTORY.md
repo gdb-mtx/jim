@@ -52,6 +52,43 @@ crypto (bid-ask spread). A4 cost drag came in at ~3.4pp (vs audit's
 0.5-1pp estimate) because realized daily turnover on crypto rotation is
 ~8% / ~20× annualized one-way, not the audit's implied ~2×.
 
+**C9 — Partial-bar signal contamination (crypto)** (fixed 2026-05-06). Surfaced
+during the live↔backtest reconciliation triggered by a -7.3 pp gap on A4 over
+14 days of paper trading. The strategy's `generate_signals` was reading
+yfinance's "today" bar at fire time — but yfinance daily crypto bars are
+dated by UTC-midnight start, and when queried mid-day the latest bar is
+*partial* (its "close" is the current scratch price, not a settled day-close,
+and it mutates with intraday price action). Because backtest historically
+runs against already-closed bars, the live signal was systematically
+different from what backtest computed for the same notional date. The same
+strategy could rank coins differently at 06:05 UTC vs 23:55 UTC even with no
+real change in market structure, just because the partial bar absorbed an
+Asian-session move. Fix: drop the partial today-bar in `generate_signals`
+before computing momentum, so `pct_change(lookback).iloc[-1]` uses
+yesterday's settled close — backtest semantics. Combined with the new 8:05
+PM EDT launchd schedule (= 00:05 UTC during EDT, see `AUTOMATION.md`), the
+strategy now fires 5 minutes after a UTC bar closes using yesterday's just-
+minted settled close as the latest data point. The lesson: "yfinance returns
+a row, therefore it's a closed bar" was an unstated assumption never tested.
+Should have caught this when the live↔backtest pairs first started
+diverging in late April; instead it took a 14-day reconciliation to surface.
+
+**C10 — yfinance settled-bar publishing delay** (open, documented 2026-05-06).
+Adjacent issue surfaced while diagnosing C9. yfinance does NOT publish a
+settled crypto daily bar at exactly UTC midnight — there's a 1-12 hour delay
+between bar close and the settled value being available in the API response.
+At our 8:05 PM EDT (= 00:05 UTC) fire time, yesterday's settled bar is
+typically NOT yet visible. Result: cache refresh at fire time captures
+"two-days-ago settled + today's partial" with yesterday entirely missing.
+After the C9 partial-bar drop, the strategy uses two-days-ago close as
+"latest" — one extra day of staleness vs. backtest. Impact on a 21-day
+momentum signal is small but non-zero. Mitigations to consider: (a) shift
+schedule later in UTC day (e.g. 03:00 UTC) so yfinance has had time to
+settle, at the cost of fragility from laptop-darkwake; (b) move to a
+broker-native price source post-Fly migration (see `DATA_SOURCES.md`); (c)
+accept it for paper. Live numbers retain the staleness until one of those
+lands.
+
 **C7 — `max_position_pct=20%` cap on A4** (fixed 2026-04-21, option C).
 Cap removed entirely. Was wired in naming only — three legacy controls
 (Fractional Kelly + 2% rule + 20% position cap) all removed.

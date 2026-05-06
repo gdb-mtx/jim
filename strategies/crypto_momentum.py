@@ -103,12 +103,39 @@ class CryptoMomentum(BaseStrategy):
         """Generate crypto momentum signals with BTC trend filter.
 
         Steps:
+        0. Drop today's partial UTC bar if present (see comment below)
         1. Compute trailing return over lookback period
         2. Rank all coins, select top N (default 2)
         3. Equal weight among selected (1/N each)
         4. Apply BTC 150d SMA trend filter (binary: invest or cash)
         5. Rebalance at holding period intervals
         """
+        # --- Drop today's partial UTC bar before computing signal. ---
+        # yfinance daily crypto bars are dated by UTC midnight start.
+        # When queried mid-day (e.g. our 00:05 UTC fire, or any manual run
+        # during the day), yfinance returns the in-progress "today" bar
+        # whose "close" is just the current scratch price, not a settled
+        # day-close. That price mutates throughout the UTC day — the same
+        # strategy will rank coins differently at 06:05 UTC vs 23:55 UTC
+        # even with no real change in market structure, just because the
+        # partial bar absorbed an Asian-session move.
+        #
+        # Backtests historically don't see this because they run on
+        # already-closed historical bars. So live ranks differ from
+        # backtest ranks for the same notional date — exactly the gap
+        # surfaced 2026-05-06 in the live↔backtest reconciliation
+        # (HISTORY.md C9). Dropping the partial today-bar makes
+        # `pct_change(self.lookback_days).iloc[-1]` use yesterday's
+        # SETTLED close, which is what backtest assumes.
+        #
+        # The Hour=20 launchd schedule (= 00:05 UTC during EDT) lands 5
+        # minutes after a UTC bar closes, so "yesterday's settled close"
+        # is freshly-minted at fire time — best of both worlds.
+        if len(prices) >= 1:
+            today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+            if pd.Timestamp(prices.index[-1]) >= today_utc:
+                prices = prices.iloc[:-1]
+
         n_coins = prices.shape[1]
 
         # Momentum signal: trailing return over lookback period
