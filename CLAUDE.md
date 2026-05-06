@@ -43,7 +43,7 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via APScheduler. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 is the robust winner (half A 2.89 / half B 2.94). A4 weight in combined book is **33%**, with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via launchd (`com.fire.daily-crypto-rebalance` plist → `scripts/daily_crypto_rebalance.py`). Replaced in-process APScheduler on 2026-05-05 after a long-uptime drift incident — the asyncio wakeup chain silently broke after 5 days of uptime, missing a fire while the loop kept serving requests. Cloud target post-Fly is Fly Cron Machines. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 is the robust winner (half A 2.89 / half B 2.94). A4 weight in combined book is **33%**, with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
 
 Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 - A1↔A2: **0.38** (backtest) — genuinely diversified
@@ -71,10 +71,10 @@ Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_AP
 
 Rebalance schedule (two layers — exposure management + signal rotation):
 - **Every 4 hours (launchd)**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips. Both equity and crypto plists use `StartInterval=14400`. Was once-daily-at-16:30 for equity but macOS dropped a fire after a closed-laptop deferred run; relative-interval re-arms reliably on wake. Pre-Fly.io measure.
-- **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via APScheduler (requires server).
+- **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via launchd (`com.fire.daily-crypto-rebalance` plist runs `scripts/daily_crypto_rebalance.py`, server-independent). The plist sets `TZ=UTC` so `StartCalendarInterval` lands at 00:05 UTC regardless of laptop timezone.
 - **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual).
 
-**Concurrency:** all three rebalance entry points (API `/rebalance/execute`, APScheduler A4 job, `filter_check.py`) serialize via `dual_rebalance_lock` (async + file lock) or, for the sync cron path, the same `file_rebalance_lock` they observe. Contention raises `RebalanceLockedError` → 409 from the API, `status="locked"` from the cron.
+**Concurrency:** all three rebalance entry points (API `/rebalance/execute`, launchd A4 job, `filter_check.py`) serialize via `dual_rebalance_lock` (async + file lock) or, for the sync cron paths, the same `file_rebalance_lock` they observe. Contention raises `RebalanceLockedError` → 409 from the API, `status="locked"` from the cron.
 
 ### Strategies — OOS scorecard (live accounts)
 
@@ -122,7 +122,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 
 ### Risk Controls — Operational Behavior
 
-**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline for both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto APScheduler job is the only exception and runs at 00:05 UTC (crypto markets are 24/7).
+**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline for both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto launchd job is the only exception and runs at 00:05 UTC (crypto markets are 24/7); its plist sets `TZ=UTC` to pin `StartCalendarInterval` to UTC.
 
 **When are filters and circuit breakers checked?**
 Risk controls are checked at two levels:
@@ -130,7 +130,7 @@ Risk controls are checked at two levels:
 1. **Filter monitor (every 4h, automated)**: `scripts/filter_check.py` runs via macOS launchd every 4 hours (both equity and crypto plists, `StartInterval=14400`) — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
 
 2. **Scheduled rebalance (signal rotation)**: Rotates *which* stocks/assets to hold at the strategy's native cadence:
-   - **Account 4** (daily): APScheduler at 00:05 UTC (crypto signal + BTC filter)
+   - **Account 4** (daily): launchd `com.fire.daily-crypto-rebalance` at 00:05 UTC (crypto signal + BTC filter). Server-independent.
    - **Accounts 1 & 2** (monthly): Manual trigger first Monday of month
 
 **Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter). *Caveat for A4*: A4's signal rotation is daily, matching its filter cadence — so the decoupling is really about A1/A2.
@@ -188,7 +188,7 @@ execution/validation_gate.py — Rebalance gate; blocks accounts without a passi
 execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
 execution/rebalance.py    — Signal-to-order pipeline (target weights → trade list). Crypto orders use `time_in_force="gtc"` and notional (dollar-amount) sizing on buys — sidesteps the price-drift-between-preview-and-fill "insufficient balance" reject path. Notional total capped to 99.9% of live Alpaca cash.
 execution/rebalance_log.py — Structured JSONL rebalance audit trail. Each entry carries `raw_signal_weights` (pre-overlay) + `post_filter_weights` (post-SPY/BTC, pre-vol) alongside scalars and final orders.
-api/main.py               — FastAPI backend (lifespan + APScheduler for daily crypto rebalance)
+api/main.py               — FastAPI backend (lifespan; no in-process scheduler — daily crypto rebalance is launchd-fired, see scripts/daily_crypto_rebalance.py)
 api/locks.py              — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
 api/routes/portfolio.py   — Account summary, positions, equity history, correlation, risk status, filter status (LIVE — ships to cloud)
 api/routes/orders.py      — Rebalance preview/execute, order history, rebalance journal (LIVE — ships to cloud)
@@ -212,6 +212,8 @@ scripts/run_validation.py — VALIDATION_PLAN Tests 1-6 runner; updates data/ris
 scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config
 scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
 scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
+scripts/daily_crypto_rebalance.py — Account 4 daily rebalance, launchd-fired at 00:05 UTC (replaced in-process APScheduler 2026-05-05)
+scripts/com.fire.daily-crypto-rebalance.plist — macOS launchd plist for the daily crypto rebalance (TZ=UTC, hour=0, minute=5)
 scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (every 4h, `--filter spy`)
 scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
 scripts/watch_filters.py  — GitHub Actions travel-window watcher; pushes ntfy.sh alerts on SPY/BTC crossings while the laptop is asleep.
@@ -253,11 +255,13 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
     ```
     launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist 2>/dev/null  # remove old single-plist if present
     rm -f ~/Library/LaunchAgents/com.fire.filter-check.plist
-    cp scripts/com.fire.filter-check-equity.plist scripts/com.fire.filter-check-crypto.plist ~/Library/LaunchAgents/
+    cp scripts/com.fire.filter-check-equity.plist scripts/com.fire.filter-check-crypto.plist scripts/com.fire.daily-crypto-rebalance.plist ~/Library/LaunchAgents/
     launchctl load ~/Library/LaunchAgents/com.fire.filter-check-equity.plist
     launchctl load ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist
+    launchctl load ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist
     ```
-  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist`
+  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist`
+  - View daily rebalance logs: `cat data/daily_rebalance.log` (script log) or `cat data/daily_rebalance_stderr.log` (launchd stderr)
 
 ### Development Rules
 - **Package manager**: Always use `uv` (not pip/poetry/conda). Use `uv run` to execute Python, `uv add` to install packages.

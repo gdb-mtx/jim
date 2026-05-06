@@ -291,6 +291,7 @@ export interface PlausibilityState {
 
 export interface OpsSchedulerJob {
   id: string;
+  label?: string;        // launchd plist label (scheduled_rebalance jobs)
   name: string;
   next_run_time: string | null;
   last_started: string | null;
@@ -326,10 +327,11 @@ export interface OpsLaunchdEntry {
 }
 
 export interface OpsSchedulerResponse {
-  apscheduler: {
-    running: boolean;
+  // Daily rebalance jobs fired by launchd. Last-run derived from
+  // rebalance_log.jsonl. Replaces the in-process APScheduler block,
+  // retired 2026-05-05 after long-uptime drift.
+  scheduled_rebalance: {
     jobs: OpsSchedulerJob[];
-    error?: string;
   };
   launchd: OpsLaunchdEntry[];
   launchd_error?: string;

@@ -34,11 +34,7 @@ function formatRelativePast(iso: string | null): string {
   return `${days}d ago`;
 }
 
-function toneForApschedulerJob(
-  running: boolean,
-  job: OpsSchedulerJob,
-): StatusTone {
-  if (!running) return "gray";
+function toneForRebalanceJob(job: OpsSchedulerJob): StatusTone {
   if (job.last_status === "failed") return "red";
   // "partial" = orders submitted with ≥1 broker rejection (e.g. expected
   // sub-broker-minimum dust rejections — see CLAUDE.md). Same tone as
@@ -47,7 +43,7 @@ function toneForApschedulerJob(
   if (job.last_status === "skipped") return "amber";
   if (job.last_status === "running") return "blue";
   // success or null (never fired yet) both count as healthy — the job is
-  // registered and the scheduler is running.
+  // registered with launchd.
   return "green";
 }
 
@@ -102,23 +98,16 @@ export default memo(function SchedulerPanel() {
 
       {data && (
         <div className="flex flex-col gap-4">
-          {/* APScheduler — in-process cron (requires server) */}
+          {/* Daily rebalance — launchd-fired (replaced in-process APScheduler 2026-05-05) */}
           <div>
             <div className="mb-2 flex items-center gap-2">
-              <StatusDot tone={data.apscheduler.running ? "green" : "red"} size="md" />
               <span className="text-sm font-medium text-[#e8e8f0]">
-                APScheduler (in-process)
+                Scheduled rebalance (launchd)
               </span>
               <span className="text-xs text-[#8888a0]">
-                {data.apscheduler.running ? "running" : "not running"}
+                runs even when the server is off
               </span>
             </div>
-
-            {data.apscheduler.error && (
-              <p className="mb-2 text-xs text-[#ff4d6a]">
-                {data.apscheduler.error}
-              </p>
-            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -132,18 +121,15 @@ export default memo(function SchedulerPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.apscheduler.jobs.length === 0 ? (
+                  {data.scheduled_rebalance.jobs.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-2 text-[#8888a0]">
                         No jobs registered.
                       </td>
                     </tr>
                   ) : (
-                    data.apscheduler.jobs.map((job) => {
-                      const tone = toneForApschedulerJob(
-                        data.apscheduler.running,
-                        job,
-                      );
+                    data.scheduled_rebalance.jobs.map((job) => {
+                      const tone = toneForRebalanceJob(job);
                       return (
                         <tr
                           key={job.id}
@@ -155,7 +141,9 @@ export default memo(function SchedulerPanel() {
                           </td>
                           <td className="py-2 pr-3 text-[#e8e8f0]">
                             <div>{job.name}</div>
-                            <div className="text-xs text-[#8888a0]">{job.id}</div>
+                            <div className="text-xs text-[#8888a0]">
+                              {job.label ?? job.id}
+                            </div>
                           </td>
                           <td className="py-2 pr-3 text-[#c0c0d0]">
                             {formatRelativePast(job.last_finished ?? job.last_started)}
@@ -189,7 +177,7 @@ export default memo(function SchedulerPanel() {
             </div>
           </div>
 
-          {/* launchd — out-of-process filter monitors */}
+          {/* launchd — filter monitors (SPY + BTC every 4h) */}
           <div>
             <div className="mb-2 flex items-center gap-2">
               <span className="text-sm font-medium text-[#e8e8f0]">

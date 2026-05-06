@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fire.daily-crypto-rebalance</string>
+
+    <!-- Daily crypto rebalance for Account 4. Replaces the in-process
+         APScheduler job from api/main.py (retired 2026-05-05 after a
+         long-uptime drift incident — APScheduler's AsyncIOScheduler
+         silently missed a fire after 5 days of uptime, the kind of
+         failure mode launchd is structurally immune to).
+
+         StartCalendarInterval fires at the wall-clock time in the
+         process's local timezone — TZ=UTC below pins it to UTC so the
+         job lands at 00:05 UTC regardless of the laptop's current
+         timezone. This is the A4 exception to the normal "FIRE is
+         anchored to America/New_York" rule (CLAUDE.md): A4 trades
+         24/7 crypto and rotates daily at 00:05 UTC.
+
+         If the laptop is asleep at 00:05 UTC, launchd fires once on
+         next wake (deferred-fire semantics). For real production we'd
+         move to Fly Cron Machines (DEPLOYMENT_PLAN.md), which fires
+         from a separate Machine and doesn't depend on laptop power
+         state. -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/george/.local/bin/uv</string>
+        <string>run</string>
+        <string>python3</string>
+        <string>/Users/george/Desktop/Projects/FIRE/scripts/daily_crypto_rebalance.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/george/Desktop/Projects/FIRE</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>0</integer>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/daily_rebalance_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/george/Desktop/Projects/FIRE/data/daily_rebalance_stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/george</string>
+        <!-- Pin the cron interpretation to UTC. Without this,
+             StartCalendarInterval would fire at 00:05 in laptop-local
+             time (e.g. 00:05 EDT = 04:05 UTC) — wrong window for a
+             24/7 crypto strategy. -->
+        <key>TZ</key>
+        <string>UTC</string>
+    </dict>
+</dict>
+</plist>

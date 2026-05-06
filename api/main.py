@@ -1,25 +1,27 @@
 """
 FastAPI Backend — Serves strategy data to the React dashboard.
 
-Includes APScheduler for daily crypto rebalance at 00:05 UTC.
+The daily crypto rebalance for Account 4 used to live here as an
+in-process APScheduler job. It was retired on 2026-05-05 after a
+long-uptime drift incident: APScheduler's AsyncIOScheduler silently
+missed a fire after 5 days of uptime — the kind of failure mode an
+in-process scheduler is structurally exposed to. The job now runs
+via launchd (`scripts/com.fire.daily-crypto-rebalance.plist` →
+`scripts/daily_crypto_rebalance.py`), the same primitive the filter
+monitor already uses reliably. Post-Fly migration target is Fly Cron
+Machines (DEPLOYMENT_PLAN.md).
 """
 
 import asyncio
-import json
 import logging
 import time
 import warnings
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, orders, ops
 from api.research import strategies, backtests
-from api.locks import RebalanceLockedError, dual_rebalance_lock
 
 # Silence yfinance's pandas Timestamp.utcnow() deprecation spam. This MUST
 # come AFTER the imports above — yfinance registers its own
@@ -40,292 +42,7 @@ warnings.filterwarnings(
     message=r"Timestamp\.utcnow is deprecated.*",
 )
 
-log = logging.getLogger("fire.scheduler")
-
-# Module-level scheduler reference so `api/routes/ops.py` can introspect jobs
-# and the last-run cache. Assigned inside `lifespan()`; None before startup
-# and after shutdown.
-scheduler: AsyncIOScheduler | None = None
-
-# In-memory cache of each APScheduler job's last invocation. Persisted to
-# `_LAST_RUN_STATE_PATH` on every `_record_run` so server restarts don't
-# wipe the Ops panel's last-run signal — including no-op runs that don't
-# write to `data/rebalance_log.jsonl`. Schema:
-# {job_id: {"started": iso, "finished": iso|None,
-#           "status": "running"|"success"|"partial"|"skipped"|"failed",
-#           "error": str|None}}
-# "partial" = orders submitted with ≥1 broker rejection but no execute_error
-# (e.g. expected sub-broker-minimum dust rejections — see CLAUDE.md).
-_last_run_info: dict[str, dict] = {}
-
-_LAST_RUN_STATE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "data" / "risk_state" / "scheduler_last_run.json"
-)
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _persist_last_run_state() -> None:
-    """Write `_last_run_info` to disk. Called from `_record_run` on every
-    terminal status change so the Ops panel can render the actual last
-    fire time across server restarts — including no-op runs (cash mode)
-    that the journal-based backfill can't see."""
-    try:
-        _LAST_RUN_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _LAST_RUN_STATE_PATH.write_text(json.dumps(_last_run_info, indent=2))
-    except Exception as e:
-        log.warning(f"Persist scheduler last-run state failed (non-fatal): {e}")
-
-
-def _load_last_run_state() -> None:
-    """Load persisted last-run state into `_last_run_info` on startup."""
-    try:
-        if not _LAST_RUN_STATE_PATH.exists():
-            return
-        data = json.loads(_LAST_RUN_STATE_PATH.read_text())
-        if isinstance(data, dict):
-            _last_run_info.update(data)
-            for job_id, info in data.items():
-                log.info(
-                    f"Loaded last-run state for {job_id}: "
-                    f"{info.get('finished') or info.get('started')} ({info.get('status')})"
-                )
-    except Exception as e:
-        log.warning(f"Load scheduler last-run state failed (non-fatal): {e}")
-
-
-def _record_run(job_id: str, started: str, status: str, error: str | None = None) -> None:
-    """Stamp the end of a job invocation in `_last_run_info` and persist
-    to disk so the Ops panel survives restarts.
-
-    `started` is captured at function entry and threaded through so the
-    recorded window reflects the full invocation, not just the terminal
-    branch.
-    """
-    _last_run_info[job_id] = {
-        "started": started,
-        "finished": _now_iso(),
-        "status": status,
-        "error": error,
-    }
-    _persist_last_run_state()
-
-
-def _backfill_last_run_from_journal() -> None:
-    """Populate `_last_run_info["daily_crypto_rebalance"]` from the most
-    recent scheduled entry in `rebalance_log.jsonl`.
-
-    Motivation: `_last_run_info` is in-memory only (per design — the
-    journal is the durable record). Uvicorn `--reload` wipes it on every
-    code change, so the Ops panel's APScheduler row shows "never" after
-    any restart until the next 00:05 UTC fire. This backfill closes that
-    gap by reconstructing the most recent execution from the journal.
-
-    Limitations: only captures journal-writing outcomes (success +
-    execute-time failures). Skip states (validation_gate, locked,
-    halted, price_error) and "no trades needed" no-ops don't write to
-    the journal, so after a restart the panel shows the most recent
-    EXECUTION instead of the most recent attempt. Acceptable — "last
-    executed" is the more useful signal, and the miss window is at most
-    one day given the 00:05 UTC daily cadence.
-    """
-    try:
-        from execution.rebalance_log import get_recent_rebalances
-        for r in get_recent_rebalances(limit=100):
-            if r.get("source") != "scheduled":
-                continue
-            ts = r.get("timestamp")
-            if not ts:
-                continue
-            execute_error = r.get("execute_error")
-            orders_failed = (r.get("orders_failed", 0) or 0)
-            if execute_error:
-                status = "failed"
-            elif orders_failed > 0:
-                # Partial fail = some orders rejected but execute returned
-                # cleanly (e.g. dust rejections). Distinct from "failed".
-                status = "partial"
-            else:
-                status = "success"
-            _last_run_info["daily_crypto_rebalance"] = {
-                "started": ts,
-                # Journal records one timestamp close to job completion —
-                # use it for both started and finished as a best-effort
-                # reconstruction. Slightly lossy but good enough for
-                # "when did the last scheduled rebalance execute?".
-                "finished": ts,
-                "status": status,
-                "error": execute_error,
-            }
-            log.info(
-                f"Backfilled daily_crypto_rebalance last-run from journal: "
-                f"{ts} ({status})"
-            )
-            return
-        log.info("No scheduled rebalance in journal; last-run stays empty")
-    except Exception as e:
-        log.warning(f"Journal backfill failed (non-fatal): {e}")
-
-
-async def _daily_crypto_rebalance():
-    """Run daily crypto rebalance for Account 4 at 00:05 UTC.
-
-    Retries up to 3 times with exponential backoff on failure. The outer
-    scope records terminal status into `_last_run_info` so the Ops panel
-    can render last-run state without tailing the rebalance log.
-    """
-    from execution.validation_gate import ValidationGateError, require_validated
-
-    job_id = "daily_crypto_rebalance"
-    started = _now_iso()
-    _last_run_info[job_id] = {
-        "started": started,
-        "finished": None,
-        "status": "running",
-        "error": None,
-    }
-
-    try:
-        require_validated(4)
-    except ValidationGateError as e:
-        log.warning(f"Daily crypto rebalance blocked by validation gate: {e}")
-        _record_run(job_id, started, "skipped", f"validation_gate: {e}")
-        return
-
-    max_retries = 3
-    final_error: str | None = None
-    partial_fail = False
-    for attempt in range(1, max_retries + 1):
-        try:
-            from execution.alpaca_broker import AlpacaBroker
-            from execution.rebalance import compute_rebalance, execute_rebalance, check_price_staleness
-            from execution.rebalance_log import log_rebalance
-            from execution.risk_manager import RiskManager
-            from data.snapshots import take_snapshot
-
-            log.info(f"Daily crypto rebalance starting (attempt {attempt}/{max_retries})...")
-
-            try:
-                async with dual_rebalance_lock(4):
-                    broker = AlpacaBroker(account=4)
-                    result = await asyncio.to_thread(
-                        compute_rebalance,
-                        broker=broker,
-                        strategy_id="crypto_momentum_filtered",
-                        risk_manager=RiskManager(account=4),
-                    )
-
-                    if result.price_error:
-                        log.error(f"Crypto rebalance skipped — missing prices: {result.missing_prices}")
-                        return
-
-                    if result.risk_check.get("halted"):
-                        log.warning("Crypto rebalance skipped — catastrophe halt active")
-                        return
-
-                    # Price staleness guard — re-fetch and block on >2% drift
-                    if result.prices:
-                        drifted = await asyncio.to_thread(check_price_staleness, broker, result.prices)
-                        if drifted:
-                            raise RuntimeError(f"Price drift detected: {drifted}")
-
-                    if result.orders:
-                        # try/finally around execute — journal always fires,
-                        # even if execute raises mid-flight (R4).
-                        order_results: list[dict] = []
-                        execute_error: str | None = None
-                        try:
-                            order_results = await asyncio.to_thread(execute_rebalance, broker, result)
-                        except Exception as e:
-                            execute_error = f"{type(e).__name__}: {e}"
-                            log.error(f"Crypto execute raised: {execute_error}", exc_info=True)
-                        finally:
-                            failed = [o for o in order_results if o.get("status") == "error"]
-                            partial_fail = bool(failed) and not execute_error
-                            log.info(
-                                f"Crypto rebalance: {len(order_results)} orders submitted"
-                                + (f" ({len(failed)} failed)" if failed else "")
-                                + (f" [EXECUTE RAISED: {execute_error}]" if execute_error else "")
-                            )
-                            for f in failed:
-                                log.error(f"Order failed: {f['symbol']} {f['side']} {f.get('error')}")
-
-                            log_rebalance(
-                                account=4,
-                                strategy_id="crypto_momentum_filtered",
-                                portfolio_value=result.portfolio_value,
-                                orders_submitted=len(order_results),
-                                orders_failed=len(failed),
-                                order_details=order_results,
-                                btc_filter_active=result.btc_filter_active,
-                                btc_filter_scalar=result.btc_filter_scalar,
-                                vol_scalar=result.vol_scalar,
-                                vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-                                raw_signal_weights=result.raw_signal_weights,
-                                post_filter_weights=result.post_filter_weights,
-                                execute_error=execute_error,
-                                source="scheduled",
-                            )
-
-                        if execute_error:
-                            # Re-raise so the outer retry loop picks it up.
-                            raise RuntimeError(f"execute_rebalance failed: {execute_error}")
-                    else:
-                        log.info("Crypto rebalance: no trades needed")
-
-                    await asyncio.to_thread(take_snapshot, 4)
-
-                    # Sync filter_state.json with the live BTC scalar so the
-                    # launchd filter monitor doesn't see a stale value later
-                    # and fire a no-op second rebalance ("double rebalance"
-                    # gap). `update_fields` is file-locked and stamps
-                    # `last_btc_flip` only if the scalar actually differs.
-                    #
-                    # Recompute live instead of using `result.btc_filter_scalar`:
-                    # PORTFOLIOS["crypto_momentum_filtered"] has
-                    # `btc_filter=False` (filter is internal to CryptoMomentum),
-                    # so result.btc_filter_scalar is the default 1.0 even when
-                    # BTC is below its 125d MA. Mirrors filter_check.py:
-                    # compute_filters.
-                    try:
-                        from data import filter_state
-                        from strategies.portfolio_config import compute_btc_trend_filter
-                        live_btc = None
-                        try:
-                            live_btc = await asyncio.to_thread(broker.get_latest_price, "BTC/USD")
-                        except Exception:
-                            pass
-                        btc_filter = await asyncio.to_thread(compute_btc_trend_filter, live_price=live_btc)
-                        btc_scalar = float(btc_filter.iloc[-1])
-                        await asyncio.to_thread(
-                            filter_state.update_fields,
-                            {"btc_scalar": btc_scalar},
-                            track_flips=("btc_scalar",),
-                        )
-                    except Exception as e:
-                        log.warning(f"filter_state.json sync failed (non-fatal): {e}")
-
-                    log.info("Daily crypto rebalance complete")
-                    _record_run(job_id, started, "partial" if partial_fail else "success")
-                    return  # Success — exit retry loop
-            except RebalanceLockedError as e:
-                log.warning(f"Crypto rebalance skipped — {e}")
-                _record_run(job_id, started, "skipped", f"locked: {e}")
-                return
-
-        except Exception as e:
-            final_error = f"{type(e).__name__}: {e}"
-            log.error(f"Daily crypto rebalance attempt {attempt} failed: {e}", exc_info=True)
-            if attempt < max_retries:
-                wait = 2 ** attempt * 30  # 60s, 120s
-                log.info(f"Retrying in {wait}s...")
-                await asyncio.sleep(wait)
-
-    log.error(f"Daily crypto rebalance FAILED after {max_retries} attempts")
-    _record_run(job_id, started, "failed", final_error or f"exhausted {max_retries} retries")
+log = logging.getLogger("fire.api")
 
 
 def _startup_backfill_and_snapshot():
@@ -374,46 +91,11 @@ def _startup_backfill_and_snapshot():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: schedule backfill in background, start crypto scheduler."""
-    global scheduler
-
-    # Run backfill/snapshot in a background thread (non-blocking)
+    """Startup: schedule backfill in background. No in-process scheduler —
+    daily crypto rebalance is fired by launchd (see module docstring)."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _startup_backfill_and_snapshot)
-
-    # Seed the in-memory last-run cache so dev reloads and production
-    # restarts don't flash "never" on the Ops panel's APScheduler row
-    # between the restart and the next fire. Prefer the persisted state
-    # file (covers no-op cash-mode runs); fall back to the journal scan
-    # if absent — covers fresh installs and pre-persistence histories.
-    _load_last_run_state()
-    if "daily_crypto_rebalance" not in _last_run_info:
-        _backfill_last_run_from_journal()
-
-    # Start APScheduler for daily crypto rebalance. Stored on the module
-    # global so `api/routes/ops.py` can read `.get_jobs()` / `.running`.
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        _daily_crypto_rebalance,
-        trigger=CronTrigger(hour=0, minute=5, timezone="UTC"),
-        id="daily_crypto_rebalance",
-        name="Daily crypto momentum rebalance (00:05 UTC)",
-        replace_existing=True,
-        # Default APScheduler grace is 1s — any event-loop stall, brief sleep,
-        # or worker reload past the cron instant drops the run and advances
-        # next_run_time by a full day. 1h absorbs those without ever firing a
-        # same-day duplicate (cadence is 24h).
-        misfire_grace_time=3600,
-    )
-    scheduler.start()
-    log.info("APScheduler started — crypto rebalance at 00:05 UTC daily")
-
     yield
-
-    # Shutdown
-    scheduler.shutdown(wait=False)
-    scheduler = None
-    log.info("APScheduler stopped")
 
 
 app = FastAPI(title="FIRE Trading API", version="0.1.0", lifespan=lifespan)

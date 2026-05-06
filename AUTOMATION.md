@@ -7,20 +7,29 @@ take day-to-day.
 
 ## What's automated
 
-**An APScheduler job fires daily at 00:05 UTC** (= 8:05 PM ET during EDT,
-7:05 PM ET during EST). It's defined in [api/main.py:250-259](api/main.py#L250-L259)
-as part of the FastAPI lifespan — meaning it only runs while the uvicorn
-process is alive. The scheduler instance is held at module scope so the
-Ops dashboard (see below) can introspect jobs + last-run state without
-re-starting the scheduler.
+**A launchd job fires daily at 00:05 UTC** (= 8:05 PM ET during EDT,
+7:05 PM ET during EST). It's defined in
+[scripts/com.fire.daily-crypto-rebalance.plist](scripts/com.fire.daily-crypto-rebalance.plist)
+and runs [scripts/daily_crypto_rebalance.py](scripts/daily_crypto_rebalance.py).
+The plist sets `TZ=UTC` so `StartCalendarInterval` lands at 00:05 UTC
+regardless of laptop timezone. **The server does not need to be running**
+— the script imports the same modules directly.
 
-On each tick, [_daily_crypto_rebalance()](api/main.py#L54) runs the
-following steps:
+This replaced an in-process APScheduler job on 2026-05-05 after a
+long-uptime drift incident: APScheduler's AsyncIOScheduler silently
+missed a fire after 5 days of uptime, while the asyncio loop kept
+serving requests normally. The wakeup chain had broken without raising.
+Restart cleared it, but "restart every few days" is incompatible with a
+multi-month uptime target. launchd is the same primitive the filter
+monitor already uses reliably; the failure mode is structurally absent.
+
+On each tick, [`scripts/daily_crypto_rebalance.py`](scripts/daily_crypto_rebalance.py)
+runs the following steps:
 
 1. `require_validated(4)` — checks `data/risk_state/validation_state.json`,
    skips if A4's record isn't passing or has expired.
-2. Acquires the per-account rebalance lock (async + file lock, prevents
-   concurrent trades from other entry points).
+2. Acquires the per-account file rebalance lock (cross-process, non-blocking
+   via `fcntl` — serializes against the API and filter cron).
 3. `compute_rebalance(strategy_id="crypto_momentum_filtered")` — ranks the
    9 coins in the universe by 21d momentum, picks top 2, applies the BTC
    125d SMA trend filter, applies the vol-scaling overlay.
@@ -30,14 +39,18 @@ following steps:
    dashboard uses manually — including the crypto-specific notional
    sizing and `time_in_force="gtc"` plumbing.
 6. Takes a daily snapshot for A4.
-7. Journals everything to `data/rebalance_log.jsonl` with `source="scheduled"`.
-8. Retries up to 3× with exponential backoff on failure (60s, then 120s).
+7. Journals everything to `data/rebalance_log.jsonl` with `source="scheduled"`
+   (kept the same source tag for journal continuity).
+8. Syncs `filter_state.json` with the live BTC scalar so the launchd
+   filter monitor doesn't fire a no-op rebalance later from a stale value.
+9. Retries up to 3× with exponential backoff on failure (60s, then 120s).
 
-**The catch: the server must be running at 00:05 UTC.** APScheduler lives
-inside the uvicorn process. If your laptop is asleep or the server is
-down at 8:05 PM ET, the job silently does not fire. No trade happens that
-day. This is a known operational gap — see `DEPLOYMENT_PLAN.md` for the
-Fly.io cloud migration plan that closes it.
+**Sleep behavior:** if the laptop is asleep at 00:05 UTC, launchd fires
+once on next wake (deferred-fire semantics, native to launchd's
+`StartCalendarInterval`). Same as the filter monitor. Cloud target
+post-Fly migration is **Fly Cron Machines** (separate Machine that wakes,
+fires, exits — eliminates the laptop-must-be-on constraint entirely).
+See `DEPLOYMENT_PLAN.md`.
 
 ## What to expect day-to-day
 
@@ -53,10 +66,11 @@ Fly.io cloud migration plan that closes it.
 
 ## Backup layer: the launchd filter monitor
 
-Separate from the APScheduler job, [scripts/filter_check.py](scripts/filter_check.py)
+Separate from the daily rebalance job, [scripts/filter_check.py](scripts/filter_check.py)
 runs via macOS launchd. **This runs even when the server is down** —
 it is a separate process launched by launchd, not a thread inside
-uvicorn.
+uvicorn. Same architectural model as the daily rebalance job above
+(both are server-independent launchd-fired Python scripts).
 
 Its job is narrow: detect BTC or SPY filter *flips*. It fires on a
 schedule, but the rebalance only runs when the newly computed filter
@@ -64,10 +78,11 @@ scalar differs from the last-saved scalar in
 `data/risk_state/filter_state.json`. Most runs log
 `"No filter changes detected"` and exit. On a flip run, it calls
 `rebalance_account()` — which internally calls the *same*
-`compute_rebalance()` function APScheduler uses. That means a
-launchd-triggered rebalance does the full pipeline: signal ranking
-(top 2 by 21d momentum for crypto), filter application, vol-scaling,
-and order generation. It is **not** an "exposure-only" tweak.
+`compute_rebalance()` function the daily rebalance script uses. That
+means a launchd-triggered rebalance does the full pipeline: signal
+ranking (top 2 by 21d momentum for crypto), filter application,
+vol-scaling, and order generation. It is **not** an "exposure-only"
+tweak.
 
 ### Two plists, two cadences
 
@@ -99,16 +114,18 @@ this has no impact on other code paths.
 
 | Layer | Trigger | Work done when triggered | Requires server? | Requires laptop on? |
 |---|---|---|---|---|
-| APScheduler (in uvicorn) | Fires every day at 00:05 UTC, unconditionally | Full rebalance on A4: signal + filter + vol scaling | Yes | Yes |
+| Daily rebalance (launchd) | Fires every day at 00:05 UTC (deferred-fired on next wake if asleep) | Full rebalance on A4: signal + filter + vol scaling | No | Yes |
 | Filter monitor — equity (launchd) | Fires at 4:30 PM laptop-local daily; rebalance only if SPY scalar differs from saved state | Full rebalance on A1/A2 (same `compute_rebalance` path) | No | Yes |
 | Filter monitor — crypto (launchd) | Fires every 4 hours; rebalance only if BTC scalar differs from saved state | Full rebalance on A4 (same `compute_rebalance` path) | No | Yes |
 | Travel watcher (GitHub Actions) | Fires every ~30 min at `:07/:37` UTC | **Notifies phone only** (ntfy push on crossing + daily heartbeat) — does not trade | No | No |
 
-The crypto filter monitor is the safety net for a BTC filter *flip*
-happening while the server is down but the laptop is still on (worst-
-case detection lag ~4 hours). The travel watcher is the safety net for
-a filter flip happening while **the laptop is also off** — it turns
-the failure mode from "silent miss" into "phone buzz + 2-hour human-
+The crypto filter monitor is now mostly redundant with the daily
+rebalance (both launchd-fired, both call `compute_rebalance` for A4) —
+its remaining role is to catch a mid-day BTC flip within ~4h instead of
+waiting for the next 00:05 UTC daily fire (worst-case detection lag of
+24h without the monitor). The travel watcher is the safety net for a
+filter flip happening while **the laptop is also off** — it turns the
+failure mode from "silent miss" into "phone buzz + 2-hour human-
 triggered rebalance."
 
 ### Closing the double-rebalance gap
@@ -120,8 +137,8 @@ shared `data/filter_state.py` module:
 
 - `filter_check.py` (launchd) — writes BTC + SPY scalars after its
   own flip-triggered rebalance.
-- APScheduler in `api/main.py` after `_daily_crypto_rebalance` —
-  writes `btc_scalar` for A4.
+- `scripts/daily_crypto_rebalance.py` (launchd) — writes `btc_scalar`
+  for A4 after the daily 00:05 UTC fire.
 - `/api/orders/rebalance/execute` in `api/routes/orders.py` — writes
   `spy_scalar` for A1/A2 manual rebalances, `btc_scalar` for A4
   manual rebalances. **This matters most during travel**: when the
@@ -130,22 +147,21 @@ shared `data/filter_state.py` module:
   having to run.
 
 The three writers serialize via `fcntl` so concurrent updates cannot
-race. This closes the double-rebalance gap: if APScheduler at 00:05
-UTC already acted on a BTC flip, the next crypto filter monitor run
-sees `btc_scalar` already matches live and exits as a no-op — no
-duplicate trade. Symmetric across all three writers.
+race. This closes the double-rebalance gap: if the daily rebalance
+at 00:05 UTC already acted on a BTC flip, the next crypto filter
+monitor run sees `btc_scalar` already matches live and exits as a
+no-op — no duplicate trade. Symmetric across all three writers.
 
-**Important subtlety (fixed 2026-04-23):** both APScheduler and the
-manual endpoint now **recompute the filter live** instead of reading
-`result.btc_filter_scalar`. The `crypto_momentum_filtered` portfolio
-config sets `btc_filter=False` at the portfolio level (filter is
-internal to CryptoMomentum to avoid double-filtering), which leaves
-`result.btc_filter_scalar` at its default `1.0` even when BTC is
-below the MA. A pre-2026-04-23 APScheduler run during a BTC bear
-would have silently written `btc_scalar=1.0` to the state file; the
-launchd 4-hourly corrected it, masking the bug. Both writers now
-mirror `filter_check.py:compute_filters` and recompute against live
-prices.
+**Important subtlety (fixed 2026-04-23):** both the daily rebalance
+script and the manual endpoint **recompute the filter live** instead
+of reading `result.btc_filter_scalar`. The `crypto_momentum_filtered`
+portfolio config sets `btc_filter=False` at the portfolio level (filter
+is internal to CryptoMomentum to avoid double-filtering), which leaves
+`result.btc_filter_scalar` at its default `1.0` even when BTC is below
+the MA. A pre-2026-04-23 scheduled run during a BTC bear would have
+silently written `btc_scalar=1.0` to the state file; the launchd
+4-hourly corrected it, masking the bug. Both writers now mirror
+`filter_check.py:compute_filters` and recompute against live prices.
 
 ### Solved oddity (2026-04-22) — the pre-3acc646 dry-run write
 
@@ -183,8 +199,8 @@ question can cross-reference:
 - `data/filter_check.log` (user + launchd filter_check.py runs with
   source tags)
 - `data/filter_check_stderr.log` / `_stdout.log` (launchd stderr/stdout)
-- `data/rebalance_log.jsonl` (`source=scheduled` → APScheduler wrote)
-- uvicorn server log (APScheduler `_daily_crypto_rebalance` entry/exit)
+- `data/rebalance_log.jsonl` (`source=scheduled` → daily rebalance script wrote)
+- `data/daily_rebalance.log` + `data/daily_rebalance_stderr.log` (daily rebalance script + launchd stderr)
 
 Lesson: always `git log --follow` the file whose behavior is confusing
 before assuming a deep bug in the current code.
@@ -204,6 +220,13 @@ every ~30 minutes, compares them to MA thresholds checked in to the
 repo, and pushes a phone notification via [ntfy.sh](https://ntfy.sh)
 on a state transition (above ↔ below MA). The runner is in GitHub's
 infrastructure, so it runs regardless of laptop state.
+
+(Note: with the daily rebalance script now launchd-fired rather than
+in-process, the "server must be up overnight" failure mode is gone for
+*non-travel* days where the laptop is awake but the server happens to
+be down. The travel watcher is still the only safety net for the
+laptop-fully-off case — that's what `DEPLOYMENT_PLAN.md` Fly migration
+ultimately solves.)
 
 ### Architecture
 
@@ -299,27 +322,30 @@ extension) → `filter_watch` workflow → most recent runs.
 
 ## What you have to do
 
-**Nothing, as long as the server stays up overnight.** Keep uvicorn
-running, laptop plugged in and awake, and the 00:05 UTC rebalance
-happens hands-free.
+**Nothing, as long as the laptop stays awake at 00:05 UTC.** launchd
+fires the script independently of the server, so even a fully-down
+uvicorn doesn't break the job. Keep the laptop plugged in and awake
+overnight and the 00:05 UTC rebalance happens hands-free.
 
 ### To verify the job fired (the next morning)
 
-1. Open the **Ops** dashboard tab — the Scheduler Panel shows
-   APScheduler's `daily_crypto_rebalance` job with its last-run /
-   next-run and status (success / skipped / failed). The Event
-   Timeline below lists the scheduled rebalance alongside any filter
-   flips.
+1. Open the **Ops** dashboard tab — the Scheduler Panel shows the
+   `daily_crypto_rebalance` job under "Scheduled rebalance (launchd)"
+   with its last-run / next-run and status (success / partial / failed
+   / skipped). The Event Timeline below lists the scheduled rebalance
+   alongside any filter flips.
 2. Or, from the CLI: grep `data/rebalance_log.jsonl` for a fresh entry
    with `"source": "scheduled"` and `"account": 4`.
-3. Server logs still emit `"Daily crypto rebalance complete"` on success.
+3. Tail `data/daily_rebalance.log` for `"Daily crypto rebalance starting"`
+   + `"Final outcome: ..."` lines from the most recent fire.
 
-### If the server was down at 00:05 UTC
+### If the laptop was asleep at 00:05 UTC
 
-If you realize the next morning that the server was off overnight: just
-restart it and manually hit Execute on the A4 rebalance panel — same
-path as a manual first-time entry. You are at most one day late on the
-signal.
+launchd's `StartCalendarInterval` deferred-fire semantics handle this:
+the job fires once on next wake. If you want to confirm, check
+`data/daily_rebalance.log` for a "starting" timestamp shortly after wake.
+If for any reason it didn't catch up, manually hit Execute on the A4
+rebalance panel — same path as a manual first-time entry.
 
 ### During travel (laptop off for days)
 
@@ -341,40 +367,49 @@ signal.
 
 ## Practical overnight checklist
 
-1. `./scripts/start.sh` is running (backend + frontend both up).
-2. Laptop plugged in and stays awake past 8:05 PM ET.
-3. The next morning: check `data/rebalance_log.jsonl` for the scheduled
-   entry.
-4. Expect small drift trades (not a full swap) on any given day where
+1. Laptop plugged in and stays awake past 8:05 PM ET (= 00:05 UTC during
+   EDT). The server can be up or down — launchd doesn't care.
+2. The next morning: check `data/rebalance_log.jsonl` for the scheduled
+   entry, or open the Ops dashboard tab.
+3. Expect small drift trades (not a full swap) on any given day where
    the top 2 coins remain the same.
 
 ## Installing / reinstalling launchd
 
-First-time install, or when migrating from the old single plist:
+First-time install, or after pulling new plist changes:
 
 ```
 # Remove the old single plist, if present
 launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist 2>/dev/null
 rm -f ~/Library/LaunchAgents/com.fire.filter-check.plist
 
-# Copy the two new plists in and load them
-cp scripts/com.fire.filter-check-equity.plist scripts/com.fire.filter-check-crypto.plist \
+# Copy the three plists in and load them
+cp scripts/com.fire.filter-check-equity.plist \
+   scripts/com.fire.filter-check-crypto.plist \
+   scripts/com.fire.daily-crypto-rebalance.plist \
    ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.fire.filter-check-equity.plist
 launchctl load ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist
+launchctl load ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist
 
-# Verify
+# Verify (expect 3 entries)
 launchctl list | grep fire
 ```
 
-To uninstall both:
+To uninstall all three:
 ```
 launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist \
-                 ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist
+                 ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist \
+                 ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist
 ```
 
-Manual invocation (any scope):
+Manual invocation:
 ```
+# Daily rebalance — one fire, same code path as the launchd job
+uv run python3 scripts/daily_crypto_rebalance.py            # real
+uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # dry, no orders
+
+# Filter monitor — any scope
 uv run python3 scripts/filter_check.py --filter all --dry-run   # check everything, no trades
 uv run python3 scripts/filter_check.py --filter btc             # crypto-only real run
 uv run python3 scripts/filter_check.py --filter spy             # equity-only real run
@@ -382,32 +417,39 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
 
 ## Related files
 
-- [api/main.py](api/main.py) — APScheduler job definition (lifespan
-  context + `_daily_crypto_rebalance`); writes `filter_state.json`
-  after each successful A4 rebalance.
+- [scripts/daily_crypto_rebalance.py](scripts/daily_crypto_rebalance.py)
+  — daily A4 rebalance script (launchd-fired, replaces the in-process
+  APScheduler job retired 2026-05-05); writes `filter_state.json`
+  after each successful run.
+- [scripts/com.fire.daily-crypto-rebalance.plist](scripts/com.fire.daily-crypto-rebalance.plist)
+  — launchd plist, `StartCalendarInterval` hour=0 minute=5 with `TZ=UTC`
 - [scripts/filter_check.py](scripts/filter_check.py) — launchd filter
   monitor (scope-aware via `--filter`)
 - [scripts/com.fire.filter-check-equity.plist](scripts/com.fire.filter-check-equity.plist)
-  — SPY filter, 4:30 PM laptop-local daily
+  — SPY filter, every 4 hours
 - [scripts/com.fire.filter-check-crypto.plist](scripts/com.fire.filter-check-crypto.plist)
   — BTC filter, every 4 hours
+- [api/main.py](api/main.py) — FastAPI lifespan only; no in-process
+  scheduler (retired 2026-05-05).
 - [data/filter_state.py](data/filter_state.py) — shared accessor for
   `filter_state.json` (load + atomic update with `fcntl` file lock);
-  used by both `filter_check.py` and APScheduler
+  used by `filter_check.py`, `daily_crypto_rebalance.py`, and the API.
 - [execution/rebalance.py](execution/rebalance.py) — shared
-  `compute_rebalance` / `execute_rebalance` path used by both the
-  scheduler and the manual dashboard button
+  `compute_rebalance` / `execute_rebalance` path used by all entry
+  points
 - [execution/validation_gate.py](execution/validation_gate.py) — gate
   that blocks rebalance for accounts lacking a passing validation
   record
 - [api/locks.py](api/locks.py) — per-account locks that serialize the
-  three entry points (API, scheduler, launchd cron)
+  three entry points (API, daily rebalance script, filter cron)
 - `data/risk_state/validation_state.json` — per-account validation
-  status; scheduler skips if A4 is not passing
+  status; the daily rebalance script skips if A4 is not passing
 - `data/risk_state/filter_state.json` — current SPY/BTC scalars +
-  last-flip timestamps; written by both filter_check.py and APScheduler
+  last-flip timestamps; written by all three rebalance entry points
 - `data/rebalance_log.jsonl` — structured audit log of every rebalance
   event (manual, scheduled, and filter-monitor-triggered)
+- `data/daily_rebalance.log` / `data/daily_rebalance_stderr.log` —
+  daily rebalance script logs (the script's own log + launchd stderr)
 - `DEPLOYMENT_PLAN.md` — plan to migrate the scheduler to 24/7 cloud
   hosting so the "laptop must be awake" constraint goes away
 - [.github/workflows/filter_watch.yml](.github/workflows/filter_watch.yml)
@@ -426,8 +468,8 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   (2026-04-23) so travel-window manual trades keep state consistent
 - `OPS_DASHBOARD_PLAN.md` + Ops dashboard tab — built 2026-04-22
   (commits `79b957e` backend, `8f23750` frontend, `6b0d78b` cleanup).
-  Single pane covering APScheduler jobs + launchd filter monitors +
-  validation status + a merged rebalance / filter-flip event timeline.
-  Endpoints at `/api/ops/*`; panels under
+  Single pane covering scheduled rebalance (launchd) + filter monitors
+  (launchd) + validation status + a merged rebalance / filter-flip
+  event timeline. Endpoints at `/api/ops/*`; panels under
   [dashboard/src/components/ops/](dashboard/src/components/ops/).
   Will absorb cloud-scheduler status post-Fly migration.

@@ -2,15 +2,20 @@
 
 Four endpoints answer "is everything running and when did it last run?":
 
-- `GET /api/ops/scheduler`  — APScheduler jobs + launchd filter monitors
+- `GET /api/ops/scheduler`  — launchd-fired daily rebalance + filter monitors
 - `GET /api/ops/filters`    — SPY/BTC filter state + plausibility
 - `GET /api/ops/validation` — per-account validation status + expiry
 - `GET /api/ops/events`     — unified timeline (rebalances + filter flips)
 
 All handlers wrap blocking I/O in `asyncio.to_thread` per project rule
 (CLAUDE.md "Async endpoints must use asyncio.to_thread for blocking calls").
-`api.main` is imported lazily inside the scheduler handler to dodge the
-circular import with `api/main.py` (which include_router's this module).
+
+The scheduler endpoint reports two launchd-driven groups:
+  - `scheduled_rebalance` — daily crypto rebalance (Account 4), last-run
+    derived from `rebalance_log.jsonl` filtered by `source="scheduled"`.
+    Replaces the old in-process APScheduler block (retired 2026-05-05).
+  - `launchd` — filter monitors (SPY + BTC), last-run derived from
+    `filter_check.log`.
 """
 
 from __future__ import annotations
@@ -35,13 +40,28 @@ VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
 # stable UI rendering.
 #
 # `schedule` mirrors the plist's StartCalendarInterval / StartInterval so
-# we can render a "next run" without shelling out to launchctl. Two shapes:
-#   ("daily_local", hour, minute)  -- mirrors StartCalendarInterval
+# we can render a "next run" without shelling out to launchctl. Three shapes:
+#   ("daily_local", hour, minute)  -- mirrors StartCalendarInterval (laptop-local TZ)
+#   ("daily_utc",   hour, minute)  -- mirrors StartCalendarInterval + TZ=UTC
 #   ("interval_seconds", seconds)  -- mirrors StartInterval (anchored on last_run)
 LAUNCHD_JOBS: list[tuple[str, str, str, tuple]] = [
     # (plist_label, source_tag, expected_scope, schedule)
     ("com.fire.filter-check-equity", "launchd-equity", "spy", ("interval_seconds", 14400)),
     ("com.fire.filter-check-crypto", "launchd-crypto", "btc", ("interval_seconds", 14400)),
+]
+
+# launchd-fired rebalance jobs. Last-run state comes from rebalance_log.jsonl
+# (filtered by source tag) rather than filter_check.log. Schedule shape
+# matches LAUNCHD_JOBS for the `_next_run_iso` helper.
+LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
+    # (plist_label, job_id, name, journal_source_tag, schedule)
+    (
+        "com.fire.daily-crypto-rebalance",
+        "daily_crypto_rebalance",
+        "Daily crypto rebalance (00:05 UTC, launchd)",
+        "scheduled",
+        ("daily_utc", 0, 5),
+    ),
 ]
 
 
@@ -54,6 +74,10 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
     - daily_local(hour, minute): next occurrence of that wall-clock time in
       laptop-local TZ (today if not yet past, otherwise tomorrow). Reflects
       the plist's StartCalendarInterval semantics.
+    - daily_utc(hour, minute): same but interpreted in UTC. Reflects a plist
+      whose `EnvironmentVariables: TZ=UTC` pins StartCalendarInterval to UTC
+      regardless of the laptop's current timezone (used by the daily crypto
+      rebalance plist).
     - interval_seconds(s): last_run_local + s. None if we have no last_run
       yet (interval-based plists fire on first load, then every s seconds).
     """
@@ -66,6 +90,14 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
             from datetime import timedelta
             candidate = candidate + timedelta(days=1)
         return candidate.astimezone(timezone.utc).isoformat()
+    if kind == "daily_utc":
+        _, hour, minute = schedule
+        from datetime import timedelta
+        now_utc = datetime.now(timezone.utc)
+        candidate = now_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= now_utc:
+            candidate = candidate + timedelta(days=1)
+        return candidate.isoformat()
     if kind == "interval_seconds":
         if last_run_local is None:
             return None
@@ -90,35 +122,59 @@ def _relative_time(seconds: float) -> str:
 
 @router.get("/scheduler")
 async def get_scheduler():
-    """APScheduler jobs + launchd filter-monitor last-run state."""
-    from api import main as api_main
+    """launchd-fired daily rebalance + filter-monitor last-run state.
+
+    Replaces the in-process APScheduler block (retired 2026-05-05). Both
+    groups are launchd-driven now; the rebalance group derives last-run
+    from the rebalance journal, the monitor group from filter_check.log.
+    """
     from data import filter_check_log
+    from execution.rebalance_log import get_recent_rebalances
 
     def _compute():
-        # --- APScheduler block ---
-        aps: dict = {"running": False, "jobs": []}
-        scheduler = api_main.scheduler
-        if scheduler is not None:
-            aps["running"] = bool(getattr(scheduler, "running", False))
-            try:
-                jobs = scheduler.get_jobs()
-            except Exception as e:
-                aps["error"] = f"get_jobs failed: {e}"
-                jobs = []
-            for job in jobs:
-                info = api_main._last_run_info.get(job.id, {}) or {}
-                next_run = getattr(job, "next_run_time", None)
-                aps["jobs"].append({
-                    "id": job.id,
-                    "name": job.name,
-                    "next_run_time": next_run.isoformat() if next_run else None,
-                    "last_started": info.get("started"),
-                    "last_finished": info.get("finished"),
-                    "last_status": info.get("status"),
-                    "error": info.get("error"),
-                })
+        # --- Scheduled rebalance block (launchd-fired) ---
+        rebalance_runs = get_recent_rebalances(limit=200)
+        scheduled_rebalance: dict = {"jobs": []}
+        for label, job_id, name, source_tag, schedule in LAUNCHD_REBALANCE_JOBS:
+            # Most recent journal entry for this source tag.
+            latest = next(
+                (r for r in rebalance_runs if r.get("source") == source_tag),
+                None,
+            )
+            if latest is None:
+                last_started = None
+                last_finished = None
+                last_status = None
+                error = None
+            else:
+                last_started = latest.get("timestamp")
+                # Journal records one timestamp at write time — use it for
+                # both started and finished as a best-effort reconstruction.
+                last_finished = latest.get("timestamp")
+                execute_error = latest.get("execute_error")
+                orders_failed = latest.get("orders_failed", 0) or 0
+                if execute_error:
+                    last_status = "failed"
+                elif orders_failed > 0:
+                    # Partial = orders submitted with ≥1 broker rejection
+                    # (e.g. expected sub-broker-minimum dust rejections —
+                    # see CLAUDE.md). Distinct from "failed".
+                    last_status = "partial"
+                else:
+                    last_status = "success"
+                error = execute_error
+            scheduled_rebalance["jobs"].append({
+                "id": job_id,
+                "label": label,
+                "name": name,
+                "next_run_time": _next_run_iso(schedule, None),
+                "last_started": last_started,
+                "last_finished": last_finished,
+                "last_status": last_status,
+                "error": error,
+            })
 
-        # --- launchd block ---
+        # --- launchd block (filter monitors) ---
         try:
             runs = filter_check_log.parse_filter_check_log()
         except Exception as e:
@@ -166,7 +222,10 @@ async def get_scheduler():
                     "next_run": _next_run_iso(schedule, run.started_at),
                 })
 
-        result: dict = {"apscheduler": aps, "launchd": launchd}
+        result: dict = {
+            "scheduled_rebalance": scheduled_rebalance,
+            "launchd": launchd,
+        }
         if launchd_error:
             result["launchd_error"] = launchd_error
         return result

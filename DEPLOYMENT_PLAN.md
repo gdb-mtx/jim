@@ -2,7 +2,19 @@
 
 **Opened:** 2026-04-20
 **Status:** Working document. Actual Fly deployment is 3-4 weeks out, possibly months. Near-term work is the **Phase 0 refactor** (decouple live from backtest) done locally. But the overall schedule is tighter than it looks: the 3-month paper-trading clock was reset on 2026-04-20, and real money requires meaningful deployed-paper time (not just local-paper time) before the June/July real-money window. Planning deployment sooner — not because we need to ship fast, but because running paper on Fly is the only way to surface infrastructure bugs before they have real blast radius. See "Timeline — the 3-month paper clock" below.
-**Context:** FIRE currently runs on George's MacBook. launchd fires the filter monitor at 4:30 PM ET; FastAPI + APScheduler runs when George is working. For paper it's fine; for real money it's not. Also: George is a digital nomad and his laptop is not always on/connected, so the live trading path shouldn't depend on it.
+**Context:** FIRE currently runs on George's MacBook. launchd fires the filter monitor every 4h AND the daily crypto rebalance at 00:05 UTC; FastAPI runs when George is working. For paper it's fine; for real money it's not. Also: George is a digital nomad and his laptop is not always on/connected, so the live trading path shouldn't depend on it.
+
+> **⚠️ 2026-05-05 architectural update — APScheduler retired locally, cloud target shifts to Fly Cron Machines.**
+>
+> The original plan deployed FastAPI + an in-process `AsyncIOScheduler` to a long-running Fly Machine. After a long-uptime drift incident on 2026-05-05 (APScheduler silently missed a fire after 5 days of uptime — asyncio wakeup chain broke without raising; loop kept serving HTTP), APScheduler was removed from `api/main.py` and the daily crypto rebalance moved to a launchd-fired script (`scripts/daily_crypto_rebalance.py` + `com.fire.daily-crypto-rebalance.plist`). The asymmetry: we cannot ship in-process scheduling that can fail silently to production, and "restart every few days" is incompatible with a multi-month uptime target.
+>
+> **Cloud equivalent:** **Fly Cron Machines** — a separate Fly Machine that wakes on a `[machine_checks]` schedule, runs the script, exits. Native Fly primitive, scales to zero between fires, no long-running scheduler process to drift. References:
+> - https://fly.io/docs/machines/cron-machines/
+> - https://fly.io/docs/launch/scheduled-machines/
+>
+> **Implications for Phase 2 (was: "APScheduler on Fly"):** the script being deployed is identical to the local one (`scripts/daily_crypto_rebalance.py` — synchronous, idempotent under the file lock, journals to `rebalance_log.jsonl`). The Fly Machine just provides the cron trigger. Same architectural model as the filter monitor will use post-Phase-3. Net effect: Phase 2 *and* Phase 3 collapse into "deploy the same scripts as Fly Cron Machines." Less work, structurally more robust.
+>
+> The detailed phase descriptions below still reference APScheduler in places — when actually executing the migration, treat any "deploy APScheduler" step as "deploy `daily_crypto_rebalance.py` as a Fly Cron Machine." Will be rewritten properly when Phase 2 starts.
 
 ---
 
