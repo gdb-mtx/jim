@@ -19,6 +19,7 @@ suitable for our API endpoints.
 
 import os
 import re
+import time
 import logging
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -260,6 +261,16 @@ class AlpacaBroker:
     def submit_orders(self, orders: list[OrderRequest]) -> list[dict]:
         """Submit multiple orders. Sells execute before buys to free up cash.
 
+        For equity batches and crypto batches with no sells, this is the
+        right path — Alpaca's RegT margin credits sell proceeds to
+        `buying_power` immediately, so the in-flight sells don't block
+        same-batch buys. For crypto batches with sells AND buys, prefer
+        `submit_orders_settled` — crypto is non-marginable and pending
+        sells do NOT credit `non_marginable_buying_power` until they
+        actually fill (confirmed empirically on the paper account 2026-05-05
+        and via Alpaca's docs: `Non-Marginable Buying Power = Settled Cash
+        - Pending Fills`).
+
         Returns:
             List of order result dicts.
         """
@@ -284,6 +295,153 @@ class AlpacaBroker:
                     "error": str(e),
                 })
         return results
+
+    def submit_orders_settled(
+        self,
+        orders: list[OrderRequest],
+        sell_settle_timeout: float = 60.0,
+        poll_interval: float = 2.0,
+    ) -> list[dict]:
+        """Submit sells, wait for fills, rescale buys against actual cash, submit buys.
+
+        Solves the recurring crypto rebalance failure where pending sells
+        don't credit `non_marginable_buying_power`. Pre-flight sizing in
+        `compute_rebalance` predicts post-sell cash; this method *measures*
+        it after the sells actually settle.
+
+        Behavior by batch shape:
+        - Equity-only batch: falls through to `submit_orders` (Alpaca's
+          margin credits sell proceeds to buying_power immediately, no
+          settlement race).
+        - Crypto batch with no sells: falls through (no race possible).
+        - Crypto batch with sells AND buys: full path — submit sells,
+          poll `check_fill_status` until terminal or timeout, re-read
+          cash, rescale buy notionals proportionally, submit buys.
+        - Crypto batch with only sells: submits sells via fast path.
+
+        Why measurement over prediction:
+        - Sell partial fill → cash less than expected → buys auto-shrink
+        - Sell fully rejected → no cash → buys skipped (notional → 0)
+        - Slow Alpaca settlement → polled until ready (or timeout)
+        - All the edge cases the predictor pretends don't exist
+
+        Latency: typically 1-5s for crypto sells on Alpaca paper, capped
+        at `sell_settle_timeout` (default 60s). Daily rebalance can absorb
+        this trivially.
+
+        Args:
+            orders: Mixed sell/buy order list from compute_rebalance.
+            sell_settle_timeout: Seconds to wait for sells to fill before
+                proceeding. On timeout, proceeds with whatever cash is
+                available (logs a warning).
+            poll_interval: Seconds between `check_fill_status` polls.
+                2s matches typical Alpaca crypto fill latency without
+                hammering the API.
+
+        Returns:
+            Combined list of order result dicts (sells + buys) — same
+            shape as `submit_orders` so callers don't need to change.
+        """
+        sells = [o for o in orders if o.side == "sell"]
+        buys = [o for o in orders if o.side == "buy"]
+        has_crypto = any("/" in o.symbol for o in orders)
+
+        # Fast path: nothing to wait for. Equity batches stay on the
+        # original code path (margin credits proceeds immediately).
+        if not sells or not buys or not has_crypto:
+            return self.submit_orders(orders)
+
+        # --- Submit sells ---
+        sell_results: list[dict] = []
+        sell_order_ids: list[str] = []
+        for order in sells:
+            try:
+                r = self.submit_order(order)
+                r["requested_qty"] = order.qty
+                sell_results.append(r)
+                if r.get("order_id"):
+                    sell_order_ids.append(r["order_id"])
+            except Exception as e:
+                sell_results.append({
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "qty": order.qty,
+                    "notional": order.notional,
+                    "requested_qty": order.qty,
+                    "status": "error",
+                    "error": str(e),
+                })
+
+        # --- Wait for sells to settle ---
+        terminal = {"filled", "rejected", "canceled", "expired"}
+        if sell_order_ids:
+            deadline = time.monotonic() + sell_settle_timeout
+            settled = False
+            while time.monotonic() < deadline:
+                statuses = self.check_fill_status(sell_order_ids)
+                if all(s.get("status") in terminal for s in statuses):
+                    settled = True
+                    break
+                time.sleep(poll_interval)
+            if not settled:
+                log.warning(
+                    f"Sell settlement timeout after {sell_settle_timeout}s — "
+                    f"proceeding with whatever cash is available. Pending sells "
+                    f"may credit cash later, leaving the buy under-sized."
+                )
+
+        # --- Rescale buys against actual post-sell cash ---
+        # Only emits a warning + rescale when there's a meaningful shortfall
+        # (>$1). Sub-dollar differences are rounding within the 0.999 buffer
+        # — they'd produce a "scaling by 1.0000" message that looks like a
+        # bug. Bumping the threshold keeps the warning signal-to-noise high
+        # so a real partial-fill or sell-rejection event stands out.
+        actual_cash = self.get_cash()
+        total_buy_notional = sum((o.notional or 0.0) for o in buys)
+        if total_buy_notional > 0:
+            cash_budget = actual_cash * 0.999  # match compute_rebalance margin
+            shortfall = total_buy_notional - cash_budget
+            if shortfall > 1.0:
+                scale = cash_budget / total_buy_notional
+                log.warning(
+                    f"Crypto buy notional ${total_buy_notional:.2f} exceeds actual "
+                    f"post-sell cash budget ${cash_budget:.2f} by ${shortfall:.2f}. "
+                    f"Scaling by {scale:.4f} (sells likely under-filled)."
+                )
+                for o in buys:
+                    if o.notional is not None:
+                        o.notional = round(o.notional * scale, 2)
+
+        # --- Submit buys (skip dust < $1, Alpaca crypto minimum) ---
+        buy_results: list[dict] = []
+        for order in buys:
+            if order.notional is not None and order.notional < 1.0:
+                buy_results.append({
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "qty": order.qty,
+                    "notional": order.notional,
+                    "requested_qty": order.qty,
+                    "status": "skipped",
+                    "error": f"notional ${order.notional:.2f} below $1 minimum after rescale",
+                })
+                continue
+            try:
+                r = self.submit_order(order)
+                r["requested_qty"] = order.qty
+                buy_results.append(r)
+            except Exception as e:
+                buy_results.append({
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "qty": order.qty,
+                    "notional": order.notional,
+                    "requested_qty": order.qty,
+                    "status": "error",
+                    "error": str(e),
+                })
+
+        return sell_results + buy_results
 
     def check_fill_status(self, order_ids: list[str]) -> list[dict]:
         """Check fill status for submitted orders.

@@ -668,4 +668,10 @@ def execute_rebalance(
     if not rebalance.orders:
         return []
 
-    return broker.submit_orders(rebalance.orders)
+    # `submit_orders_settled` waits for crypto sells to fill and rescales
+    # buys against actual post-sell cash before submitting them — closes
+    # the recurring "insufficient non_marginable_buying_power" race that
+    # bit the daily A4 rebalance ~3-4 times. For equity batches and
+    # crypto batches without sells, this falls through to the original
+    # `submit_orders` fast path with no added latency.
+    return broker.submit_orders_settled(rebalance.orders)
