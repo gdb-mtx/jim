@@ -43,7 +43,7 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 00:05 UTC via launchd (`com.fire.daily-crypto-rebalance` plist → `scripts/daily_crypto_rebalance.py`). Replaced in-process APScheduler on 2026-05-05 after a long-uptime drift incident — the asyncio wakeup chain silently broke after 5 days of uptime, missing a fire while the loop kept serving requests. Cloud target post-Fly is Fly Cron Machines. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 is the robust winner (half A 2.89 / half B 2.94). A4 weight in combined book is **33%**, with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 8:05 PM laptop-local time via launchd (`com.fire.daily-crypto-rebalance` plist → `scripts/daily_crypto_rebalance.py`). Lands at 00:05 UTC when the laptop is in EDT (UTC-4); drifts to other UTC offsets when traveling. Strategy uses 21d momentum so a few-hour intraday drift is signal noise. Replaced in-process APScheduler on 2026-05-05 after a long-uptime drift incident. Schedule was originally Hour=0 with `TZ=UTC` env var, but launchd interprets `StartCalendarInterval` in laptop-local TZ regardless of env var (and LaunchAgents queue during darkwake), so Hour=20 in laptop-local was chosen to fire while the laptop is reliably in FullWake. Cloud target post-Fly is Fly Cron Machines, which honor schedule TZ properly. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 is the robust winner (half A 2.89 / half B 2.94). A4 weight in combined book is **33%**, with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
 
 Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
 - A1↔A2: **0.38** (backtest) — genuinely diversified
@@ -71,7 +71,7 @@ Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_AP
 
 Rebalance schedule (two layers — exposure management + signal rotation):
 - **Every 4 hours (launchd)**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips. Both equity and crypto plists use `StartInterval=14400`. Was once-daily-at-16:30 for equity but macOS dropped a fire after a closed-laptop deferred run; relative-interval re-arms reliably on wake. Pre-Fly.io measure.
-- **Daily at 00:05 UTC**: Account 4 crypto signal rotation — automated via launchd (`com.fire.daily-crypto-rebalance` plist runs `scripts/daily_crypto_rebalance.py`, server-independent). The plist sets `TZ=UTC` so `StartCalendarInterval` lands at 00:05 UTC regardless of laptop timezone.
+- **Daily at 8:05 PM laptop-local time**: Account 4 crypto signal rotation — automated via launchd (`com.fire.daily-crypto-rebalance` plist runs `scripts/daily_crypto_rebalance.py`, server-independent). Lands at 00:05 UTC when laptop is in EDT; drifts to other UTC offsets when traveling. Schedule chosen to fire while laptop is reliably in FullWake (LaunchAgents queue during darkwake).
 - **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual).
 
 **Concurrency:** all three rebalance entry points (API `/rebalance/execute`, launchd A4 job, `filter_check.py`) serialize via `dual_rebalance_lock` (async + file lock) or, for the sync cron paths, the same `file_rebalance_lock` they observe. Contention raises `RebalanceLockedError` → 409 from the API, `status="locked"` from the cron.
@@ -122,7 +122,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 
 ### Risk Controls — Operational Behavior
 
-**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline for both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto launchd job is the only exception and runs at 00:05 UTC (crypto markets are 24/7); its plist sets `TZ=UTC` to pin `StartCalendarInterval` to UTC.
+**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline for both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto launchd job is the local-laptop exception: it fires at 8:05 PM laptop-local (= 00:05 UTC during EDT). launchd's `StartCalendarInterval` is interpreted in laptop-local TZ regardless of any `TZ` env var on the plist (LaunchAgents also queue during darkwake), so we picked an evening laptop-local hour for FullWake reliability. Cloud target (Fly Cron Machines) will fire at exact 00:05 UTC.
 
 **When are filters and circuit breakers checked?**
 Risk controls are checked at two levels:
@@ -130,7 +130,7 @@ Risk controls are checked at two levels:
 1. **Filter monitor (every 4h, automated)**: `scripts/filter_check.py` runs via macOS launchd every 4 hours (both equity and crypto plists, `StartInterval=14400`) — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
 
 2. **Scheduled rebalance (signal rotation)**: Rotates *which* stocks/assets to hold at the strategy's native cadence:
-   - **Account 4** (daily): launchd `com.fire.daily-crypto-rebalance` at 00:05 UTC (crypto signal + BTC filter). Server-independent.
+   - **Account 4** (daily): launchd `com.fire.daily-crypto-rebalance` at 8:05 PM laptop-local (= 00:05 UTC in EDT; drifts on travel). Server-independent.
    - **Accounts 1 & 2** (monthly): Manual trigger first Monday of month
 
 **Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter). *Caveat for A4*: A4's signal rotation is daily, matching its filter cadence — so the decoupling is really about A1/A2.
@@ -213,7 +213,7 @@ scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calma
 scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
 scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
 scripts/daily_crypto_rebalance.py — Account 4 daily rebalance, launchd-fired at 00:05 UTC (replaced in-process APScheduler 2026-05-05)
-scripts/com.fire.daily-crypto-rebalance.plist — macOS launchd plist for the daily crypto rebalance (TZ=UTC, hour=0, minute=5)
+scripts/com.fire.daily-crypto-rebalance.plist — macOS launchd plist for the daily crypto rebalance (Hour=20, Minute=5 laptop-local; = 00:05 UTC in EDT)
 scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (every 4h, `--filter spy`)
 scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
 scripts/watch_filters.py  — GitHub Actions travel-window watcher; pushes ntfy.sh alerts on SPY/BTC crossings while the laptop is asleep.

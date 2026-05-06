@@ -7,13 +7,39 @@ take day-to-day.
 
 ## What's automated
 
-**A launchd job fires daily at 00:05 UTC** (= 8:05 PM ET during EDT,
-7:05 PM ET during EST). It's defined in
-[scripts/com.fire.daily-crypto-rebalance.plist](scripts/com.fire.daily-crypto-rebalance.plist)
-and runs [scripts/daily_crypto_rebalance.py](scripts/daily_crypto_rebalance.py).
-The plist sets `TZ=UTC` so `StartCalendarInterval` lands at 00:05 UTC
-regardless of laptop timezone. **The server does not need to be running**
-— the script imports the same modules directly.
+**A launchd job fires daily at 8:05 PM laptop-local time** — Hour=20,
+Minute=5 in [scripts/com.fire.daily-crypto-rebalance.plist](scripts/com.fire.daily-crypto-rebalance.plist),
+which runs [scripts/daily_crypto_rebalance.py](scripts/daily_crypto_rebalance.py).
+**The server does not need to be running** — the script imports the same
+modules directly.
+
+When the laptop is in EDT (UTC-4), 8:05 PM EDT = 00:05 UTC and the fire
+lands at the start of a new UTC trading day. When traveling to other
+timezones, the schedule drifts (e.g. UTC+1 → fires at 19:05 UTC, UTC+3
+→ fires at 17:05 UTC). The strategy uses 21-day momentum on crypto so
+a few-hour intraday offset is signal noise. Update Hour to match local
+evening if settling in a new TZ for >1 week.
+
+**Why not Hour=0 + TZ=UTC?** That was the original design, but two
+launchd quirks defeat it:
+1. `StartCalendarInterval` is interpreted in the **laptop's local TZ**,
+   not the `TZ` env var set in the plist. The env var only affects the
+   child script's environment (so the script's logs are in UTC, useful
+   for journal correlation), not launchd's own scheduler.
+2. **LaunchAgents queue `StartCalendarInterval` during darkwake** and
+   only fire on next FullWake. caffeinate `-is` prevents deep sleep but
+   doesn't keep the system in FullWake — observed 2026-05-06: scheduled
+   00:05 EDT (= 04:05 UTC), queued through darkwake, fired at 02:05 EDT
+   (= 06:05 UTC) on next FullWake transition.
+
+Hour=20 sidesteps both issues by firing while the laptop is reliably in
+FullWake (typical evening computer use). The TZ env var is kept as
+`TZ=UTC` purely so the child script's logs use UTC timestamps, which
+matches the rebalance journal's UTC timestamps.
+
+Cloud target post-Fly migration is Fly Cron Machines, which honor
+schedule TZ properly and don't depend on laptop power state. See
+DEPLOYMENT_PLAN.md.
 
 This replaced an in-process APScheduler job on 2026-05-05 after a
 long-uptime drift incident: APScheduler's AsyncIOScheduler silently
@@ -21,7 +47,8 @@ missed a fire after 5 days of uptime, while the asyncio loop kept
 serving requests normally. The wakeup chain had broken without raising.
 Restart cleared it, but "restart every few days" is incompatible with a
 multi-month uptime target. launchd is the same primitive the filter
-monitor already uses reliably; the failure mode is structurally absent.
+monitor already uses reliably; the long-uptime failure mode is
+structurally absent.
 
 On each tick, [`scripts/daily_crypto_rebalance.py`](scripts/daily_crypto_rebalance.py)
 runs the following steps:
@@ -45,12 +72,13 @@ runs the following steps:
    filter monitor doesn't fire a no-op rebalance later from a stale value.
 9. Retries up to 3× with exponential backoff on failure (60s, then 120s).
 
-**Sleep behavior:** if the laptop is asleep at 00:05 UTC, launchd fires
-once on next wake (deferred-fire semantics, native to launchd's
-`StartCalendarInterval`). Same as the filter monitor. Cloud target
-post-Fly migration is **Fly Cron Machines** (separate Machine that wakes,
-fires, exits — eliminates the laptop-must-be-on constraint entirely).
-See `DEPLOYMENT_PLAN.md`.
+**Sleep / darkwake behavior:** if the laptop is asleep or in darkwake at
+8:05 PM laptop-local (the typical case where the laptop is actively in
+use), launchd queues the `StartCalendarInterval` event and fires it on
+next FullWake. The 8:05 PM choice is specifically to be inside the
+user's normal evening laptop use, when FullWake is reliable. If the user
+is away from the laptop in the evening, expect the fire to slip to the
+next FullWake. Daily-cadence + 21d momentum signal tolerates this.
 
 ## What to expect day-to-day
 
@@ -114,7 +142,7 @@ this has no impact on other code paths.
 
 | Layer | Trigger | Work done when triggered | Requires server? | Requires laptop on? |
 |---|---|---|---|---|
-| Daily rebalance (launchd) | Fires every day at 00:05 UTC (deferred-fired on next wake if asleep) | Full rebalance on A4: signal + filter + vol scaling | No | Yes |
+| Daily rebalance (launchd) | Fires every day at 8:05 PM laptop-local (= 00:05 UTC in EDT, drifts on travel; queued and deferred-fired on next FullWake if asleep/darkwake) | Full rebalance on A4: signal + filter + vol scaling | No | Yes |
 | Filter monitor — equity (launchd) | Fires at 4:30 PM laptop-local daily; rebalance only if SPY scalar differs from saved state | Full rebalance on A1/A2 (same `compute_rebalance` path) | No | Yes |
 | Filter monitor — crypto (launchd) | Fires every 4 hours; rebalance only if BTC scalar differs from saved state | Full rebalance on A4 (same `compute_rebalance` path) | No | Yes |
 | Travel watcher (GitHub Actions) | Fires every ~30 min at `:07/:37` UTC | **Notifies phone only** (ntfy push on crossing + daily heartbeat) — does not trade | No | No |
@@ -138,7 +166,7 @@ shared `data/filter_state.py` module:
 - `filter_check.py` (launchd) — writes BTC + SPY scalars after its
   own flip-triggered rebalance.
 - `scripts/daily_crypto_rebalance.py` (launchd) — writes `btc_scalar`
-  for A4 after the daily 00:05 UTC fire.
+  for A4 after the daily evening fire.
 - `/api/orders/rebalance/execute` in `api/routes/orders.py` — writes
   `spy_scalar` for A1/A2 manual rebalances, `btc_scalar` for A4
   manual rebalances. **This matters most during travel**: when the
@@ -322,10 +350,12 @@ extension) → `filter_watch` workflow → most recent runs.
 
 ## What you have to do
 
-**Nothing, as long as the laptop stays awake at 00:05 UTC.** launchd
-fires the script independently of the server, so even a fully-down
-uvicorn doesn't break the job. Keep the laptop plugged in and awake
-overnight and the 00:05 UTC rebalance happens hands-free.
+**Nothing, as long as the laptop is in FullWake at 8:05 PM laptop-local.**
+launchd fires the script independently of the server, so even a fully-down
+uvicorn doesn't break the job. The 8:05 PM choice lands inside typical
+evening computer use, which is when FullWake is reliable. If you've
+stepped away from the laptop in the evening, expect the fire to slip
+to next FullWake.
 
 ### To verify the job fired (the next morning)
 
