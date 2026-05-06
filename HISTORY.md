@@ -11,6 +11,15 @@ Look here when:
 - You're auditing a metric and need to know whether a known correction
   has been applied.
 
+**C-numbering convention.** Items prefixed `C1`, `C2`, ... `C9`, `C10`,
+etc. are this file's stable identifiers for Tier 1 issues — the ones
+that changed reported numbers or are open caveats on them. Other docs
+(`CLAUDE.md`, `HANDOFF_*.md`, commit messages) reference these labels
+without re-explaining; the canonical per-item description lives below.
+Numbering is chronological by discovery, not by topic. Gaps are real
+(e.g. C8 was never assigned). Tier 2 items use `S` prefix (S1, S2, ...),
+Tier 3 use `D`, Tier 4 use `R` — same convention, different sections.
+
 The authoritative ranked bug list with full per-item detail lives in
 `AUDIT_MONTH2.md`. This file is the digest.
 
@@ -52,6 +61,10 @@ crypto (bid-ask spread). A4 cost drag came in at ~3.4pp (vs audit's
 0.5-1pp estimate) because realized daily turnover on crypto rotation is
 ~8% / ~20× annualized one-way, not the audit's implied ~2×.
 
+**C7 — `max_position_pct=20%` cap on A4** (fixed 2026-04-21, option C).
+Cap removed entirely. Was wired in naming only — three legacy controls
+(Fractional Kelly + 2% rule + 20% position cap) all removed.
+
 **C9 — Partial-bar signal contamination (crypto)** (fixed 2026-05-06). Surfaced
 during the live↔backtest reconciliation triggered by a -7.3 pp gap on A4 over
 14 days of paper trading. The strategy's `generate_signals` was reading
@@ -85,13 +98,10 @@ After the C9 partial-bar drop, the strategy uses two-days-ago close as
 momentum signal is small but non-zero. Mitigations to consider: (a) shift
 schedule later in UTC day (e.g. 03:00 UTC) so yfinance has had time to
 settle, at the cost of fragility from laptop-darkwake; (b) move to a
-broker-native price source post-Fly migration (see `DATA_SOURCES.md`); (c)
-accept it for paper. Live numbers retain the staleness until one of those
-lands.
-
-**C7 — `max_position_pct=20%` cap on A4** (fixed 2026-04-21, option C).
-Cap removed entirely. Was wired in naming only — three legacy controls
-(Fractional Kelly + 2% rule + 20% position cap) all removed.
+broker-native price source post-Fly migration (see `DATA_SOURCES.md` and
+`HANDOFF_ALPACA_BARS.md` for the planned migration to Alpaca's bars
+endpoint); (c) accept it for paper. Live numbers retain the staleness
+until one of those lands.
 
 ### Combined OOS deltas across the C4+C6 fix wave
 
