@@ -1,5 +1,18 @@
 # Handoff: migrate live crypto signal computation from yfinance → Alpaca bars
 
+**Status: COMPLETED 2026-05-06.** The migration described below was
+executed in a single session (not the fresh-session handoff originally
+anticipated). C10 is structurally resolved; new C11 documents BNB's
+regulatory non-listing on Alpaca which surfaced during the Q1 verification.
+Surviving deliverables in code: `data/alpaca_crypto_bars.py`,
+`data/crypto.LIVE_CRYPTO_UNIVERSE`, swaps in `execution/rebalance.py`,
+`strategies/portfolio_config.compute_btc_trend_filter`,
+`scripts/filter_check.py`, and `api/routes/portfolio.py` (`/filters`
+endpoint). Authoritative narrative now lives in HISTORY.md C10/C11. This
+file kept for historical reference; do not act on it.
+
+---
+
 This is a self-contained brief for a fresh Claude session. The current
 session has been investigating yfinance fragility on the live A4 path
 and has agreed that the right structural fix is to move *live* crypto

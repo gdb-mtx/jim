@@ -86,22 +86,46 @@ a row, therefore it's a closed bar" was an unstated assumption never tested.
 Should have caught this when the live↔backtest pairs first started
 diverging in late April; instead it took a 14-day reconciliation to surface.
 
-**C10 — yfinance settled-bar publishing delay** (open, documented 2026-05-06).
+**C10 — yfinance settled-bar publishing delay** (resolved 2026-05-06).
 Adjacent issue surfaced while diagnosing C9. yfinance does NOT publish a
 settled crypto daily bar at exactly UTC midnight — there's a 1-12 hour delay
 between bar close and the settled value being available in the API response.
-At our 8:05 PM EDT (= 00:05 UTC) fire time, yesterday's settled bar is
-typically NOT yet visible. Result: cache refresh at fire time captures
-"two-days-ago settled + today's partial" with yesterday entirely missing.
-After the C9 partial-bar drop, the strategy uses two-days-ago close as
-"latest" — one extra day of staleness vs. backtest. Impact on a 21-day
-momentum signal is small but non-zero. Mitigations to consider: (a) shift
-schedule later in UTC day (e.g. 03:00 UTC) so yfinance has had time to
-settle, at the cost of fragility from laptop-darkwake; (b) move to a
-broker-native price source post-Fly migration (see `DATA_SOURCES.md` and
-`HANDOFF_ALPACA_BARS.md` for the planned migration to Alpaca's bars
-endpoint); (c) accept it for paper. Live numbers retain the staleness
-until one of those lands.
+At our 8:05 PM EDT (= 00:05 UTC) fire time, yesterday's settled bar was
+typically NOT yet visible, so the strategy was forced to use two-days-ago's
+close as "latest" — one extra day of staleness vs. backtest. Resolved
+structurally by switching live signal computation off yfinance and onto
+Alpaca's `/v1beta3/crypto/us/bars` endpoint (broker-native, produced from
+Alpaca's own trade tape; yesterday's bar settles within seconds of UTC
+midnight, not hours). New module `data/alpaca_crypto_bars.py`; live call
+sites swapped in `execution/rebalance.py`, `strategies/portfolio_config.py`
+(`compute_btc_trend_filter`), `scripts/filter_check.py`, and
+`api/routes/portfolio.py` (`/api/portfolio/filters`). Backtest historical
+data stays on yfinance via `data/crypto.download_crypto_prices` — Alpaca
+crypto bars start 2021-01-01 (varies by coin) and don't reach the project's
+2018 BTC / 2020 universe historical floor. The C9 drop-today-partial-bar
+fix continues to apply because Alpaca's bars are dated by UTC-midnight
+start the same way yfinance's are; same data shape, same fix. See
+`HANDOFF_ALPACA_BARS.md` for the full migration brief.
+
+**C11 — BNB excluded from live universe** (documented 2026-05-06,
+co-resolved with C10). Surfaced during the Alpaca-bars migration: BNB is
+not listed by Alpaca in any symbol form (404 across `BNB/USD`, `BNBUSD`,
+`BNB`, `BNB/USDT`; absent from the full active-crypto-asset list).
+Regulatory non-listing — SEC v. Binance (2023) alleged BNB's 2017 ICO was
+an unregistered securities offering and the federal court allowed claims
+based on Binance's post-ICO BNB sales to proceed; US-regulated brokers
+avoid BNB to limit enforcement exposure. Pre-migration, BNB was in the
+9-coin yfinance-fed universe, so the strategy ranked BNB as a candidate
+even though Alpaca couldn't trade it — a latent bug where a BNB top-2
+signal would have produced a rejected order. Never fired in practice
+(`rebalance_log.jsonl` shows BNB never selected as top-2). Migration
+naturally fixes this: `data/crypto.LIVE_CRYPTO_UNIVERSE` is the 8-coin
+subset Alpaca lists, and `data/alpaca_crypto_bars.get_crypto_bars`
+silently drops any symbol Alpaca returns no bars for. Backtest universe
+unchanged at 9 coins — minor live↔backtest universe-shape gap on dates
+where BNB was top-2 in backtest, accepted as "use what the broker can
+trade." Sources: [Alpaca's supported crypto list](https://alpaca.markets/support/what-cryptocurrencies-does-alpaca-currently-support),
+[SEC v. Binance press release](https://www.sec.gov/newsroom/press-releases/2023-101).
 
 ### Combined OOS deltas across the C4+C6 fix wave
 

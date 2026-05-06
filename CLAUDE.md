@@ -81,7 +81,7 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 
 **Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION_PLAN.md`.**
 
-Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs) and C9 (crypto partial-bar signal contamination, 2026-05-06). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money. **C10 (yfinance settled-bar publishing delay)** is the other open caveat — adjacent to C9, affects A4 live↔backtest parity by ≤1 day of stale signal data on some fires; mitigation deferred to post-Fly migration.
+Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), and C10 (Alpaca-bars migration for live crypto, 2026-05-06). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money. C11 (BNB excluded from live universe, regulatory non-listing) is documented and structurally handled, not a numerical caveat.
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|
@@ -112,7 +112,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
 - **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
 - **Stock Universe**: 501 S&P 500 stocks (cached parquet, survivorship bias noted). Coverage gate: trailing 500 trading days ≥80% non-NaN — lets recent S&P additions enter the rotation once they have ~2y of history without corrupting backtests (pre-IPO NaN rows propagate to NaN ranks → excluded from selection for periods before the ticker existed).
-- **Crypto Universe**: 9 coins (BTC, ETH, SOL, BNB, ADA, AVAX, LINK, DOT, XRP). Quality/volume-gated by design — top-cap L1s and major smart-contract platforms only. Deliberate exclusion of memecoins (DOGE, SHIB, PEPE, etc.) and low-float altcoins. Any future crypto strategy (e.g. the Account 5 reversal candidate) must reuse this same 9-coin list or a subset; no expansion into thin-liquidity or narrative-speculation coins.
+- **Crypto Universe**: 9 coins for backtest, 8 coins for live (BTC, ETH, SOL, BNB*, ADA, AVAX, LINK, DOT, XRP). *BNB is in the backtest universe but excluded from live — Alpaca doesn't list it (regulatory non-listing post 2023 SEC v. Binance, see HISTORY.md C11). `data/crypto.CRYPTO_UNIVERSE` is the 9-coin backtest set; `data/crypto.LIVE_CRYPTO_UNIVERSE` is the 8-coin tradeable subset that live signal computation operates on. Quality/volume-gated by design — top-cap L1s and major smart-contract platforms only. Deliberate exclusion of memecoins (DOGE, SHIB, PEPE, etc.) and low-float altcoins. Any future crypto strategy must reuse the same universe or a subset; no expansion into thin-liquidity or narrative-speculation coins.
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007).
 - **BTC 125-day SMA trend filter**: Binary 100% cash when BTC < 125d SMA (sat out all of 2022). Robust-opt picked 125d from 200d/150d/125d/100d grid.
@@ -160,7 +160,8 @@ The dashboard's RiskStatusPanel and FilterStatusBanner show current status. Filt
 # Mode 1: Factor Trading System
 data/pipeline.py          — yfinance ETF data download & caching (threading.Lock serializes yf.download; returned-column verification rejects cross-thread contamination; cache-read schema check refuses corrupt caches; 0-row write+read guards reject empty data)
 data/sp500.py             — S&P 500 stock universe + VIX data
-data/crypto.py            — Crypto data pipeline (yfinance + symbol mapping; `normalize_alpaca_position_symbol` converts `BTCUSD` → `BTC/USD` so position-API + order-API forms match in the rebalance diff)
+data/crypto.py            — Crypto data pipeline (yfinance, BACKTEST surface; symbol mapping; `normalize_alpaca_position_symbol` converts `BTCUSD` → `BTC/USD` so position-API + order-API forms match in the rebalance diff). Exports `CRYPTO_UNIVERSE` (9 coins, backtest) and `LIVE_CRYPTO_UNIVERSE` (8 coins; BNB excluded — Alpaca regulatory non-listing, see HISTORY.md C11).
+data/alpaca_crypto_bars.py — Crypto data pipeline (Alpaca bars endpoint, LIVE surface; broker-native, no third-party publishing delay — see HISTORY.md C10). Returns yfinance-shaped DataFrame for drop-in compatibility: `get_crypto_bars()` defaults to LIVE_CRYPTO_UNIVERSE; `get_btc_bars()` for the BTC trend filter. No cache — fetches fresh each call by design.
 data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
 data/trading_dates.py     — ET trading-date helpers (today_et, utc_ts_to_et_date) — TZ-stable
 data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
@@ -241,9 +242,9 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - **PEAD drift expectations by market cap**: Large-cap 1-3%, mid-cap 3-5%, small-cap 5-8%. Don't set small-cap targets on mega-cap banks.
 
 ### Running the Project
-- **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes)
-- **Backend only**: `uv run uvicorn api.main:app --reload` (from project root)
-- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5174
+- **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes). Backend on :8001, frontend on :5174.
+- **Backend only**: `uv run uvicorn api.main:app --reload --port 8001` (from project root). Port **8001** is the FIRE convention; :8000 is reserved for FIREMaster.
+- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5174 (proxies API calls to :8001)
 - **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION_PLAN.md`.
   - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
   - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` and `walk_forward_refit_a2.py`. Support `--grid small|medium|large`.
@@ -306,7 +307,7 @@ Rules promoted from session memory because they failed concretely in past work. 
 
 **Validation status:** All three active accounts PASS the CAGR-first gates. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
 
-**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money) and C10 (yfinance settled-bar publishing delay, ≤1 day stale data on A4 some fires — mitigation deferred to post-Fly migration). Tiers 2+3 fully closed. Tier 4 R2/R4-R10/R13-R15 are reporting hygiene, non-blocking. See `AUDIT_MONTH2.md` for the ranked detail; `HISTORY.md` for what each closed item changed.
+**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HANDOFF_ALPACA_BARS.md` for the migration brief. Tiers 2+3 fully closed. Tier 4 R2/R4-R10/R13-R15 are reporting hygiene, non-blocking. See `AUDIT_MONTH2.md` for the ranked detail; `HISTORY.md` for what each closed item changed.
 
 **Mode 2 (Informational Alpha):** Phase A in progress.
 - PEAD data pipeline + transcript scraper + scoring prompts + recommendation tracker built (`mode2/`).

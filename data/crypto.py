@@ -12,11 +12,20 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
 
-# 9-coin universe — top liquid cryptos available on both yfinance and Alpaca
+# 9-coin BACKTEST universe — yfinance has all nine. Used by backtest/research
+# code paths that read historical prices via download_crypto_prices().
 CRYPTO_UNIVERSE = [
     "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "ADA-USD",
     "AVAX-USD", "LINK-USD", "DOT-USD", "XRP-USD",
 ]
+
+# 8-coin LIVE universe — Alpaca does not list BNB (regulatory non-listing
+# post 2023 SEC v. Binance enforcement; BNB ICO classified as unregistered
+# securities offering). Live signal computation pulls bars from Alpaca and
+# can only trade what Alpaca lists, so the live universe excludes BNB.
+# Backtest still uses the 9-coin set for historical fidelity.
+# See HISTORY.md C10/C11 and HANDOFF_ALPACA_BARS.md.
+LIVE_CRYPTO_UNIVERSE = [s for s in CRYPTO_UNIVERSE if s != "BNB-USD"]
 
 # yfinance ↔ Alpaca symbol mapping
 YFINANCE_TO_ALPACA = {

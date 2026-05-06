@@ -31,7 +31,8 @@ from strategies.portfolio import (
 )
 from data.pipeline import download_prices, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
-from data.crypto import download_crypto_prices, download_btc_prices, to_alpaca_symbol
+from data.crypto import to_alpaca_symbol
+from data.alpaca_crypto_bars import get_crypto_bars, get_btc_bars
 
 
 def to_alpaca_equity_symbol(sym: str) -> str:
@@ -175,8 +176,8 @@ def _get_crypto_strategy_signals(
 
     Returns weights keyed by Alpaca symbols (BTC/USD, not BTC-USD).
     """
-    crypto_prices = download_crypto_prices(start=lookback_start)
-    btc_prices = download_btc_prices()
+    crypto_prices = get_crypto_bars(start=lookback_start)
+    btc_prices = get_btc_bars()
     btc_prices = _live_augmented_btc(broker, btc_prices)
 
     strategy = CRYPTO_STRATEGIES[strategy_id]()
@@ -220,8 +221,8 @@ def _get_portfolio_signals(
     crypto_prices = None
     btc_prices = None
     if any(sid in CRYPTO_STRATEGIES for sid in weights):
-        crypto_prices = download_crypto_prices(start=lookback_start)
-        btc_prices = download_btc_prices()
+        crypto_prices = get_crypto_bars(start=lookback_start)
+        btc_prices = get_btc_bars()
         btc_prices = _live_augmented_btc(broker, btc_prices)
 
     # Get latest signals from each component

@@ -87,7 +87,7 @@ def compute_filters(scope: str = "all") -> dict:
         Dict with whichever of `spy_*` / `btc_*` fields are in scope.
     """
     from data.pipeline import download_and_cache
-    from data.crypto import download_btc_prices
+    from data.alpaca_crypto_bars import get_btc_bars
 
     result: dict = {}
 
@@ -105,7 +105,9 @@ def compute_filters(scope: str = "all") -> dict:
         })
 
     if scope in ("all", "btc"):
-        btc_prices = download_btc_prices(start="2018-01-01", force_refresh=True)
+        # BTC filter pulls bars from Alpaca (broker-native, no publishing
+        # delay) — replaced yfinance 2026-05-06 per HANDOFF_ALPACA_BARS.md.
+        btc_prices = get_btc_bars(start="2021-01-01")
         btc_ma = btc_prices.rolling(125).mean()
         btc_filter = compute_btc_trend_filter()
         result.update({

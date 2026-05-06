@@ -315,8 +315,8 @@ def test_spy_filter_nan_raises_rather_than_liquidating(
 
 
 @patch("execution.rebalance.compute_btc_trend_filter")
-@patch("execution.rebalance.download_btc_prices")
-@patch("execution.rebalance.download_crypto_prices")
+@patch("execution.rebalance.get_btc_bars")
+@patch("execution.rebalance.get_crypto_bars")
 @patch("strategies.crypto_momentum.CryptoMomentum.generate_signals")
 def test_btc_filter_nan_raises_rather_than_liquidating(
     mock_signals, mock_crypto, mock_btc_prices, mock_btc_filter, monkeypatch

@@ -361,13 +361,15 @@ async def reset_circuit_breaker(
 async def filter_status():
     """Get current regime filter status (SPY 200d MA + BTC 125d MA).
 
-    Uses Alpaca real-time quotes for the current price comparison,
-    yfinance cached data for the MA (changes negligibly day-to-day).
+    Uses Alpaca real-time quotes for the current price comparison.
+    SPY MA from yfinance cached data; BTC MA from Alpaca bars (broker-native,
+    no publishing delay — yfinance had a 1-12h publishing delay on settled
+    crypto bars; see HISTORY.md C10).
     """
 
     def _compute():
         from data.pipeline import download_and_cache
-        from data.crypto import download_btc_prices
+        from data.alpaca_crypto_bars import get_btc_bars
         from data.plausibility import cross_validate_last_close
 
         result = {}
@@ -405,7 +407,7 @@ async def filter_status():
             result["spy"] = {"error": "Could not load SPY data"}
 
         try:
-            btc_prices = download_btc_prices()
+            btc_prices = get_btc_bars()
             btc_ma = btc_prices.rolling(125, min_periods=125).mean()
             btc_ma_val = float(btc_ma.iloc[-1])
 
@@ -471,15 +473,23 @@ async def data_freshness():
     from pathlib import Path
 
     raw_dir = Path(__file__).parent.parent.parent / "data" / "raw"
-    # Files the live-trading paths depend on. Source of truth here, not in code.
-    # stale_threshold_hours mirrors the cache's max_age_hours (see data/crypto.py etc.)
+    # Caches the dashboard surfaces freshness for. Source of truth here, not
+    # in code. stale_threshold_hours mirrors the cache's max_age_hours
+    # (see data/crypto.py etc.).
+    #
+    # The two crypto caches were load-bearing for live until 2026-05-06,
+    # when live signal computation migrated to Alpaca's bars endpoint
+    # (HISTORY.md C10). Post-migration they're consumed only by
+    # backtesting/research paths, hence the "(backtest)" label — stale
+    # there means "backtest cache is old," not "live is at risk."
+    # Equity caches remain load-bearing for live A1/A2 paths via yfinance.
     files = [
-        {"name": "BTC prices",      "file": "btc_prices.parquet",    "threshold_h": 20, "asset_class": "crypto"},
-        {"name": "Crypto universe", "file": "crypto_prices.parquet", "threshold_h": 20, "asset_class": "crypto"},
-        {"name": "VIX",             "file": "vix.parquet",           "threshold_h": 20, "asset_class": "equity"},
-        {"name": "S&P 500",         "file": "sp500_prices.parquet",  "threshold_h": 30, "asset_class": "equity"},
-        {"name": "SPY filter",      "file": "spy_filter.parquet",    "threshold_h": 20, "asset_class": "equity"},
-        {"name": "ETF universe",    "file": "etf_prices.parquet",    "threshold_h": 20, "asset_class": "equity"},
+        {"name": "BTC prices (backtest)",      "file": "btc_prices.parquet",    "threshold_h": 20, "asset_class": "crypto"},
+        {"name": "Crypto universe (backtest)", "file": "crypto_prices.parquet", "threshold_h": 20, "asset_class": "crypto"},
+        {"name": "VIX",                        "file": "vix.parquet",           "threshold_h": 20, "asset_class": "equity"},
+        {"name": "S&P 500",                    "file": "sp500_prices.parquet",  "threshold_h": 30, "asset_class": "equity"},
+        {"name": "SPY filter",                 "file": "spy_filter.parquet",    "threshold_h": 20, "asset_class": "equity"},
+        {"name": "ETF universe",               "file": "etf_prices.parquet",    "threshold_h": 20, "asset_class": "equity"},
     ]
     now = time.time()
     today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)

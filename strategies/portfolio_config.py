@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from data.pipeline import download_and_cache
-from data.crypto import download_btc_prices
+from data.alpaca_crypto_bars import get_btc_bars
 from strategies.trend_following import TimeSeriesMomentum
 from strategies.momentum import CrossSectionalMomentum, DualMomentum
 from strategies.stock_momentum import StockMomentum
@@ -172,7 +172,7 @@ def compute_spy_trend_filter(
 
 
 def compute_btc_trend_filter(
-    start: str = "2018-01-01",
+    start: str = "2021-01-01",
     ma_period: int = 125,
     live_price: float | None = None,
 ) -> pd.Series:
@@ -185,16 +185,21 @@ def compute_btc_trend_filter(
     regime-lucky), then 200d (conservative). Unlike SPY filter which
     reduces to 0.5, crypto bear markets warrant full exit (1.0 or 0.0).
 
+    Live BTC prices come from Alpaca's bars endpoint (broker-native, no
+    publishing delay). Backtest BTC history still comes from yfinance via
+    strategies/portfolio_backtest.py — Alpaca only goes back to 2021-01-01.
+
     Args:
-        start: Start date for BTC data (needs history for MA warmup)
-        ma_period: Moving average period (default 200 days)
-        live_price: Real-time BTC price (e.g. from Alpaca) to override
-            the last cached yfinance close.
+        start: Start date for BTC data (needs history for MA warmup;
+            Alpaca's earliest BTC bar is 2021-01-01).
+        ma_period: Moving average period (default 125 days).
+        live_price: Real-time BTC price (e.g. from Alpaca latest trade)
+            to override the last bar's close.
 
     Returns:
         Series of scalars (1.0 or 0.0) indexed by date
     """
-    btc_prices = download_btc_prices(start=start)
+    btc_prices = get_btc_bars(start=start)
 
     if live_price is not None:
         btc_prices = btc_prices.copy()

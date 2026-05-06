@@ -26,11 +26,32 @@ to yfinance behavior. Parquet was just the medium that recorded it.
 | 2026-04-26 | S&P cache landed at 488/501 stocks | 13 long-history tickers silently dropped on batch refresh |
 | 2026-04-26 | 5 concurrent refreshes → 429s + SQLite corruption | rate-limit + yfinance internal cache fragility |
 | 2026-04-27 | 4 caches written empty (0 rows) | DNS-fail returns column-correct, row-empty DataFrame |
+| 2026-05-06 | A4 live signal stale by 1 day vs backtest (C9/C10) | partial-bar contamination + 1-12h settled-bar publishing delay |
 
 Each one got a defensive patch (threading.Lock, atomic writes, plausibility
 bands, retry+coverage gate, schema cross-check, 0-row guard). The system
 is now meaningfully hardened — but it's hardening *around* an unreliable
 source rather than fixing the source.
+
+## 2026-05-06 — Live crypto signal computation migrated to Alpaca
+
+Hybrid path (option 3 below) implemented for the crypto leg ahead of the
+broader Phase-5 evaluation:
+
+- New `data/alpaca_crypto_bars.py` — broker-native daily bars for live use.
+- Backtest crypto path stays on yfinance (Alpaca's history doesn't reach
+  the project's 2018 BTC / 2020 universe historical floor).
+- Live call sites swapped: `execution/rebalance.py` (crypto signal +
+  portfolio paths), `strategies/portfolio_config.py` (BTC trend filter),
+  `scripts/filter_check.py` (BTC scope), `api/routes/portfolio.py`
+  (`/api/portfolio/filters`).
+- BNB dropped from live universe (regulatory non-listing on Alpaca; see
+  HISTORY.md C11). Backtest universe unchanged.
+- C10 (yfinance settled-bar publishing delay) structurally resolved.
+
+Equities (A1/A2) and the SPY trend filter remain on yfinance for now —
+same hybrid principle applies, but no live↔backtest gap was observed for
+those paths. Migration of the equity-data path stays a Phase-5 question.
 
 ## Candidates worth evaluating (post-Fly)
 
