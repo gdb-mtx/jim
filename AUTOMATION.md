@@ -348,6 +348,50 @@ gh run view <run-id> --log | grep "crossings\|Sent"
 Or in the GitHub Actions tab in VS Code (with the GitHub Actions
 extension) → `filter_watch` workflow → most recent runs.
 
+### Post-travel checklist: clear the launchd TZ cache
+
+When you cross timezones, macOS updates the system clock and `date`
+output immediately, but launchd's `UserEventAgent-Aqua` (the user-domain
+agent that handles `StartCalendarInterval` events) **caches the system
+timezone at first login and does not refresh it on TZ changes**. Result:
+the daily rebalance plist's "Hour=20" is interpreted in the cached old
+TZ, not the new one. The job still fires, just at the wrong wall-clock
+time.
+
+How to detect:
+```
+date && launchctl print gui/$(id -u)/com.fire.daily-crypto-rebalance | grep -A1 calendarinterval
+# Then verify by reading data/rebalance_log.jsonl after the next fire —
+# the timestamp should be within a few minutes of the intended slot
+# (8:05 PM laptop-local for daily, equivalent to 00:05 UTC in EDT).
+# If it's off by a multiple of an hour matching your old TZ, the cache
+# is stale.
+```
+
+The fix is **a reboot**. None of the lighter-touch approaches work:
+- `launchctl kickstart -k gui/$(id -u)/com.apple.UserEventAgent-Aqua`
+  fails with "Operation not permitted while System Integrity Protection
+  is engaged" — SIP protects Apple's user-domain agents from user-level
+  kicks. Disabling SIP is not worth it.
+- `notifyutil -p com.apple.system.timezone` posts the same notification
+  the OS would fire on a real TZ change — ignored or absorbed silently
+  by the cache.
+- `launchctl bootout` + `launchctl bootstrap` of the affected plist
+  re-registers the job but it inherits the same cached TZ from the
+  unrefreshed UserEventAgent.
+- Logout + login *probably* works (kills user-domain agents, restarts
+  on next login) but is rarely faster than just rebooting.
+
+Diagnosed and confirmed 2026-05-06 after a MDT → EDT trip — three daily
+A4 fires landed at 22:05 EDT instead of 20:05 EDT (= MDT-cached
+interpretation of Hour=20). Reboot cleared it; a follow-up test plist
+fired on time within 5 seconds of its scheduled slot.
+
+The structural fix is the cloud migration — Fly Cron Machines accept an
+explicit `CRON_TZ` parameter and don't share macOS's `UserEventAgent`
+caching. Until then this is a known operational gotcha; bake the reboot
+into your post-travel arrival routine.
+
 ## What you have to do
 
 **Nothing, as long as the laptop is in FullWake at 8:05 PM laptop-local.**
