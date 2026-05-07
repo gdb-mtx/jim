@@ -18,10 +18,12 @@ is always on here so filter decisions never use a stale cached price.
 """
 
 import argparse
+import fcntl
 import logging
 import os
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 # Ensure project root is on sys.path for imports
@@ -57,6 +59,53 @@ ACCOUNT_FILTERS = {
 }
 
 VALID_SCOPES = ("all", "spy", "btc")
+
+# Cross-process serialization lock. Two LaunchAgents (filter-check-equity and
+# filter-check-crypto, each on StartInterval=14400) can fire within
+# milliseconds of each other when their timers align — observed post-reboot
+# 2026-05-07 when both reset to "now + 4h" simultaneously. Concurrent writers
+# to filter_check.log produced interleaved output that broke the parser's
+# `===`-separator block detection: the crypto run's results would land inside
+# the equity run's block, making the crypto block look empty → outcome
+# misclassified as "error". This lock serializes the two invocations so they
+# log cleanly to a single file. Lock waits up to 120s for the other instance
+# to finish (filter checks take ~1-3s normally), then errors out.
+_FILTER_CHECK_LOCK_PATH = PROJECT_ROOT / "data" / "risk_state" / "filter_check.lock"
+_FILTER_CHECK_LOCK_TIMEOUT_S = 120.0
+
+
+@contextmanager
+def _filter_check_lock():
+    """Serialize concurrent filter_check.py runs across processes.
+
+    Polling acquisition (0.1s interval) so we don't block in fcntl when
+    another instance is alive. Times out after 120s — generous given a
+    typical run takes 1-3s, but caps the worst case where one instance
+    has wedged on a network call.
+    """
+    _FILTER_CHECK_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(_FILTER_CHECK_LOCK_PATH), os.O_CREAT | os.O_RDWR)
+    try:
+        deadline = time.monotonic() + _FILTER_CHECK_LOCK_TIMEOUT_S
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"filter_check.py lock timeout after "
+                        f"{_FILTER_CHECK_LOCK_TIMEOUT_S}s — another instance "
+                        f"is wedged"
+                    )
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -240,6 +289,16 @@ def main():
     # runs in the log without relying on time-of-day inference.
     source = os.environ.get("FIRE_FILTER_CHECK_SOURCE", "manual")
 
+    # Acquire the cross-process lock BEFORE writing the header line. Otherwise
+    # two concurrent instances would both write headers, then their results
+    # would interleave in the log file regardless of serialization. Holding
+    # the lock for the full main() body keeps each invocation's log output
+    # contiguous so the parser can attribute it correctly.
+    with _filter_check_lock():
+        _run_check(args, source)
+
+
+def _run_check(args, source: str):
     log.info("=" * 60)
     log.info(f"FIRE Filter Check starting (source={source}, scope={args.filter})")
 
