@@ -379,20 +379,29 @@ date && launchctl print gui/$(id -u)/com.fire.daily-crypto-rebalance | grep -A1 
 # is stale.
 ```
 
-The fix is **a reboot**. Lighter-touch approaches we tried, all
-ineffective:
+The fix is **Apple menu → Restart** (full reboot). Confirmed working
+2026-05-06: a test plist scheduled 2 minutes out fired within 5 seconds
+of its slot post-reboot.
+
+Lighter-touch approaches we tried, all ineffective:
 - `launchctl kickstart -k gui/$(id -u)/com.apple.UserEventAgent-Aqua`
   fails with "Operation not permitted while System Integrity Protection
   is engaged" — SIP protects Apple's user-domain agents from user-level
-  kicks. Disabling SIP is not worth it. (Even if it worked, it'd only
-  cycle the user-domain agent, not PID-1 launchd.)
+  kicks. Disabling SIP is not worth it.
 - `notifyutil -p com.apple.system.timezone` posts the same notification
   the OS would fire on a real TZ change — ignored by launchd PID 1.
 - `launchctl bootout` + `launchctl bootstrap` of the affected plist
   re-registers the job but inherits the same cached TZ from PID-1
   launchd.
-- Logout + login does NOT work — restarts user-domain agents but PID 1
-  is unaffected. Don't waste time on it.
+
+Untested, likely not worth trying:
+- **Apple menu → Log Out** (different from Restart) might cycle the
+  user-session launchd that manages user-domain LaunchAgents — but the
+  community sources we found are ambiguous about whether the relevant
+  TZ cache lives in the user-session launchd or PID 1. We didn't test
+  it; reboot is faster than logging out, restarting all your apps,
+  testing, and rebooting anyway if logout didn't work. Default to
+  reboot.
 
 Diagnosed and confirmed 2026-05-06 after a MDT → EDT trip — three daily
 A4 fires landed at 22:05 EDT instead of 20:05 EDT (= MDT-cached
