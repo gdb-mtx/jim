@@ -351,12 +351,23 @@ extension) → `filter_watch` workflow → most recent runs.
 ### Post-travel checklist: clear the launchd TZ cache
 
 When you cross timezones, macOS updates the system clock and `date`
-output immediately, but launchd's `UserEventAgent-Aqua` (the user-domain
-agent that handles `StartCalendarInterval` events) **caches the system
-timezone at first login and does not refresh it on TZ changes**. Result:
-the daily rebalance plist's "Hour=20" is interpreted in the cached old
-TZ, not the new one. The job still fires, just at the wrong wall-clock
-time.
+output immediately, but **launchd itself caches the system timezone at
+boot and does not refresh it on TZ changes**. launchd is PID 1 — the
+macOS init process — and only restarts on a full system reboot.
+Logout/login restarts user-domain LaunchAgents and UserEventAgent, but
+NOT PID 1, so it does not clear this cache. Reboot is the only fix.
+
+Documented in community threads since at least 2013 (see
+[Apple Discussions thread/5137946](https://discussions.apple.com/thread/5137946),
+[thread/6389388](https://discussions.apple.com/thread/6389388),
+[launchd.info](https://www.launchd.info/), and
+[alvinalexander.com](https://alvinalexander.com/mac-os-x/launchd-plist-examples-startinterval-startcalendarinterval/)).
+Apple has not addressed it.
+
+The job still fires while the cache is stale — just at the wrong
+wall-clock time. With Hour=20 in the plist and a MDT-cached launchd
+on an EDT-current laptop, the fire lands at 22:05 EDT (= 20:05 MDT),
+not 20:05 EDT.
 
 How to detect:
 ```
@@ -368,19 +379,20 @@ date && launchctl print gui/$(id -u)/com.fire.daily-crypto-rebalance | grep -A1 
 # is stale.
 ```
 
-The fix is **a reboot**. None of the lighter-touch approaches work:
+The fix is **a reboot**. Lighter-touch approaches we tried, all
+ineffective:
 - `launchctl kickstart -k gui/$(id -u)/com.apple.UserEventAgent-Aqua`
   fails with "Operation not permitted while System Integrity Protection
   is engaged" — SIP protects Apple's user-domain agents from user-level
-  kicks. Disabling SIP is not worth it.
+  kicks. Disabling SIP is not worth it. (Even if it worked, it'd only
+  cycle the user-domain agent, not PID-1 launchd.)
 - `notifyutil -p com.apple.system.timezone` posts the same notification
-  the OS would fire on a real TZ change — ignored or absorbed silently
-  by the cache.
+  the OS would fire on a real TZ change — ignored by launchd PID 1.
 - `launchctl bootout` + `launchctl bootstrap` of the affected plist
-  re-registers the job but it inherits the same cached TZ from the
-  unrefreshed UserEventAgent.
-- Logout + login *probably* works (kills user-domain agents, restarts
-  on next login) but is rarely faster than just rebooting.
+  re-registers the job but inherits the same cached TZ from PID-1
+  launchd.
+- Logout + login does NOT work — restarts user-domain agents but PID 1
+  is unaffected. Don't waste time on it.
 
 Diagnosed and confirmed 2026-05-06 after a MDT → EDT trip — three daily
 A4 fires landed at 22:05 EDT instead of 20:05 EDT (= MDT-cached
