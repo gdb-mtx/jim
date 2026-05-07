@@ -360,47 +360,15 @@ def get_daily_returns(account: int) -> pd.Series:
 
 def get_all_daily_returns() -> pd.DataFrame:
     """Daily returns for active accounts, aligned by date.
-
     Retired accounts are excluded — their returns would be ~0 going forward
-    (cash) and would dilute correlation signal. Active accounts are trimmed
-    to start at their first non-zero return ("effective inception date")
-    for the same reason: A4 in particular was created 2026-03-10 but its
-    first live entry was 2026-04-22 — the ~30 days in between recorded
-    zero returns through cash-mode bootstrap, and including those in the
-    aligned DataFrame drags any correlation involving A4 toward zero by
-    construction (correlation between a varying series and a constant
-    series is mathematically pulled toward zero).
-
-    Surfaced 2026-05-07 from a dashboard discrepancy: the full-period
-    correlation matrix and the 21-day rolling chart's most-recent value
-    were giving very different numbers (e.g. A1↔A4: 0.10 vs 0.23) — far
-    larger than 45 vs 21 days of similar regime data should produce.
-    Root cause: the rolling chart's `pandas.rolling().corr()` returns
-    NaN when one side has zero variance and the chart filters those out,
-    so it implicitly trimmed the dormant prefix. The matrix did not.
-    Trimming here makes the matrix consistent with the chart's
-    semantics: only periods where each account was actually trading.
-    """
+    (cash) and would dilute correlation signal."""
     from execution.alpaca_broker import active_accounts
 
     frames = {}
     for acct in active_accounts():
         r = get_daily_returns(acct)
-        if r.empty:
-            continue
-        nonzero = r[r != 0]
-        if nonzero.empty:
-            # Account exists but never traded — exclude (same logic as
-            # retired accounts: a constant series carries no correlation
-            # signal).
-            continue
-        # Drop the leading zero-return prefix; keep interior zero days
-        # (those are real cash-mode operational days that carry signal
-        # about regime even though they don't move the correlation, and
-        # they correspond to actual trading-calendar dates the other
-        # accounts also see).
-        r = r[r.index >= nonzero.index[0]]
-        frames[f"acct_{acct}"] = r
+        if not r.empty:
+            frames[f"acct_{acct}"] = r
 
     if not frames:
         return pd.DataFrame()

@@ -37,19 +37,50 @@ def _pair_key(a: str, b: str) -> str:
 def compute_correlation_matrix(min_days: int = 20) -> dict[str, float] | None:
     """Compute pairwise Pearson correlation from daily returns.
 
-    Returns None if fewer than min_days of aligned data.
+    For each pair, trims both series to start at the later of their two
+    "first non-zero return" dates ("effective inception"). Why: A4 in
+    particular existed for 30+ days as a cash-mode bootstrap before its
+    first live entry on 2026-04-22, and recorded zero returns through
+    that period. Computing pair correlation over the full period mixes
+    those constant-zero days with live-trading days, dragging the result
+    toward zero by mathematical construction (correlation between a
+    varying series and a constant series is pulled to zero regardless of
+    relationship). The rolling chart implicitly avoids this because
+    pandas rolling.corr() returns NaN when one side has zero variance —
+    the matrix had no such filter until 2026-05-07.
+
+    Per-pair trimming (rather than trimming the joint frame to the
+    latest of all inceptions) preserves more data for pairs that share
+    longer histories: A1↔A2 still uses the full ~45-day overlap, while
+    A1↔A4 / A2↔A4 use the ~14-day live overlap.
+
+    Returns None if any pair has fewer than min_days of aligned data
+    after trimming. Soft gate so a freshly-launched account doesn't
+    suppress matrix display for older pairs — but currently we render
+    nothing if matrix is empty (frontend gates on matrix presence too).
     """
     returns = get_all_daily_returns()
-    if returns.empty or len(returns) < min_days:
+    if returns.empty:
         return None
 
-    corr = returns.corr()
     result = {}
     for a, b in ACCOUNT_PAIRS:
-        if a in corr.columns and b in corr.columns:
-            val = float(corr.loc[a, b])
-            result[_pair_key(a, b)] = round(val, 4) if pd.notna(val) else None
-    return result
+        if a not in returns.columns or b not in returns.columns:
+            continue
+        sa = returns[a]
+        sb = returns[b]
+        sa_first_nz = sa[sa != 0].index.min() if (sa != 0).any() else None
+        sb_first_nz = sb[sb != 0].index.min() if (sb != 0).any() else None
+        if sa_first_nz is None or sb_first_nz is None:
+            continue
+        start = max(sa_first_nz, sb_first_nz)
+        pair_df = pd.concat({a: sa, b: sb}, axis=1).loc[start:].dropna()
+        if len(pair_df) < min_days:
+            continue
+        val = float(pair_df[a].corr(pair_df[b]))
+        result[_pair_key(a, b)] = round(val, 4) if pd.notna(val) else None
+
+    return result if result else None
 
 
 def compute_rolling_correlation(window: int = 21) -> dict[str, list[dict]]:

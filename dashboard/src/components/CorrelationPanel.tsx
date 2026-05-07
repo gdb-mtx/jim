@@ -78,9 +78,14 @@ function CorrelationMatrix({
 
   return (
     <div>
-      <h3 className="mb-2 text-xs font-medium text-[#8888a0] uppercase">
-        Correlation Matrix
+      <h3 className="text-xs font-medium text-[#8888a0] uppercase">
+        Full-period Correlation
       </h3>
+      <p className="mb-2 text-[10px] text-[#5a5a70]">
+        Pearson correlation across each pair&rsquo;s full live overlap (since the
+        later account&rsquo;s first non-zero return). Compared against backtest
+        expectations. Cells show &ldquo;&mdash;&rdquo; when overlap is &lt;20 days.
+      </p>
       <div className="overflow-hidden rounded-lg border border-[#2a2a3e]">
         <table className="w-full text-center text-xs">
           <thead>
@@ -216,7 +221,7 @@ function RollingChart({ rolling }: { rolling: Record<string, EquityPoint[]> }) {
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <h3 className="text-xs font-medium text-[#8888a0] uppercase">
           Rolling 21-Day Correlation
         </h3>
@@ -236,6 +241,12 @@ function RollingChart({ rolling }: { rolling: Record<string, EquityPoint[]> }) {
           </span>
         </div>
       </div>
+      <p className="mb-2 text-[10px] text-[#5a5a70]">
+        Trailing 21-day correlation at each point. Naturally excludes
+        dormant periods (one side has zero variance &rarr; NaN, filtered).
+        Differs from the matrix above because it&rsquo;s a moving 21-day
+        window, not the full period.
+      </p>
       <div ref={containerRef} />
     </div>
   );
