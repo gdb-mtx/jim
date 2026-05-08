@@ -33,6 +33,46 @@
 
 ---
 
+## Architecture decisions (April 2026)
+
+Two portfolio-architecture decisions were made during the audit window. Full historical record (with reference commits) is in `docs/archive/DECISIONS_RESOLVED.md`; operational state lives in CLAUDE.md.
+
+### Decision 1 — Account 3 retired (2026-04-20)
+
+Liquidated 53 positions ($99,826.89 cash). Alpaca paper slot preserved for a future strategy assignment.
+
+**Why:** A3 was 60% STR + 40% Stock Momentum; A1 is 100% Stock Momentum, so 40% of A3 was structurally A1 — independent of any window or data quality. Confirmed by:
+
+| | Value | Source |
+|---|---|---|
+| A1↔A3 backtest correlation (3-yr OOS) | **0.876** | Fresh data |
+| A1↔A3 full-sample backtest | 0.884 | — |
+| A1↔A3 live 29-day | 0.842 | Mar 10 → Apr 18; partial stale-data influence |
+| A3 standalone OOS CAGR | 14.5% | Below 15% PASS floor |
+| A3 CAGR cost in 3-acct blend | −1.7pp | 50/50 A1+A2 = 19.7% vs 1/3-each = 18.0% |
+| A3 contribution to 3-acct Calmar | ≈0 | 50/50 = 2.11 vs 1/3-each = 2.12 |
+
+Option B (pure STR replacement) lost on both CAGR and Calmar at every A4 weight. Option C (reduce to 20%) gave only marginal improvement at added complexity. Live 0.84 was partly stale-data-influenced; backtest 0.876 stands on fresh data and is the primary basis — no revisit needed.
+
+### Decision 2 — A4 weight = 33%, pre-committed upgrade path to 40%
+
+Drop-A3 + 33% A4 (1/3 each across A1, A2, A4) chosen over (a) status quo + 25% A4 and (b) keep-A3 + 40% A4.
+
+**Why 33%:** simplicity (no weekly rebalance to maintain), material CAGR lift (~3.5pp on paper), room to scale via the upgrade plan, concentration comfort (33% A4 at worst-case −30% crypto DD = −10% combined vs −12% at 40%).
+
+**Upgrade gates (all must hold to scale 33% → 40%):**
+- ≥6 months of *signal-trading days* (cash-on-filter days don't count) since first live entry
+- Live A4 Calmar ≥ 2.0
+- Live A4↔equity correlation ≤ 0.25
+
+First live entry: 2026-04-22 (50% BTC/USD + 50% ETH/USD). Earliest upgrade eligibility: ~2026-10-22.
+
+**Live-tracking clock reset to 2026-04-20.** The Mar 10 → Apr 17 paper window ran on stale data (caches frozen Mar 10; SP500 briefly at 91/451 tickers on Apr 20); 10 manual rebalances fired on stale signals. Effective live-clock starts post-cache-fix + post-A3-retirement.
+
+Before scaling A4 to 40%, C2 should be re-checked against the production A4 robust-opt config (the 33% choice itself is dominated by 25% on any reasonable correction and does not need revisiting).
+
+---
+
 ## Tier 1 — Changes reported numbers (fix before trusting headline metrics)
 
 ### ✅ C1. `run_combined_portfolio` weekend-zero bias — FIXED 2026-04-20 (non-material)
@@ -146,7 +186,7 @@ Defaults on `apply_vol_scaling`: `scalar_floor=0.5, scalar_cap=1.5`. A2 inherits
 **Fix:** Add circuit-breaker simulation to the backtest — either a halt-and-hold layer in `run_combined_portfolio`, or run post-hoc and blank out returns during halted periods. Non-trivial but tractable (~half-day).
 
 **Design origin (traced 2026-04-20, session 3):**
-- Committed in the initial FIRE build (`175c234 Add complete FIRE quantitative trading system`), specified in [PLAN.md:144-158](PLAN.md#L144-L158) under "Drawdown Circuit Breakers."
+- Committed in the initial FIRE build (`175c234 Add complete FIRE quantitative trading system`), specified in [PLAN.md:144-158](docs/archive/PLAN.md#L144-L158) under "Drawdown Circuit Breakers."
 - Cited motivation: **Larry Hite** (Market Wizards) — *"the #1 thing that separates survivors from blowups."*
 - Manual reset is intentional per PLAN.md: *"you must consciously decide to re-enter, not have the system silently recover."*
 - Hardened 2026-03-16 (`ce30558`): atomic writes, fail-safe-on-corruption (defaults to halted=True).
@@ -333,7 +373,7 @@ MaxDD actually improved under vol-scaling + cost-adjusted returns. Combined Calm
 **Design origin (traced 2026-04-20, session 3):**
 - Committed in the initial FIRE build (`175c234 Add complete FIRE quantitative trading system`) inside `RiskLimits` dataclass, comment: `# No single position > 20% of portfolio`.
 - Wired into `compute_rebalance` in `7e1b063 Add Alpaca paper trading execution layer (Phase 4)` on 2026-03-10. Commit message: *"risk checks (circuit breakers, position limits)."*
-- [PLAN.md:496](PLAN.md#L496) lists it as *"Pre-trade risk checks — circuit breakers, position limits (max 20% per position), portfolio halt at -15% drawdown."*
+- [PLAN.md:496](docs/archive/PLAN.md#L496) lists it as *"Pre-trade risk checks — circuit breakers, position limits (max 20% per position), portfolio halt at -15% drawdown."*
 - **No cited academic reference.** It's a round-number heuristic — 40-act mutual funds commonly use 5-25% caps; retail-trader rules of thumb say 10-20% max per name.
 - **When this was set (2026-03-10), only equity accounts were planned.** 3 equity accounts (A1, A2, A3) holding diversified baskets of 10-52 stocks each. A 20% cap was loose for those — never binds, harmless belt-and-suspenders.
 - **A4 (crypto) was added later.** CryptoMomentum's top-2 design implies 50% per position by construction. The cap was never revisited for the new strategy shape.

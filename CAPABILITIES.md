@@ -19,9 +19,9 @@ FIRE is a multi-strategy systematic trading system operating 3 paper accounts on
 **Two-mode architecture** (see [PLAN_MODE2.md](PLAN_MODE2.md)):
 
 - **Mode 1 — Structural alpha.** Factor-diversified multi-strategy book. Academic basis: Faber (2007) tactical asset allocation, Moreira & Muir (2017) vol-managed portfolios, Barroso & Santa-Clara (2015) vol-scaled momentum. Live today.
-- **Mode 2 — Informational alpha.** Post-earnings-announcement-drift pipeline with transcript scoring. Research paused 2026-04-18 after Breakthrough #1 failed (see [HUNT_APR2026.md](HUNT_APR2026.md)). Infrastructure preserved; directional thesis (Claude-as-single-name-filter) disproven.
+- **Mode 2 — Informational alpha.** Post-earnings-announcement-drift pipeline with transcript scoring. Research paused 2026-04-18 after Breakthrough #1 failed (see [HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)). Infrastructure preserved; directional thesis (Claude-as-single-name-filter) disproven.
 
-**Three-account live book** (post-2026-04-20 A3 retirement, per [DECISIONS_RESOLVED.md](DECISIONS_RESOLVED.md)):
+**Three-account live book** (post-2026-04-20 A3 retirement, per [DECISIONS_RESOLVED.md](docs/archive/DECISIONS_RESOLVED.md)):
 
 - **Account 1 — Momentum.** Top-15 S&P 500 momentum + SPY 200d trend filter. Monthly rebalance.
 - **Account 2 — Trend + Low-Vol.** 30% multi-asset trend + 70% low-vol + vol-scaling overlay. Monthly rebalance.
@@ -153,7 +153,7 @@ Three lines of evidence:
 
 1. **[AUDIT_MONTH2.md](AUDIT_MONTH2.md)** — an adversarial review surfaced 20+ latent bugs across Tier 1 (headline numbers), Tier 2 (concurrency + safety), Tier 3 (data correctness), and Tier 4 (reporting hygiene). 95% closed as of 2026-04-21. The remaining 5% is C3 survivorship (disclosed, pre-real-money) and low-severity hygiene. Every fix has a commit, a test, and a docstring citation.
 
-2. **[HUNT_APR2026.md](HUNT_APR2026.md)** (formerly BREAKTHROUGH.md) — two proposed strategy breakthroughs were tested under pre-committed thresholds. Both were killed honestly. The discipline of accepting those negative results is what surfaced the in-sample-tuned Sharpe problem that triggered the audit. Kill discipline > alpha claim.
+2. **[HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)** (formerly BREAKTHROUGH.md) — two proposed strategy breakthroughs were tested under pre-committed thresholds. Both were killed honestly. The discipline of accepting those negative results is what surfaced the in-sample-tuned Sharpe problem that triggered the audit. Kill discipline > alpha claim.
 
 3. **[VALIDATION_PLAN.md](VALIDATION_PLAN.md)** — all three active accounts carry a current validation record with a pass/marginal status and a quarterly expiry. The gate refuses to trade on un-validated accounts, refuses override bypass on retired accounts, and logs warnings when override is active. This isn't a policy document — it's enforced code.
 
@@ -220,12 +220,12 @@ None block paper or real-money operation.
 Everything above is a summary. For the primary sources:
 
 - **[CLAUDE.md](CLAUDE.md)** — current operational state, architecture map, scorecard table, running next-steps list.
-- **[PLAN.md](PLAN.md)** — original project plan, research roadmap, academic references.
+- **[PLAN.md](docs/archive/PLAN.md)** — original project plan, research roadmap, academic references (archived 2026-05-07; superseded by CAPABILITIES + CLAUDE + BOOK_SHAPE).
 - **[PLAN_MODE2.md](PLAN_MODE2.md)** — two-mode architecture strategic framing.
 - **[VALIDATION_PLAN.md](VALIDATION_PLAN.md)** — CAGR-first validation framework, thresholds, gate logic.
 - **[AUDIT_MONTH2.md](AUDIT_MONTH2.md)** — month-2 adversarial review, bug catalog, per-finding resolution.
-- **[DECISIONS_RESOLVED.md](DECISIONS_RESOLVED.md)** — portfolio-architecture decisions (A3 retirement, A4 weight + upgrade plan).
-- **[HUNT_APR2026.md](HUNT_APR2026.md)** — April 2026 breakthrough hunt archive (both hypotheses falsified, cascade into the audit).
+- **[DECISIONS_RESOLVED.md](docs/archive/DECISIONS_RESOLVED.md)** — portfolio-architecture decisions (A3 retirement, A4 weight + upgrade plan).
+- **[HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)** — April 2026 breakthrough hunt archive (both hypotheses falsified, cascade into the audit).
 - **[SDD.md](SDD.md)** — Software Design Decisions (patterns, lessons learned).
 - **[DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)** — Fly.io migration plan, phased rollout.
 - **[RATE_VOL_SCOPE.md](RATE_VOL_SCOPE.md)** — candidate A4-class strategy scoping.

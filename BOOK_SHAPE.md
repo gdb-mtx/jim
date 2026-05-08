@@ -1,7 +1,7 @@
 # Book Shape — What We Need to Find
 
 **Created:** 2026-04-23, after a long session that exhausted the "find another uncorrelated A5" search space.
-**Context:** See `HUNT_APR2026.md` for the full hunt narrative — 12 vectors tested across two reframing rounds, 1 clean GO (mid-cap buyback drift) shelved for scope, three real opportunities flagged but none genuinely transformative of the book's risk/return profile.
+**Context:** See `docs/archive/HUNT_APR2026.md` for the full hunt narrative — 12 vectors tested across two reframing rounds, 1 clean GO (mid-cap buyback drift) shelved for scope, three real opportunities flagged but none genuinely transformative of the book's risk/return profile.
 
 This doc is the **pivot from "hunt for A5" to "complete the book's architecture."** It names what the book currently IS, what it IS NOT, and what we actually need to find next.
 
@@ -206,7 +206,7 @@ Note the Calmar target is LOWER than the current backtest 4.28 — that's intent
 
 ## How this relates to HUNT_APR2026.md
 
-`HUNT_APR2026.md` documents the JOURNEY — 12 vectors tested, the kills, the false alarms, the user's reframe challenge, the final scoreboard. It's a time-capsule of the 2026-04-23 session.
+`docs/archive/HUNT_APR2026.md` documents the JOURNEY — 12 vectors tested, the kills, the false alarms, the user's reframe challenge, the final scoreboard. It's a time-capsule of the 2026-04-23 session.
 
 `BOOK_SHAPE.md` is the DESTINATION ANALYSIS — what the session taught us about where the book actually stands and what we genuinely need next. Points forward, not backward.
 
@@ -217,4 +217,4 @@ A fresh session should read HUNT_APR2026 for context, then read BOOK_SHAPE for d
 ## Pointer updates needed (not yet done)
 
 - Add to `CLAUDE.md` Key Documents list when this doc is accepted
-- Link from `PLAN.md` next-steps section (current PLAN.md predates this reframe)
+- ~~Link from `PLAN.md` next-steps section~~ — moot; PLAN.md archived 2026-05-07 (predated this reframe).

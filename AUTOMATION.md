@@ -561,7 +561,7 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
 - [api/routes/orders.py](api/routes/orders.py) — manual
   `/rebalance/execute` endpoint; added filter_state.json sync
   (2026-04-23) so travel-window manual trades keep state consistent
-- `OPS_DASHBOARD_PLAN.md` + Ops dashboard tab — built 2026-04-22
+- `docs/archive/OPS_DASHBOARD_PLAN.md` + Ops dashboard tab — built 2026-04-22
   (commits `79b957e` backend, `8f23750` frontend, `6b0d78b` cleanup).
   Single pane covering scheduled rebalance (launchd) + filter monitors
   (launchd) + validation status + a merged rebalance / filter-flip

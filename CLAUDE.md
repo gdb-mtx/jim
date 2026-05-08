@@ -9,17 +9,14 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
 - **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
 - `HISTORY.md` — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Look here when a code path mentions "post-CN fix" and you want to know what changed.
-- `DECISIONS_RESOLVED.md` — record of the April 2026 portfolio-architecture decisions (A3 retired, A4 at 33% with a pre-committed upgrade plan to 40% — manual decision framework, not an automated rule).
-- `PLAN.md` — Full project plan with architecture, roadmap, risk framework, and essential reading
 - `PLAN_MODE2.md` — Two-mode architecture: Mode 1 (structural alpha, existing) + Mode 2 (informational alpha, PEAD + event-driven + macro regime). The strategic plan for compounding $50K over the bridge to 59½.
 - `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `RATE_VOL_SCOPE.md` — Account 5 candidate scoping (MOVE-conditional TLT reversal)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
-- `OPS_DASHBOARD_PLAN.md` — design spec for a new "Ops" tab consolidating scheduler status, filter state, validation, and event timeline into a single dashboard view. Motivated by killing macOS notifications and prepping for cloud migration. Not yet built — next session.
 - `DATA_SOURCES.md` — standing observation that yfinance is the root cause of nearly every cache-corruption incident, with an incident log and candidate replacements (Alpaca/Polygon/hybrid). Becomes load-bearing at Phase 5 (real money).
-- `HANDOFF_ALPACA_BARS.md` — self-contained brief for migrating live crypto signal computation from yfinance to Alpaca's bars endpoint. Backtest historical stays on yfinance. Drafted 2026-05-06 to be picked up by a fresh session that hasn't seen the live↔backtest reconciliation context.
+- `docs/archive/` — superseded design docs and time-capsule research (PLAN, HUNT_APR2026, AUDIT, AUDIT_MONTH2_REVIEW, DECISIONS_RESOLVED, OPS_DASHBOARD_PLAN, HANDOFF_ALPACA_BARS). Read for historical context only.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions
@@ -307,7 +304,7 @@ Rules promoted from session memory because they failed concretely in past work. 
 
 **Validation status:** All three active accounts PASS the CAGR-first gates. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
 
-**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HANDOFF_ALPACA_BARS.md` for the migration brief. Tiers 2+3 fully closed. Tier 4 R2/R4-R10/R13-R15 are reporting hygiene, non-blocking. See `AUDIT_MONTH2.md` for the ranked detail; `HISTORY.md` for what each closed item changed.
+**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HISTORY.md` C10/C11 for the authoritative narrative. Tiers 2+3 fully closed. Tier 4 R2/R4-R10/R13-R15 are reporting hygiene, non-blocking. See `AUDIT_MONTH2.md` for the ranked detail; `HISTORY.md` for what each closed item changed.
 
 **Mode 2 (Informational Alpha):** Phase A in progress.
 - PEAD data pipeline + transcript scraper + scoring prompts + recommendation tracker built (`mode2/`).

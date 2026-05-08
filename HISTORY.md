@@ -105,7 +105,7 @@ crypto bars start 2021-01-01 (varies by coin) and don't reach the project's
 2018 BTC / 2020 universe historical floor. The C9 drop-today-partial-bar
 fix continues to apply because Alpaca's bars are dated by UTC-midnight
 start the same way yfinance's are; same data shape, same fix. See
-`HANDOFF_ALPACA_BARS.md` for the full migration brief.
+`docs/archive/HANDOFF_ALPACA_BARS.md` for the full migration brief.
 
 **C11 — BNB excluded from live universe** (documented 2026-05-06,
 co-resolved with C10). Surfaced during the Alpaca-bars migration: BNB is

@@ -2,7 +2,7 @@
 
 **Status:** Framework rebuilt 2026-04-18 under the CAGR-first thesis. Previous Sharpe-based version is in git history. All 4 accounts have been re-validated under the new scorecard.
 
-**Context:** `CLAUDE.md` for system state, `HUNT_APR2026.md` for the historical framing that triggered this plan, `backtesting/metrics.py` for the full scorecard, `scripts/run_validation.py` for the runner.
+**Context:** `CLAUDE.md` for system state, `docs/archive/HUNT_APR2026.md` for the historical framing that triggered this plan, `backtesting/metrics.py` for the full scorecard, `scripts/run_validation.py` for the runner.
 
 ---
 
