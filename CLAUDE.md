@@ -7,6 +7,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 
 ### Key Documents
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
+- **`AUDIT_47.md`** — re-review checklist for code/docs created during the Opus 4.7 era (mid-Apr → 2026-05-08). Treat work from that window with skepticism: confidently-wrong narratives, over-engineering, comment essays, deference-driven architecture were the dominant failure modes. Read this before trusting any doc from that period. Move to `docs/archive/` after the full audit pass.
 - **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
 - `HISTORY.md` — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Look here when a code path mentions "post-CN fix" and you want to know what changed.
 - `VALIDATION.md` — CAGR-first evaluation framework (v2, 2026-04-18)
@@ -314,6 +315,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
+- **4.7-era audit pass** (priority). George switched back to Opus 4.6 (1M ctx) on 2026-05-08 after confirming the 4.7 quality regression. Code and docs from mid-Apr → 2026-05-08 need a skeptical re-review. Start with `AUDIT_47.md`; top of the list is `AUDIT_MONTH2.md` (verify "closed" claims), `HISTORY.md` (verify C-numbered narratives), `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py`.
 - **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items in AUDIT_MONTH2 are non-blocking cleanup.
 - **Find/build a new Account 4-class strategy** — directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `docs/research/RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
