@@ -467,6 +467,25 @@ def compute_rebalance(
     # connectivity hiccup. Equities keep the existing "day" default.
     tif = "gtc" if is_crypto else "day"
 
+    # Guard: cover any phantom short positions. FIRE never shorts — a
+    # negative-qty position is always a broker accounting artifact.
+    for symbol, current_qty in list(current_positions.items()):
+        if current_qty < 0:
+            cover_qty = abs(current_qty)
+            log.warning(
+                f"Phantom short detected: {symbol} qty={current_qty}. "
+                f"Generating buy-to-cover for {cover_qty}."
+            )
+            orders.append(OrderRequest(
+                symbol=symbol,
+                qty=cover_qty,
+                side="buy",
+                order_type=order_type,
+                limit_price=prices.get(symbol) if order_type == "limit" else None,
+                time_in_force=tif,
+            ))
+            current_positions[symbol] = 0
+
     # Sells: positions we hold but shouldn't, or need to reduce
     for symbol, current_qty in current_positions.items():
         target_qty = target_positions.get(symbol, 0)

@@ -456,3 +456,33 @@ def test_crypto_rotation_buy_notional_uses_post_sell_cash(mock_signals, _gate):
         assert n is not None, f"{sym} buy missing notional (notional path is the live behavior)"
         # Tight band: must be > 99% of intended $50K and ≤ $50K.
         assert 49_500 < n <= 50_000, f"{sym} notional {n} collapsed — sell proceeds not credited?"
+
+
+# ---- Phantom short position guard ----
+
+
+@patch("execution.rebalance.require_validated")
+@patch("execution.rebalance.get_current_signals")
+def test_phantom_short_generates_buy_to_cover(mock_signals, _gate):
+    """A negative-qty position (broker phantom short) must generate a buy
+    order to cover it, since FIRE never intentionally shorts."""
+    mock_signals.return_value = {"AAPL": 0.10}
+
+    broker = _mock_broker(
+        positions={"AAPL": 100, "DOT/USD": -500.0},
+        value=100_000,
+        prices={"AAPL": 100.0, "DOT/USD": 1.50},
+    )
+
+    result = compute_rebalance(
+        broker=broker,
+        strategy_id="test_strategy",
+        risk_manager=RiskManager(persist=False),
+    )
+
+    cover_orders = [o for o in result.orders if o.symbol == "DOT/USD" and o.side == "buy"]
+    assert len(cover_orders) == 1
+    assert cover_orders[0].qty == 500.0
+
+    sell_orders = [o for o in result.orders if o.symbol == "DOT/USD" and o.side == "sell"]
+    assert len(sell_orders) == 0
