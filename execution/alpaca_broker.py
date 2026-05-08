@@ -258,6 +258,87 @@ class AlpacaBroker:
             "submitted_at": str(result.submitted_at),
         }
 
+    def _verify_sell_qtys(
+        self,
+        orders: list[OrderRequest],
+        tolerance: float = 0.01,
+    ) -> tuple[list[OrderRequest], list[dict]]:
+        """Pre-submit guard: block sells whose qty exceeds broker-current.
+
+        Re-queries `list_positions` right before submission and filters out
+        any sell whose qty is more than `tolerance` (default 1%) above the
+        broker's current position for that symbol. Returns
+        `(safe_orders, blocked_results)`:
+        - safe_orders: orders that should proceed (all buys + safe sells)
+        - blocked_results: result dicts for blocked sells, marked
+          `status="error"` so the journal captures them.
+
+        Why: `compute_rebalance` reads positions via `get_position_map()`
+        and computes sell qty as `current_qty - target_qty`. If that
+        position read is stale or inconsistent (Alpaca paper has been
+        observed to do this — see 2026-05-08 leverage incident), we end
+        up submitting a sell qty that exceeds reality. On Alpaca paper
+        this can result in margin extension and silent leverage. On real
+        money, the broker would either reject the order or expose us to
+        an unintended short. This guard re-fetches positions at the
+        latest possible moment and refuses to submit a clearly oversized
+        sell, eliminating the failure mode regardless of upstream cause.
+
+        The 1% tolerance covers fee-deduction drift (Alpaca crypto fees
+        are paid in-asset so post-fill positions are slightly smaller
+        than filled qty) and floating-point rounding. Aggressive
+        over-sells (>>1% mismatch) trigger the block.
+
+        If the position fetch itself fails, proceeds without the guard
+        with a warning — fail-open, since blocking valid orders due to a
+        transient network blip would be worse than the original bug.
+        """
+        sells = [o for o in orders if o.side == "sell"]
+        if not sells:
+            return list(orders), []
+
+        try:
+            current = self.get_position_map()
+        except Exception as e:
+            log.warning(
+                f"Pre-submit guard: position fetch failed ({e}); "
+                f"proceeding without sell-qty verification"
+            )
+            return list(orders), []
+
+        safe: list[OrderRequest] = []
+        blocked: list[dict] = []
+        for o in orders:
+            if o.side != "sell":
+                safe.append(o)
+                continue
+            cur_qty = current.get(o.symbol, 0.0)
+            max_allowed = cur_qty * (1 + tolerance)
+            if o.qty > max_allowed and o.qty > 0:
+                pct = ((o.qty - cur_qty) / cur_qty * 100) if cur_qty > 0 else float("inf")
+                log.error(
+                    f"Pre-submit guard BLOCKED sell {o.symbol}: requested "
+                    f"qty={o.qty} > broker-current {cur_qty} "
+                    f"(over by {pct:.1f}%, tolerance {tolerance*100:.0f}%). "
+                    f"Likely stale position data from compute_rebalance. "
+                    f"Skipping order to prevent over-sell."
+                )
+                blocked.append({
+                    "symbol": o.symbol,
+                    "side": "sell",
+                    "qty": o.qty,
+                    "notional": o.notional,
+                    "requested_qty": o.qty,
+                    "status": "error",
+                    "error": (
+                        f"pre-submit guard: sell qty {o.qty} exceeds broker "
+                        f"current {cur_qty} (over by {pct:.1f}%)"
+                    ),
+                })
+            else:
+                safe.append(o)
+        return safe, blocked
+
     def submit_orders(self, orders: list[OrderRequest]) -> list[dict]:
         """Submit multiple orders. Sells execute before buys to free up cash.
 
@@ -271,14 +352,19 @@ class AlpacaBroker:
         and via Alpaca's docs: `Non-Marginable Buying Power = Settled Cash
         - Pending Fills`).
 
+        Pre-submit guard (`_verify_sell_qtys`) blocks any sell whose qty
+        exceeds the broker's current position by >1%. Blocked orders are
+        included in the result list as `status="error"` so the journal
+        records the attempt and the block reason.
+
         Returns:
             List of order result dicts.
         """
-        # Sells first to free up buying power
-        sells = [o for o in orders if o.side == "sell"]
-        buys = [o for o in orders if o.side == "buy"]
+        safe, blocked = self._verify_sell_qtys(orders)
+        sells = [o for o in safe if o.side == "sell"]
+        buys = [o for o in safe if o.side == "buy"]
 
-        results = []
+        results = list(blocked)
         for order in sells + buys:
             try:
                 result = self.submit_order(order)
@@ -342,17 +428,39 @@ class AlpacaBroker:
             Combined list of order result dicts (sells + buys) — same
             shape as `submit_orders` so callers don't need to change.
         """
-        sells = [o for o in orders if o.side == "sell"]
-        buys = [o for o in orders if o.side == "buy"]
-        has_crypto = any("/" in o.symbol for o in orders)
+        # Pre-submit guard: block any sell whose qty exceeds broker-current
+        # by >1%. Same logic as `submit_orders`. Blocked orders are
+        # propagated through the result list so the journal captures them.
+        safe, blocked = self._verify_sell_qtys(orders)
+
+        sells = [o for o in safe if o.side == "sell"]
+        buys = [o for o in safe if o.side == "buy"]
+        has_crypto = any("/" in o.symbol for o in safe)
 
         # Fast path: nothing to wait for. Equity batches stay on the
         # original code path (margin credits proceeds immediately).
+        # Skip submit_orders' guard since we already ran it.
         if not sells or not buys or not has_crypto:
-            return self.submit_orders(orders)
+            results = list(blocked)
+            for order in sells + buys:
+                try:
+                    result = self.submit_order(order)
+                    result["requested_qty"] = order.qty
+                    results.append(result)
+                except Exception as e:
+                    results.append({
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "qty": order.qty,
+                        "notional": order.notional,
+                        "requested_qty": order.qty,
+                        "status": "error",
+                        "error": str(e),
+                    })
+            return results
 
         # --- Submit sells ---
-        sell_results: list[dict] = []
+        sell_results: list[dict] = list(blocked)
         sell_order_ids: list[str] = []
         for order in sells:
             try:
