@@ -1,10 +1,9 @@
-"""Live volatility scaling — mirrors `apply_vol_scaling` for the rebalance path.
+"""Live volatility scaling — same math as `apply_vol_scaling` in portfolio_backtest.py.
 
-Backtest scales a returns series after-the-fact; live needs today's scalar to
-multiply strategy weights before sizing orders. Math is identical (EWMA realized
-vol, target/realized, clipped). Live computes at T from equity through T-1, so
-the backtest's explicit `.shift(1)` lag is implicit here. Cap=1.0 because Alpaca
-paper is spot-only.
+Backtest scales a returns series after-the-fact (vectorized); live needs today's
+scalar only (scalar math from the latest EWMA variance). Both use EWMA realized
+vol → target/realized → clipped. Live computes at T from equity through T-1, so
+the backtest's explicit `.shift(1)` lag is implicit here.
 """
 
 import logging

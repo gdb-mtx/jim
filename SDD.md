@@ -142,7 +142,7 @@ async def preview(account: int):
     return result
 ```
 
-This applies to **all** blocking calls: Alpaca REST API (`get_account()`, `get_positions()`, `get_orders()`), data downloads (`download_prices()`, `download_and_cache()`), file reads (`pd.read_parquet()`, `json.loads(path.read_text())`), and heavy computation (`get_correlation_report()`). It also applies to scheduled jobs — APScheduler's `AsyncIOScheduler` runs jobs on the event loop, so a blocking `compute_rebalance()` inside a scheduled job has the same effect.
+This applies to **all** blocking calls: Alpaca REST API (`get_account()`, `get_positions()`, `get_orders()`), data downloads (`download_prices()`, `download_and_cache()`), file reads (`pd.read_parquet()`, `json.loads(path.read_text())`), and heavy computation (`get_correlation_report()`).
 
 For simple one-call endpoints, `await asyncio.to_thread(broker.get_positions)` is clean enough. For endpoints with multiple blocking calls, wrap them in a `_compute()` closure:
 

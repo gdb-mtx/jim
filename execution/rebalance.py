@@ -137,7 +137,7 @@ def _live_augmented_btc(broker, btc_prices):
 
 
 def _get_crypto_strategy_signals(
-    strategy_id: str, lookback_start: str, broker=None
+    strategy_id: str, lookback_start: str, broker: "AlpacaBroker | None" = None
 ) -> dict[str, float]:
     """Get latest signals from a crypto strategy.
 
@@ -247,6 +247,8 @@ def _get_portfolio_signals(
                 f"Check SPY cache has >=200d of history."
             )
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
+        if stages_out is not None:
+            stages_out["spy_filter_scalar"] = float(scalar)
 
     # Apply BTC trend filter (binary: 1.0 or 0.0)
     if use_btc_filter:
@@ -264,6 +266,8 @@ def _get_portfolio_signals(
                 f"Check BTC cache has >=125d of history."
             )
         combined_weights = {sym: w * scalar for sym, w in combined_weights.items()}
+        if stages_out is not None:
+            stages_out["btc_filter_scalar"] = float(scalar)
 
     # N4: snapshot the post-filter weights (before vol-scaling in compute_rebalance).
     if stages_out is not None:
@@ -496,31 +500,12 @@ def compute_rebalance(
                 notional=notional,
             ))
 
-    # Check SPY filter status (use live prices consistent with signal generation)
-    spy_filter_active = False
-    spy_filter_scalar = 1.0
-    if strategy_id in PORTFOLIOS and PORTFOLIOS[strategy_id].get("spy_filter"):
-        live_spy = None
-        try:
-            live_spy = broker.get_latest_price("SPY")
-        except Exception:
-            pass
-        spy_filter = compute_spy_trend_filter(live_price=live_spy)
-        spy_filter_scalar = float(spy_filter.iloc[-1])
-        spy_filter_active = spy_filter_scalar < 1.0
-
-    # Check BTC filter status
-    btc_filter_active = False
-    btc_filter_scalar = 1.0
-    if strategy_id in PORTFOLIOS and PORTFOLIOS[strategy_id].get("btc_filter"):
-        live_btc = None
-        try:
-            live_btc = broker.get_latest_price("BTC/USD")
-        except Exception:
-            pass
-        btc_filter = compute_btc_trend_filter(live_price=live_btc)
-        btc_filter_scalar = float(btc_filter.iloc[-1])
-        btc_filter_active = btc_filter_scalar < 1.0
+    # Filter status — read from signal generation (captured in stages dict)
+    # instead of recomputing, so reported values match applied values.
+    spy_filter_scalar = stages.get("spy_filter_scalar", 1.0)
+    spy_filter_active = spy_filter_scalar < 1.0
+    btc_filter_scalar = stages.get("btc_filter_scalar", 1.0)
+    btc_filter_active = btc_filter_scalar < 1.0
 
     return RebalanceResult(
         strategy_id=strategy_id,

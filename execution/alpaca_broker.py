@@ -40,13 +40,18 @@ _NON_TRADEABLE_RE = re.compile(
 
 
 def is_non_tradeable(symbol: str) -> bool:
-    """Detect symbols deposited via corporate actions (CVRs, warrants, etc.).
-
-    These positions appear in Alpaca accounts after mergers/acquisitions
-    but have no market data and cannot be traded normally.
-    Also catches any position where Alpaca returns None for all pricing fields.
-    """
+    """Detect symbols deposited via corporate actions (CVRs, warrants, etc.)."""
     return bool(_NON_TRADEABLE_RE.search(symbol))
+
+
+def _is_position_non_tradeable(position) -> bool:
+    """Check symbol pattern AND whether Alpaca returned pricing data."""
+    all_prices_none = (
+        position.market_value is None
+        and position.current_price is None
+        and position.unrealized_pl is None
+    )
+    return is_non_tradeable(position.symbol) or all_prices_none
 
 
 # Account metadata: maps account number to name, strategy, and live status.
@@ -166,13 +171,7 @@ class AlpacaBroker:
             unrealized_plpc = float(p.unrealized_plpc) if p.unrealized_plpc is not None else 0.0
             change_today = float(p.change_today) if p.change_today is not None else 0.0
 
-            # Detect non-tradeable: explicit pattern match OR all pricing fields are None
-            all_prices_none = (
-                p.market_value is None
-                and p.current_price is None
-                and p.unrealized_pl is None
-            )
-            non_tradeable = is_non_tradeable(p.symbol) or all_prices_none
+            non_tradeable = _is_position_non_tradeable(p)
             if non_tradeable:
                 log.info(f"Non-tradeable position detected: {p.symbol} (qty={qty})")
 
@@ -203,12 +202,7 @@ class AlpacaBroker:
         positions = self.api.list_positions()
         result = {}
         for p in positions:
-            all_prices_none = (
-                p.market_value is None
-                and p.current_price is None
-                and p.unrealized_pl is None
-            )
-            if is_non_tradeable(p.symbol) or all_prices_none:
+            if _is_position_non_tradeable(p):
                 log.info(f"Excluding non-tradeable from position map: {p.symbol}")
                 continue
             result[normalize_alpaca_position_symbol(p.symbol)] = float(p.qty)
@@ -265,33 +259,11 @@ class AlpacaBroker:
     ) -> tuple[list[OrderRequest], list[dict]]:
         """Pre-submit guard: block sells whose qty exceeds broker-current.
 
-        Re-queries `list_positions` right before submission and filters out
-        any sell whose qty is more than `tolerance` (default 1%) above the
-        broker's current position for that symbol. Returns
-        `(safe_orders, blocked_results)`:
-        - safe_orders: orders that should proceed (all buys + safe sells)
-        - blocked_results: result dicts for blocked sells, marked
-          `status="error"` so the journal captures them.
-
-        Why: `compute_rebalance` reads positions via `get_position_map()`
-        and computes sell qty as `current_qty - target_qty`. If that
-        position read is stale or inconsistent (Alpaca paper has been
-        observed to do this — see 2026-05-08 leverage incident), we end
-        up submitting a sell qty that exceeds reality. On Alpaca paper
-        this can result in margin extension and silent leverage. On real
-        money, the broker would either reject the order or expose us to
-        an unintended short. This guard re-fetches positions at the
-        latest possible moment and refuses to submit a clearly oversized
-        sell, eliminating the failure mode regardless of upstream cause.
-
-        The 1% tolerance covers fee-deduction drift (Alpaca crypto fees
-        are paid in-asset so post-fill positions are slightly smaller
-        than filled qty) and floating-point rounding. Aggressive
-        over-sells (>>1% mismatch) trigger the block.
-
-        If the position fetch itself fails, proceeds without the guard
-        with a warning — fail-open, since blocking valid orders due to a
-        transient network blip would be worse than the original bug.
+        Re-queries positions right before submission. Sells more than
+        `tolerance` (1%) above broker-current qty are blocked — prevents
+        silent leverage from stale position reads. Returns
+        `(safe_orders, blocked_results)`. Fail-open: if position fetch
+        fails, proceeds with a warning.
         """
         sells = [o for o in orders if o.side == "sell"]
         if not sells:
@@ -339,33 +311,10 @@ class AlpacaBroker:
                 safe.append(o)
         return safe, blocked
 
-    def submit_orders(self, orders: list[OrderRequest]) -> list[dict]:
-        """Submit multiple orders. Sells execute before buys to free up cash.
-
-        For equity batches and crypto batches with no sells, this is the
-        right path — Alpaca's RegT margin credits sell proceeds to
-        `buying_power` immediately, so the in-flight sells don't block
-        same-batch buys. For crypto batches with sells AND buys, prefer
-        `submit_orders_settled` — crypto is non-marginable and pending
-        sells do NOT credit `non_marginable_buying_power` until they
-        actually fill (confirmed empirically on the paper account 2026-05-05
-        and via Alpaca's docs: `Non-Marginable Buying Power = Settled Cash
-        - Pending Fills`).
-
-        Pre-submit guard (`_verify_sell_qtys`) blocks any sell whose qty
-        exceeds the broker's current position by >1%. Blocked orders are
-        included in the result list as `status="error"` so the journal
-        records the attempt and the block reason.
-
-        Returns:
-            List of order result dicts.
-        """
-        safe, blocked = self._verify_sell_qtys(orders)
-        sells = [o for o in safe if o.side == "sell"]
-        buys = [o for o in safe if o.side == "buy"]
-
-        results = list(blocked)
-        for order in sells + buys:
+    def _submit_order_batch(self, orders: list[OrderRequest]) -> list[dict]:
+        """Submit a list of orders, returning result dicts (sells before buys)."""
+        results = []
+        for order in orders:
             try:
                 result = self.submit_order(order)
                 result["requested_qty"] = order.qty
@@ -382,103 +331,47 @@ class AlpacaBroker:
                 })
         return results
 
+    def submit_orders(self, orders: list[OrderRequest]) -> list[dict]:
+        """Submit multiple orders. Sells execute before buys to free up cash.
+
+        For crypto batches with sells AND buys, prefer
+        `submit_orders_settled` — crypto pending sells don't credit
+        `non_marginable_buying_power` until filled.
+        """
+        safe, blocked = self._verify_sell_qtys(orders)
+        sells = [o for o in safe if o.side == "sell"]
+        buys = [o for o in safe if o.side == "buy"]
+        return list(blocked) + self._submit_order_batch(sells + buys)
+
     def submit_orders_settled(
         self,
         orders: list[OrderRequest],
         sell_settle_timeout: float = 60.0,
         poll_interval: float = 2.0,
     ) -> list[dict]:
-        """Submit sells, wait for fills, rescale buys against actual cash, submit buys.
+        """Submit sells, wait for fills, rescale buys against measured cash, submit buys.
 
-        Solves the recurring crypto rebalance failure where pending sells
-        don't credit `non_marginable_buying_power`. Pre-flight sizing in
-        `compute_rebalance` predicts post-sell cash; this method *measures*
-        it after the sells actually settle.
+        Crypto sells don't credit `non_marginable_buying_power` until
+        filled. This method measures post-sell cash instead of predicting
+        it, so partial fills and rejections shrink buys automatically.
 
-        Behavior by batch shape:
-        - Equity-only batch: falls through to `submit_orders` (Alpaca's
-          margin credits sell proceeds to buying_power immediately, no
-          settlement race).
-        - Crypto batch with no sells: falls through (no race possible).
-        - Crypto batch with sells AND buys: full path — submit sells,
-          poll `check_fill_status` until terminal or timeout, re-read
-          cash, rescale buy notionals proportionally, submit buys.
-        - Crypto batch with only sells: submits sells via fast path.
-
-        Why measurement over prediction:
-        - Sell partial fill → cash less than expected → buys auto-shrink
-        - Sell fully rejected → no cash → buys skipped (notional → 0)
-        - Slow Alpaca settlement → polled until ready (or timeout)
-        - All the edge cases the predictor pretends don't exist
-
-        Latency: typically 1-5s for crypto sells on Alpaca paper, capped
-        at `sell_settle_timeout` (default 60s). Daily rebalance can absorb
-        this trivially.
-
-        Args:
-            orders: Mixed sell/buy order list from compute_rebalance.
-            sell_settle_timeout: Seconds to wait for sells to fill before
-                proceeding. On timeout, proceeds with whatever cash is
-                available (logs a warning).
-            poll_interval: Seconds between `check_fill_status` polls.
-                2s matches typical Alpaca crypto fill latency without
-                hammering the API.
-
-        Returns:
-            Combined list of order result dicts (sells + buys) — same
-            shape as `submit_orders` so callers don't need to change.
+        Falls through to `submit_orders` for equity-only or sell-only
+        batches. Crypto sells+buys: submit sells → poll fills →
+        re-read cash → rescale buy notionals → submit buys.
         """
-        # Pre-submit guard: block any sell whose qty exceeds broker-current
-        # by >1%. Same logic as `submit_orders`. Blocked orders are
-        # propagated through the result list so the journal captures them.
         safe, blocked = self._verify_sell_qtys(orders)
 
         sells = [o for o in safe if o.side == "sell"]
         buys = [o for o in safe if o.side == "buy"]
         has_crypto = any("/" in o.symbol for o in safe)
 
-        # Fast path: nothing to wait for. Equity batches stay on the
-        # original code path (margin credits proceeds immediately).
-        # Skip submit_orders' guard since we already ran it.
+        # Fast path: equity (margin credits proceeds immediately) or no sell+buy mix.
         if not sells or not buys or not has_crypto:
-            results = list(blocked)
-            for order in sells + buys:
-                try:
-                    result = self.submit_order(order)
-                    result["requested_qty"] = order.qty
-                    results.append(result)
-                except Exception as e:
-                    results.append({
-                        "symbol": order.symbol,
-                        "side": order.side,
-                        "qty": order.qty,
-                        "notional": order.notional,
-                        "requested_qty": order.qty,
-                        "status": "error",
-                        "error": str(e),
-                    })
-            return results
+            return list(blocked) + self._submit_order_batch(sells + buys)
 
         # --- Submit sells ---
-        sell_results: list[dict] = list(blocked)
-        sell_order_ids: list[str] = []
-        for order in sells:
-            try:
-                r = self.submit_order(order)
-                r["requested_qty"] = order.qty
-                sell_results.append(r)
-                if r.get("order_id"):
-                    sell_order_ids.append(r["order_id"])
-            except Exception as e:
-                sell_results.append({
-                    "symbol": order.symbol,
-                    "side": order.side,
-                    "qty": order.qty,
-                    "notional": order.notional,
-                    "requested_qty": order.qty,
-                    "status": "error",
-                    "error": str(e),
-                })
+        sell_results = self._submit_order_batch(sells)
+        sell_order_ids = [r["order_id"] for r in sell_results if r.get("order_id")]
 
         # --- Wait for sells to settle ---
         terminal = {"filled", "rejected", "canceled", "expired"}
@@ -494,57 +387,44 @@ class AlpacaBroker:
             if not settled:
                 log.warning(
                     f"Sell settlement timeout after {sell_settle_timeout}s — "
-                    f"proceeding with whatever cash is available. Pending sells "
-                    f"may credit cash later, leaving the buy under-sized."
+                    f"proceeding with whatever cash is available."
                 )
 
-        # Rescale buys against actual post-sell cash; >$1 threshold filters rounding noise.
+        # Rescale buys against actual post-sell cash.
         actual_cash = self.get_cash()
         total_buy_notional = sum((o.notional or 0.0) for o in buys)
         if total_buy_notional > 0:
-            cash_budget = actual_cash * 0.999  # match compute_rebalance margin
+            cash_budget = actual_cash * 0.999
             shortfall = total_buy_notional - cash_budget
             if shortfall > 1.0:
                 scale = cash_budget / total_buy_notional
                 log.warning(
                     f"Crypto buy notional ${total_buy_notional:.2f} exceeds actual "
                     f"post-sell cash budget ${cash_budget:.2f} by ${shortfall:.2f}. "
-                    f"Scaling by {scale:.4f} (sells likely under-filled)."
+                    f"Scaling by {scale:.4f}."
                 )
                 for o in buys:
                     if o.notional is not None:
                         o.notional = round(o.notional * scale, 2)
 
-        # --- Submit buys (skip dust < $1, Alpaca crypto minimum) ---
-        buy_results: list[dict] = []
-        for order in buys:
-            if order.notional is not None and order.notional < 1.0:
-                buy_results.append({
-                    "symbol": order.symbol,
-                    "side": order.side,
-                    "qty": order.qty,
-                    "notional": order.notional,
-                    "requested_qty": order.qty,
+        # Filter dust before submitting.
+        dust_results: list[dict] = []
+        valid_buys: list[OrderRequest] = []
+        for o in buys:
+            if o.notional is not None and o.notional < 1.0:
+                dust_results.append({
+                    "symbol": o.symbol,
+                    "side": o.side,
+                    "qty": o.qty,
+                    "notional": o.notional,
+                    "requested_qty": o.qty,
                     "status": "skipped",
-                    "error": f"notional ${order.notional:.2f} below $1 minimum after rescale",
+                    "error": f"notional ${o.notional:.2f} below $1 minimum after rescale",
                 })
-                continue
-            try:
-                r = self.submit_order(order)
-                r["requested_qty"] = order.qty
-                buy_results.append(r)
-            except Exception as e:
-                buy_results.append({
-                    "symbol": order.symbol,
-                    "side": order.side,
-                    "qty": order.qty,
-                    "notional": order.notional,
-                    "requested_qty": order.qty,
-                    "status": "error",
-                    "error": str(e),
-                })
+            else:
+                valid_buys.append(o)
 
-        return sell_results + buy_results
+        return list(blocked) + sell_results + dust_results + self._submit_order_batch(valid_buys)
 
     def check_fill_status(self, order_ids: list[str]) -> list[dict]:
         """Check fill status for submitted orders.
@@ -657,8 +537,8 @@ class AlpacaBroker:
         for symbol in symbols:
             try:
                 prices[symbol] = self.get_latest_price(symbol)
-            except Exception:
-                pass  # Skip symbols that fail (delisted, etc.)
+            except Exception as e:
+                log.debug(f"Skipping {symbol} in price fetch: {e}")
         return prices
 
     def check_tradeable(self, symbols: list[str]) -> set[str]:
@@ -673,7 +553,8 @@ class AlpacaBroker:
                 if not asset.tradable:
                     log.warning(f"Untradeable asset: {symbol} (status={asset.status})")
                     untradeable.add(symbol)
-            except Exception:
+            except Exception as e:
+                log.debug(f"Treating {symbol} as untradeable (API error: {e})")
                 untradeable.add(symbol)
         return set(symbols) - untradeable
 

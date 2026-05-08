@@ -81,7 +81,7 @@ def download_crypto_prices(
     # Clamp to the crypto-universe data floor. Several 9-coin universe
     # members launched 2016-2021, so a pre-2020 fetch returns sparse data
     # that gets dropped by the 50% coverage gate — silently shrinking the
-    # universe to 2 coins. Mirrors the 2018 clamp in download_btc_prices.
+    # universe to 2 coins. (BTC uses a separate 2018 floor in download_btc_prices.)
     if start < "2020-01-01":
         print(f"download_crypto_prices: clamping start {start} → 2020-01-01")
         start = "2020-01-01"

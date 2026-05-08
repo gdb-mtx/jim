@@ -20,8 +20,8 @@
 
 ## Guiding principles
 
-1. **ET is the system reference timezone.** Codified in CLAUDE.md. All scheduled times use `TZ=America/New_York` or `CRON_TZ=America/New_York`. Only A4's crypto APScheduler stays on UTC (crypto is 24/7 — UTC is the honest anchor there).
-2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. `FIRE_SCHEDULER_ENABLED` flag keeps APScheduler off in laptop dev runs once Fly is the canonical scheduler host.
+1. **ET is the system reference timezone.** Codified in CLAUDE.md. All scheduled times use `TZ=America/New_York` or `CRON_TZ=America/New_York`. A4's launchd job fires at 8:05 PM laptop-local (= 00:05 UTC in EDT); the cloud target (Fly Cron Machine) will fire at exact 00:05 UTC.
+2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. No in-process scheduler — all cron is launchd (local) or Fly Cron Machines (cloud).
 3. **Boring tech.** Prefer documented, well-trodden tools over shiny. One CLI, one Dockerfile, one config file.
 4. **Every phase is reversible.** No one-way doors until Phase 5 pre-real-money split.
 5. **Paper-first — and paper *on the deployed infra* is itself a validation phase, not just a rehearsal.** The whole point of running paper on Fly before real money is that infrastructure bugs (cron fires at wrong time, volume unmounts, log drain silently breaks, auth middleware has a bypass, `fly scale count 2` slips through) only surface on production infra. We already found that our local backtest and local live didn't agree (HISTORY.md C4). The equivalent for deployment is: laptop-paper and Fly-paper won't agree in ways we can't predict until Fly-paper has been running for weeks. **Real money requires deployed-paper time, not just laptop-paper time.**
@@ -39,7 +39,7 @@ Dates are approximate. The goal is not to be fast; it's to be honest about the s
 | 3-month minimum paper window | **2026-07-20** | Earliest calendar date real money can be considered per CLAUDE.md policy. |
 | Phase 0 refactor complete | ~2026-04-27 | Split `strategies/portfolio.py`, audit imports, 1 week of laptop validation. |
 | Phase 1 target (deploy API to Fly) | ~2026-05-04 | 2 weeks from today. Aggressive but doable. |
-| Phase 2 target (APScheduler on Fly) | ~2026-05-11 | |
+| Phase 2 target (Cron Machine on Fly) | ~2026-05-11 | |
 | Phase 3 target (filter cron on Fly) | ~2026-05-18 | Laptop launchd unloaded same day. |
 | Phase 4 target (observability wired) | ~2026-05-25 | |
 | **Deployed-paper window begins** | ~2026-05-25 | Fly runs paper with full observability. This is when infra bugs have a chance to surface. |
@@ -55,10 +55,10 @@ Dates are approximate. The goal is not to be fast; it's to be honest about the s
 
 George's initial ask was "deploy to Vercel." Vercel is serverless functions + edge static hosting. It **cannot** host the live service. Specifics:
 
-- **No long-running daemon.** `api/main.py` uses `AsyncIOScheduler` in the FastAPI lifespan — it must stay resident. Vercel functions terminate after each request. Vercel Cron exists but only triggers an HTTP function invocation; the scheduler itself can't live there.
+- **No long-running daemon.** `api/main.py` used `AsyncIOScheduler` at the time of this evaluation (retired 2026-05-05; cron now handled by launchd/Fly Cron Machines). But the broader point stands: the API must stay resident for real-time portfolio queries and webhook responses. Vercel functions terminate after each request.
 - **Execution-time caps.** Hobby 10s, Pro 60s default / 300s fluid / 900s background. Crypto rebalance (yfinance pull → vol calc → Alpaca order submission → snapshot) routinely pushes past 60s, especially with retries. `/api/backtests` endpoints are much worse.
 - **Ephemeral filesystem.** Everything in `data/risk_state/` and `data/raw/` vanishes between invocations. **Circuit-breaker state silently resetting is a real-money-graduation disqualifier** — we explicitly chose file-persistence for this in S3.
-- **`fcntl.flock` is meaningless in serverless.** `api/locks.py` relies on flock to serialize FastAPI + APScheduler + filter_check across processes. Serverless spawns parallel isolated instances with independent tmpfs — the lock protects nothing.
+- **`fcntl.flock` is meaningless in serverless.** `api/locks.py` relies on flock to serialize FastAPI + cron scripts across processes. Serverless spawns parallel isolated instances with independent tmpfs — the lock protects nothing.
 
 **Verdict:** Vercel is structurally wrong for the live service (API + scheduler + cron). Vercel is *able* to host the dashboard static bundle, but on review (see Architecture section below) we co-locate the dashboard with the API on Fly instead — single Dockerfile, same-origin auth, no CORS, fewer moving parts. **Net: Vercel is not used in this deployment.**
 
@@ -69,7 +69,7 @@ George's initial ask was "deploy to Vercel." Vercel is serverless functions + ed
 **Recommendation:** Fly.io, single app, single machine, 1GB persistent volume mounted at `/data`.
 
 Why:
-- Linux container → `fcntl.flock` works as-is on ext4 volume; APScheduler runs 24/7; Python 3.12 via standard Dockerfile or uv-friendly buildpack.
+- Linux container → `fcntl.flock` works as-is on ext4 volume; Fly Cron Machines run the daily rebalance and filter checks; Python 3.12 via standard Dockerfile or uv-friendly buildpack.
 - First-class persistent volumes (`fly volumes create`). Survives deploys.
 - Native secrets (`fly secrets set ALPACA_API_KEY=...`), native scheduled machines, native log drains.
 - Cost: `shared-cpu-1x` + 512MB RAM + 1GB volume ≈ **$5–8/month**. Well inside budget.
@@ -265,7 +265,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - Full test suite green (115/115 at time of queuing, may grow before session)
 - Dashboard rebalance preview works end-to-end on A1, A2, A4
 - `uv run python3 scripts/run_validation.py --account 1` completes without import errors
-- APScheduler + launchd keep firing on schedule during and after the refactor (no downtime)
+- launchd jobs keep firing on schedule during and after the refactor (no downtime)
 
 **Gotchas**
 - `scripts/filter_check.py` imports from `strategies.portfolio` — the shim must preserve every existing export name or the launchd-triggered rebalance path breaks.
@@ -293,14 +293,15 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - Copy current `data/risk_state/` state files onto the Fly volume (one-time seeding — otherwise filter_state.json is empty on first run and the cron will "seed" it without triggering rebalance, which is actually the desired first-run behavior; pick one).
 - Add same-origin session-cookie auth middleware (no CORS needed — dashboard and API share the Fly hostname).
 - Local dev unchanged: `npm run dev` on :5174 still proxies `/api` → `localhost:8001`.
-- **Success:** the Fly URL serves the dashboard; `/api/health` returns 200; portfolio panels render from the same origin; APScheduler log shows 00:05 UTC job registered; auth rejects unauthed requests.
+- **Success:** the Fly URL serves the dashboard; `/api/health` returns 200; portfolio panels render from the same origin; auth rejects unauthed requests.
 - **Reversible:** dashboard reverts to local-only by hitting `http://localhost:5174` instead of the Fly URL. Nothing destructive on the laptop.
 
-### Phase 2 — Cut over APScheduler crypto rebalance
-- Add env flag `FIRE_SCHEDULER_ENABLED=0` (disables APScheduler on laptop dev runs, keeps it on in Fly).
-- Watch one scheduled firing (00:05 UTC). Compare `rebalance_log.jsonl` entry to local format.
+### Phase 2 — Cut over daily crypto rebalance to Fly Cron Machine
+- Deploy `scripts/daily_crypto_rebalance.py` as a Fly Cron Machine firing at 00:05 UTC.
+- Watch one scheduled firing. Compare `rebalance_log.jsonl` entry to local format.
+- Unload laptop launchd plist same day (`launchctl unload ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist`).
 - **Success:** one successful scheduled rebalance from Fly; `take_snapshot(4)` ran; heartbeat pinged healthchecks.io.
-- **Reversible:** flip the env flag back.
+- **Reversible:** re-load the laptop plist, disable Fly cron.
 
 ### Phase 3 — Move `filter_check.py` from launchd to Fly cron
 - Add Fly scheduled machine OR `supercronic` inside container with `CRON_TZ=America/New_York 30 16 * * *` (= 16:30 ET, DST-aware).
@@ -361,7 +362,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - **Single-machine constraint** (fcntl limitation). Must never `fly scale count 2`. Documented in runbook; ideally enforced in `fly.toml`.
 - **Dual-run window during Phase 3.** Laptop launchd + Fly cron overlap = potential double-rebalance. Cut over in a single session, don't run in parallel.
 - **Timezone at the container layer.** Must install `tzdata` in the Dockerfile and either use `CRON_TZ=America/New_York` with supercronic, or set `TZ=America/New_York` in `fly.toml` env. Missing either = cron fires at wrong UTC time.
-- **APScheduler clock drift.** Fly Machines sync via NTP — fine. Worth a startup assertion (`assert abs(datetime.utcnow() - ntp_time) < 1s`) to catch misconfigured containers.
+- **Clock drift.** Fly Machines sync via NTP — fine. Worth a startup assertion (`assert abs(datetime.utcnow() - ntp_time) < 1s`) to catch misconfigured containers.
 - **Alpaca latency / region.** Fly region default `iad` (Virginia) is ~ms from Alpaca us-east. Don't pick EU/APAC.
 - **Deploy during cron window.** Fly deploys stop + replace the machine. In-flight locks release (good), but backfill-on-startup re-runs (acceptable, logs a lot). Don't `flyctl deploy` at 00:04 UTC or 16:29 ET.
 - **Dashboard mobile UX.** Digital-nomad user sees laptop-local time. Dashboard should surface current ET time and the next rebalance window — otherwise `first Monday of month` is cognitively expensive when you're in Lisbon. Minor UX item.

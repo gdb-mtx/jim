@@ -517,7 +517,9 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   APScheduler job retired 2026-05-05); writes `filter_state.json`
   after each successful run.
 - [scripts/com.fire.daily-crypto-rebalance.plist](scripts/com.fire.daily-crypto-rebalance.plist)
-  — launchd plist, `StartCalendarInterval` hour=0 minute=5 with `TZ=UTC`
+  — launchd plist, `StartCalendarInterval` hour=20 minute=5 laptop-local
+  (= 00:05 UTC in EDT). `TZ=UTC` env var affects child script timestamps
+  only, not the schedule.
 - [scripts/filter_check.py](scripts/filter_check.py) — launchd filter
   monitor (scope-aware via `--filter`)
 - [scripts/com.fire.filter-check-equity.plist](scripts/com.fire.filter-check-equity.plist)
