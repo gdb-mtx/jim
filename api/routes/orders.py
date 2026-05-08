@@ -165,6 +165,13 @@ async def _execute_under_lock(account: int, strategy_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rebalance computation failed: {e}")
 
+    if result.position_mismatch:
+        raise HTTPException(
+            status_code=409,
+            detail="Position reconciliation failed — Alpaca positions don't match expected state. "
+                   "Check data/risk_state/expected_positions_acct*.json and rebalance log.",
+        )
+
     # Don't execute with missing prices
     if result.price_error:
         raise HTTPException(
@@ -242,6 +249,15 @@ async def _execute_under_lock(account: int, strategy_id: str):
         await asyncio.to_thread(take_snapshot, account)
     except Exception as e:
         log.warning(f"Post-rebalance snapshot failed for account {account}: {e}")
+
+    # Save expected positions for the reconciliation guard.
+    try:
+        from execution.position_reconciliation import save_expected_positions
+        post_positions = await asyncio.to_thread(broker.get_position_map)
+        post_value = await asyncio.to_thread(broker.get_portfolio_value)
+        save_expected_positions(account, post_positions, post_value)
+    except Exception as e:
+        log.warning(f"Post-rebalance position snapshot failed for account {account} (non-fatal): {e}")
 
     # Sync filter_state.json after manual rebalance so the next launchd run sees current state.
     # Recompute live (don't trust result.btc_filter_scalar — internal-filter strategies leave it at 1.0).

@@ -83,6 +83,10 @@ def run_once(dry_run: bool = False) -> dict:
                 log.warning("Catastrophe halt active — skipping")
                 return {"status": "halted"}
 
+            if result.position_mismatch:
+                log.error("Position reconciliation failed — skipping rebalance")
+                return {"status": "position_mismatch"}
+
             if result.price_error:
                 log.error(f"Missing prices: {result.missing_prices}")
                 return {"status": "price_error", "missing": result.missing_prices}
@@ -153,6 +157,9 @@ def run_once(dry_run: bool = False) -> dict:
             take_snapshot(4)
             _sync_btc_filter_state(broker)
 
+            from execution.position_reconciliation import save_expected_positions
+            save_expected_positions(4, broker.get_position_map(), broker.get_portfolio_value())
+
             return {
                 "status": "executed",
                 "orders": len(order_results),
@@ -208,7 +215,7 @@ def main():
             # Terminal outcomes that retry won't fix.
             if final_result["status"] in (
                 "executed", "no_trades", "dry_run",
-                "skipped", "halted", "locked",
+                "skipped", "halted", "locked", "position_mismatch",
             ):
                 break
             # Retry-worthy outcomes: price_error, price_drift, transient raises.

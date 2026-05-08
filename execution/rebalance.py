@@ -50,6 +50,7 @@ class RebalanceResult:
     prices: dict[str, float] = field(default_factory=dict)
     missing_prices: list[str] = field(default_factory=list)
     price_error: bool = False
+    position_mismatch: bool = False
 
 
 def get_current_signals(
@@ -302,6 +303,25 @@ def compute_rebalance(
     # 1. Get current portfolio state
     portfolio_value = broker.get_portfolio_value()
     current_positions = broker.get_position_map()
+
+    # Position reconciliation — compare broker positions against our last-known
+    # expected state. Detects Alpaca paper trading phantom position bugs before
+    # we trade on corrupted data.
+    from execution.position_reconciliation import check_position_consistency
+    recon = check_position_consistency(broker.account, current_positions)
+    if not recon.consistent:
+        from execution.notifications import notify_macos
+        notify_macos("FIRE Position Mismatch", recon.details[:200])
+        return RebalanceResult(
+            strategy_id=strategy_id,
+            portfolio_value=portfolio_value,
+            target_weights={},
+            target_positions={},
+            current_positions=current_positions,
+            orders=[],
+            risk_check={"halted": False, "alert_active": False, "drawdown": 0, "equity_peak": 0},
+            position_mismatch=True,
+        )
 
     # Drawdown check — -35% latches catastrophe halt; -10% surfaces alert.
     dd = compute_drawdown(broker.account, portfolio_value, risk_manager.limits)

@@ -178,6 +178,10 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                 log.warning(f"  Account {account}: catastrophe halt active — skipping")
                 return {"account": account, "status": "halted", "orders": 0}
 
+            if result.position_mismatch:
+                log.error(f"  Account {account}: position reconciliation failed — skipping")
+                return {"account": account, "status": "position_mismatch", "orders": 0}
+
             if result.price_error:
                 log.error(f"  Account {account}: missing prices {result.missing_prices}")
                 return {"account": account, "status": "price_error", "orders": 0}
@@ -226,6 +230,9 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                 return {"account": account, "status": "execute_error", "orders": len(order_results), "error": execute_error}
 
             take_snapshot(account)
+
+            from execution.position_reconciliation import save_expected_positions
+            save_expected_positions(account, broker.get_position_map(), broker.get_portfolio_value())
 
             log.info(
                 f"  Account {account}: {len(order_results)} orders"
