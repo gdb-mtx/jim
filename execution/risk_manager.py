@@ -1,27 +1,4 @@
-"""
-Risk Manager — Drawdown Monitor + Catastrophe Halt.
-
-Design (AUDIT_MONTH2 C5 resolution, 2026-04-21):
-
-- **-10% portfolio drawdown → dashboard alert.** Computed live in the
-  `/api/portfolio/risk` endpoint (and surfaced in rebalance previews).
-  No push notification, no blocking; the amber banner in
-  `RiskStatusPanel` is the sole surface. Non-blocking by design.
-
-- **-35% portfolio drawdown → catastrophe halt.** Latches a single
-  persisted flag; requires manual reset via dashboard or
-  `POST /api/portfolio/risk/reset?account=N`. Backstop for "something is
-  catastrophically wrong that every other layer (SPY/BTC filters,
-  vol-scaling) missed."
-
-- **Peak is derived from daily snapshots, not persisted.** `data/snapshots.py`
-  already writes one equity row per trading day per account; `compute_drawdown`
-  reads that series and takes `max(snapshot_max, current_equity)`. Removes the
-  stale-peak failure mode entirely — no matter how long between dashboard
-  visits, the peak is always accurate.
-
-State file schema: `{"halted": bool}`. That's it.
-"""
+"""Drawdown monitor: -10% dashboard alert, -35% catastrophe halt (latched, manual reset). See HISTORY.md C5."""
 
 import json
 import logging

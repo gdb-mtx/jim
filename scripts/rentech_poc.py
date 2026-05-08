@@ -63,7 +63,7 @@ OOS_START = "2023-01-01"
 OOS_END = "2026-04-20"
 TOP_DECILE = 0.10  # Long top-decile composite rank
 REBALANCE_DAYS = 21  # Monthly
-COST_BPS_ROUNDTRIP = 5.0  # Equity cost layer (AUDIT_MONTH2 C6)
+COST_BPS_ROUNDTRIP = 5.0  # Equity cost layer
 PERIODS_PER_YEAR = 252
 
 GATE_CAGR = 0.15

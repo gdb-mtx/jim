@@ -157,7 +157,7 @@ def compute_spy_trend_filter(
         spy_close = spy_close.copy()
         spy_close.iloc[-1] = live_price
 
-    spy_ma = spy_close.rolling(ma_period).mean()
+    spy_ma = spy_close.rolling(ma_period, min_periods=ma_period).mean()
 
     above_ma = spy_close > spy_ma
     scalar = pd.Series(np.where(above_ma, 1.0, reduction), index=spy_close.index)
@@ -199,7 +199,7 @@ def compute_btc_trend_filter(
         btc_prices = btc_prices.copy()
         btc_prices.iloc[-1] = live_price
 
-    btc_ma = btc_prices.rolling(ma_period).mean()
+    btc_ma = btc_prices.rolling(ma_period, min_periods=ma_period).mean()
     above_ma = btc_prices > btc_ma
     scalar = pd.Series(np.where(above_ma, 1.0, 0.0), index=btc_prices.index)
     return scalar

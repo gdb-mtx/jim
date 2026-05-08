@@ -292,14 +292,14 @@ def compute_rebalance(
     if risk_manager is None:
         risk_manager = RiskManager()
 
-    # Validation gate — hard safety net at the chokepoint (T4, AUDIT_MONTH2_REVIEW §4).
+    # Validation gate — hard safety net at the chokepoint.
     require_validated(broker.account)
 
     # 1. Get current portfolio state
     portfolio_value = broker.get_portfolio_value()
     current_positions = broker.get_position_map()
 
-    # Drawdown check — -35% latches catastrophe halt; -10% surfaces alert (AUDIT_MONTH2 C5).
+    # Drawdown check — -35% latches catastrophe halt; -10% surfaces alert.
     dd = compute_drawdown(broker.account, portfolio_value, risk_manager.limits)
     risk_manager.check_and_latch_halt(dd.drawdown, dd.equity_peak, portfolio_value)
     risk_check = {
@@ -325,7 +325,7 @@ def compute_rebalance(
     raw_signal_weights = stages.get("raw", dict(target_weights))
     post_filter_weights = stages.get("post_filter", dict(target_weights))
 
-    # Vol-scaling overlay (AUDIT_MONTH2 C4). Cap forced to 1.0 — Alpaca paper is spot-only.
+    # Vol-scaling overlay. Cap forced to 1.0 — Alpaca paper is spot-only.
     vol_scalar = 1.0
     vol_scalar_diagnostics: dict | None = None
     portfolio_cfg = PORTFOLIOS.get(strategy_id, {})
@@ -344,7 +344,7 @@ def compute_rebalance(
 
     # Invariant check — strategies should produce sane weight distributions.
     # Guards against a strategy bug producing extreme/pathological output.
-    # Loud failure beats silent clamping (see AUDIT_MONTH2 C7 resolution).
+    # Loud failure beats silent clamping.
     _weight_sum = sum(target_weights.values())
     if _weight_sum > 1.0 + 1e-6:
         raise ValueError(
@@ -407,10 +407,8 @@ def compute_rebalance(
         if weight < 0:
             log.warning(f"Negative weight for {symbol}: {weight:.4f}, skipping (long-only system)")
             continue
-        # Per-symbol weight from the strategy is the sizing. Concentration is
-        # controlled by strategy shape (top_n + equal-weight), not a runtime cap.
-        # See AUDIT_MONTH2 C7: the old 20% cap silently kneecapped A4's top-2
-        # crypto design (capped 50/50 to 20/20 + 60% cash).
+        # Strategy weight is the sizing — concentration is controlled by strategy
+        # shape (top_n + equal-weight), not a runtime cap.
         dollar_amount = portfolio_value * weight
         if is_crypto:
             qty = round(dollar_amount / prices[symbol], 8)
@@ -555,10 +553,8 @@ def check_price_staleness(
 
     Returns list of drifted symbols (empty if all prices are within threshold).
     Used as a safety guard before executing orders — blocks execution if any
-    price moved >threshold since computation, OR if a symbol became
-    unfetchable (AUDIT_MONTH2 R11: previously unfetchable symbols were
-    silently skipped, so a halt/delist between preview and execute would not
-    block execution).
+    price moved >threshold since computation, or if a symbol became
+    unfetchable (e.g. halt/delist between preview and execute).
     """
     fresh = broker.get_latest_prices(list(compute_prices.keys()))
     drifted = []

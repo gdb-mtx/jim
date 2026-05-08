@@ -1,14 +1,10 @@
 """Live volatility scaling — mirrors `apply_vol_scaling` for the rebalance path.
 
-The backtest scales a returns series after-the-fact; live trading needs today's
-scalar to multiply strategy weights before sizing orders. Math is identical
-(EWMA realized vol, target/realized, clipped), but in live we compute at T from
-equity through T-1, so the backtest's `.shift(1)` lag is implicit in our data
-slice and not applied explicitly.
-
-Resolves AUDIT_MONTH2 C4 — vol-scaling was in the backtest for A2 + A4 but not
-in live. Backtest cap 1.5 was also unreachable since Alpaca paper is spot-only /
-no margin; cap=1.0 here enforces sim/live parity on the upside.
+Backtest scales a returns series after-the-fact; live needs today's scalar to
+multiply strategy weights before sizing orders. Math is identical (EWMA realized
+vol, target/realized, clipped). Live computes at T from equity through T-1, so
+the backtest's explicit `.shift(1)` lag is implicit here. Cap=1.0 because Alpaca
+paper is spot-only.
 """
 
 import logging

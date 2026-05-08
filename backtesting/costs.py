@@ -1,22 +1,11 @@
-"""Transaction-cost model for the backtest (AUDIT_MONTH2 C6 resolution).
+"""Turnover-weighted transaction-cost layer for the backtest.
 
-Live trading incurs slippage (equities) or bid-ask spread (crypto). The
-backtest historically assumed gross returns. This module provides a
-turnover-weighted cost layer so backtest CAGR reflects what the live book
-can actually produce.
+Cost = `bps_round_trip × one_way_turnover` subtracted from each day's return.
+Turnover is computed from the strategy's signal series (post-shift to match the
+`signals.shift(1) × asset_returns` convention in `BaseStrategy.generate_returns`).
 
-Design: cost = `bps_round_trip × one_way_turnover` subtracted from each
-day's return. Turnover is computed from the strategy's signal series
-(post-shift to match the `signals.shift(1) × asset_returns` convention in
-`BaseStrategy.generate_returns`).
-
-Per-strategy rates in `STRATEGY_COST_BPS` — calibrated to roughly 5 bps
-equity (Alpaca zero-commission, slippage only) and 20 bps crypto (Alpaca
-spot ~10-15 bps half-spread × 2 sides).
-
-For A4 (daily crypto rotation) the empirical drag works out to ~0.5-1pp
-annual CAGR, matching the audit C6 estimate. For A1/A2 (monthly equity)
-it's a few bps/year — not enough to flip PASS/MARGINAL but nonzero.
+Per-strategy rates in `STRATEGY_COST_BPS`: ~5 bps equity (Alpaca zero-commission,
+slippage only) and ~20 bps crypto (Alpaca spot ~10-15 bps half-spread × 2 sides).
 """
 
 from __future__ import annotations

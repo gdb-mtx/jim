@@ -1,12 +1,9 @@
-"""Daily equity snapshot storage for performance tracking.
+"""Daily equity snapshot storage — one row per trading day per account, parquet under data/processed/.
 
-Stores one row per trading day per account in parquet files under data/processed/.
-Supports backfill from Alpaca's portfolio history API to recover missed days.
-
-Writes are serialized cross-process by `file_snapshot_lock` (AUDIT_MONTH2.md
-S3) and persisted via `write_parquet_atomic` (S2), so concurrent writers
-(filter cron, /snapshot endpoint, post-rebalance hook, server startup) can
-safely race without losing rows or leaving a partial parquet.
+Supports backfill from Alpaca's portfolio history API. Writes are serialized
+cross-process by `file_snapshot_lock` and persisted atomically via
+`write_parquet_atomic`, so concurrent writers (filter cron, /snapshot endpoint,
+post-rebalance hook, server startup) race safely.
 """
 
 import logging

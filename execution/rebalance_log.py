@@ -46,26 +46,22 @@ def log_rebalance(
         spy_filter_scalar: SPY filter scalar (1.0 = full, 0.5 = reduced)
         btc_filter_active: Whether BTC filter reduced exposure
         btc_filter_scalar: BTC filter scalar (1.0 = full, 0.0 = cash)
-        vol_scalar: Vol-scaling scalar applied to weights (1.0 = no scaling;
-            C4 fix 2026-04-21). Only non-trivial for A2/A4 configs with
-            `vol_scaling: True`.
-        vol_scalar_diagnostics: Diagnostics dict from `compute_live_vol_scalar`
-            (realized_vol, n_obs, fallback_reason, etc.). None when the
-            vol-scaling gate is skipped.
+        vol_scalar: Vol-scaling scalar applied to weights (1.0 = no scaling).
+            Only non-trivial for A2/A4 configs with `vol_scaling: True`.
+        vol_scalar_diagnostics: Diagnostics dict from `compute_live_vol_scalar`.
+            None when the vol-scaling gate is skipped.
         raw_signal_weights: Per-symbol weights the strategy produced before
             any overlay (SPY/BTC filter, vol-scaling). Enables post-mortem
-            "what did the signal actually say?" without re-running
-            generate_signals on a cache that has been overwritten since.
-            N4, AUDIT_MONTH2_REVIEW.
+            without re-running generate_signals on a cache that has since
+            been overwritten.
         post_filter_weights: Per-symbol weights after SPY/BTC filter, before
             vol-scaling. Multiply by `vol_scalar` to recover the live
-            target weights (modulo tradeability pruning). N4.
+            target weights (modulo tradeability pruning).
         execute_error: Exception message if `execute_rebalance` raised mid-
-            flight (AUDIT_MONTH2 R4). The `orders` list then reflects
-            whatever was recorded before the raise (usually empty if the
-            raise was at the Alpaca submit-orders entry point; potentially
-            populated for partial failures that escape the per-order guard).
-        source: "manual" (API endpoint), "scheduled" (APScheduler), etc.
+            flight. `orders` then reflects whatever was recorded before the
+            raise (typically empty for an Alpaca submit-orders failure;
+            possibly populated for partial failures past the per-order guard).
+        source: "manual" (API endpoint), "scheduled" (cron), etc.
     """
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -81,7 +77,7 @@ def log_rebalance(
         "btc_filter_scalar": btc_filter_scalar,
         "vol_scalar": vol_scalar,
         "vol_scalar_diagnostics": vol_scalar_diagnostics,
-        # Captures intermediate weight stages so post-mortems don't depend on stale price caches (N4).
+        # Intermediate weight stages — post-mortems don't depend on the live cache.
         "raw_signal_weights": raw_signal_weights,
         "post_filter_weights": post_filter_weights,
         "execute_error": execute_error,

@@ -131,9 +131,8 @@ def download_crypto_prices(
     print(f"Final universe: {prices.shape[1]} coins with 50%+ coverage")
     print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
-    # Plausibility guard (AUDIT_MONTH2 S5). Columns without a defined band
-    # (most of the 9-coin universe) pass silently — only BTC-USD and
-    # ETH-USD have bands today. Raises loudly if either is wrong.
+    # Plausibility guard. Columns without a band (most of the 9-coin universe)
+    # pass silently; BTC-USD / ETH-USD raise loudly if wrong.
     from data.plausibility import assert_plausible_df
     assert_plausible_df(prices)
 
@@ -183,8 +182,7 @@ def download_btc_prices(
                 )
             else:
                 btc = cached_df.squeeze()
-                # Plausibility check on read — catches a silently-corrupted
-                # cache that escaped the write-time guard.
+                # Read-time plausibility check — catches silent cache corruption.
                 from data.plausibility import assert_plausible, PlausibilityError
                 try:
                     btc_check = btc.copy()

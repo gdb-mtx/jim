@@ -31,10 +31,10 @@ _SP500_REFRESH_LOCK = threading.Lock()
 def get_sp500_tickers() -> list[str]:
     """Get current S&P 500 constituent tickers.
 
-    Scrapes Wikipedia, caches locally with a 7-day TTL so delisted names
-    actually fall out instead of silently shrinking the 80% coverage filter
-    (AUDIT_MONTH2.md D3). On Wikipedia failure, falls back to the stale
-    cached list rather than breaking the download pipeline.
+    Scrapes Wikipedia, caches locally with a 7-day TTL so delisted names fall
+    out instead of silently shrinking the 80% coverage filter. On Wikipedia
+    failure, falls back to the stale cached list rather than breaking the
+    download pipeline.
     """
     cache_path = DATA_DIR / "raw" / "sp500_tickers.json"
     max_age_hours = 24 * 7  # S&P 500 changes ~4x/year; weekly refresh
@@ -98,9 +98,7 @@ def download_sp500_prices(
     import time
 
     cache_path = DATA_DIR / "raw" / "sp500_prices.parquet"
-    # S&P 500 refresh is slow (~5 minutes for 451 tickers). Use a longer TTL
-    # than the other caches, with the expectation that an append-only
-    # incremental refresh will eventually replace this full-rebuild path.
+    # S&P 500 refresh is slow (~5 minutes for 451 tickers); longer TTL than other caches.
     max_age_hours = 24
 
     def _is_fresh() -> bool:
@@ -183,10 +181,8 @@ def download_sp500_prices(
         print(f"Final universe: {prices.shape[1]} stocks with {min_coverage:.0%}+ coverage")
         print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 
-        # Plausibility guard (AUDIT_MONTH2 S5). Individual S&P 500 stocks don't
-        # have per-ticker bands (prices legitimately span $5-$1000+ and change
-        # after splits), so most columns pass silently. Any banded symbols
-        # present (e.g. if SPY ended up here) get checked.
+        # Plausibility guard. Individual stocks have no per-ticker bands (prices
+        # legitimately span $5-$1000+ and split), so most columns pass silently.
         from data.pipeline import write_parquet_atomic
         from data.plausibility import assert_plausible_df
         assert_plausible_df(prices)
@@ -228,10 +224,8 @@ def download_vix(
                 )
             else:
                 vix = cached_df.squeeze()
-                # Plausibility check on read — catches a silently-corrupted
-                # cache (2026-04-22: vix.parquet had values ~$276, matching
-                # IWM, not VIX). Note the file stores name="VIX" but bands
-                # are keyed on "^VIX", so we check under the ticker key.
+                # Read-time plausibility check — catches silent cache corruption.
+                # File stores name="VIX" but bands are keyed on "^VIX".
                 from data.plausibility import assert_plausible, PlausibilityError
                 try:
                     vix_check = vix.copy()
@@ -252,8 +246,7 @@ def download_vix(
     vix = prices.iloc[:, 0]
     vix.name = "^VIX"  # keep ticker name for plausibility lookup
 
-    # Plausibility guard (AUDIT_MONTH2 S5). VIX band 5-100; anything
-    # outside this is yfinance garbage, not a real VIX regime.
+    # Plausibility guard. VIX band 5-100; anything outside is yfinance garbage.
     assert_plausible(vix, "^VIX")
 
     vix.name = "VIX"  # restore display name for downstream consumers

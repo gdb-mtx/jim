@@ -159,11 +159,9 @@ def test_2_walk_forward(adapter: AccountAdapter) -> dict:
             step_size=step,
             warmup=adapter.warmup_days,
         )
-        # NOTE: this is rolling OOS with FIXED defaults — no per-window
-        # parameter refit. For honest walk-forward-refit see
-        # `scripts/walk_forward_refit_a1.py` / `_a2.py` and the
-        # `walk_forward_refit_analysis` function. The label was previously
-        # `walk_forward_refit`, which was misleading (see AUDIT_MONTH2.md R1).
+        # Rolling OOS with FIXED defaults — no per-window parameter refit.
+        # For honest walk-forward refit see `scripts/walk_forward_refit_a1.py`
+        # / `_a2.py` and `walk_forward_refit_analysis`.
         mode = "rolling_oos_fixed_params"
         # Rebuild per-window scorecards since walk_forward_analysis stores Sharpe-centric fields
         windows = []
@@ -351,9 +349,8 @@ def test_3_parameter_stability(adapter: AccountAdapter) -> dict:
 def test_4_bootstrap(adapter: AccountAdapter) -> dict:
     """Block bootstrap. Primary metric is now CAGR p5 (forward worst-case
     compounding rate), not Sharpe. Pass if p5 CAGR >= 0."""
-    # Block size per asset class: crypto autocorrelation (regime-driven bull/
-    # bear BTC cycles) runs materially longer than equity, so a 20-day block
-    # understates autocorr and overstates p5 CAGR confidence. AUDIT_MONTH2 R9.
+    # Crypto regime autocorrelation (BTC bull/bear cycles) runs longer than
+    # equity, so 20-day blocks understate autocorr; 40-day for crypto.
     block_size = 40 if adapter.periods_per_year == 365 else 20
 
     result = block_bootstrap(

@@ -84,9 +84,8 @@ def run_config(prices: pd.DataFrame, btc: pd.Series, cfg: Config) -> Result:
 
     btc_aligned = btc.reindex(prices.index).ffill()
 
-    # MAs computed on full btc history (strict min_periods) then reindexed to
-    # prices.index — so half-sliced backtests use pre-slice BTC for warmup
-    # (AUDIT_MONTH2.md C2).
+    # MAs computed on full BTC history (strict min_periods) then reindexed to
+    # prices.index, so half-sliced backtests use pre-slice BTC for warmup.
     if cfg.filter_type == "none":
         filter_scalar = pd.Series(1.0, index=prices.index)
         pct_invested = 100.0

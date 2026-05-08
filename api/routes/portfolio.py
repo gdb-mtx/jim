@@ -376,7 +376,7 @@ async def filter_status():
 
         try:
             spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze().dropna()
-            spy_ma = spy_prices.rolling(200).mean()
+            spy_ma = spy_prices.rolling(200, min_periods=200).mean()
             spy_ma_val = float(spy_ma.iloc[-1])
 
             # Use Alpaca real-time price instead of cached yfinance close
@@ -387,7 +387,7 @@ async def filter_status():
             except Exception:
                 pass
 
-            # Cross-validate cache against live broker quote; >5% divergence flags the cache as suspect (AUDIT_MONTH2 S5).
+            # Cross-validate cache against live broker quote; >5% divergence flags the cache as suspect.
             if live_spy is not None:
                 cross_validate_last_close(spy_prices, "SPY", live_spy)
 
@@ -576,8 +576,6 @@ async def plausibility_state():
 
     Dashboard uses `active_issues` to decide whether to show a warning
     banner. Raw state is exposed for debugging.
-
-    Added 2026-04-21 (AUDIT_MONTH2 S5 resolution).
     """
     from data.plausibility import get_state, has_active_issues
 

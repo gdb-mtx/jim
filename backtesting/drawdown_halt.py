@@ -1,22 +1,12 @@
-"""Backtest halt simulation — sim/live parity for AUDIT_MONTH2 C5.
+"""Backtest halt simulation — sim/live parity for the -35% catastrophe halt.
 
-Live trading latches a catastrophe halt at -35% portfolio drawdown (manual
-reset required). The backtest historically assumed continuous trading
-through arbitrarily deep drawdowns. This module provides a post-hoc
-halt-and-hold layer so the backtest can be apples-to-apples with live.
+Post-hoc halt-and-hold layer over a returns series. Halt is permanent within a
+single sim run (no manual reset inside a backtest), so once it trips returns go
+flat for the remainder of the window — the conservative honest simulation.
 
-For the current -35% threshold, this is essentially a no-op across every
-OOS window we evaluate (deepest observed: A4 -11.4%; combined -7.0%). The
-module exists so (a) the sim/live parity gap is closed in code, not just
-in narration, and (b) when we stress-test hypothetical crash regimes or
-explore lower halt thresholds, the math is ready.
-
-Design choice — halt is permanent within a single backtest run. Unlike
-live, there is no manual reset inside a sim; once the halt trips, returns
-go flat for the remainder of the window. This is the conservative honest
-simulation — it *under*-reports any strategy that would recover a V-shape
-after a -35% drawdown, which matches the real-world reachability concern
-(user may not reset in time).
+For the -35% threshold this is a no-op on every current OOS window (deepest
+observed: A4 -11.4%; combined -7.0%). Module exists so the parity gap is closed
+in code and stress-test scenarios with lower thresholds are ready.
 """
 
 from __future__ import annotations

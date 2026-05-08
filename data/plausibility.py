@@ -1,4 +1,4 @@
-"""Per-ticker value-plausibility checks for cached market data (AUDIT_MONTH2 S5)."""
+"""Per-ticker value-plausibility checks for cached market data."""
 
 from __future__ import annotations
 
@@ -17,44 +17,15 @@ log = logging.getLogger("fire.plausibility")
 STATE_PATH = Path(__file__).resolve().parents[1] / "data" / "risk_state" / "plausibility_state.json"
 
 
-# Bands are anchored to historical facts. Don't loosen to make a failure go away.
+# Bands anchor to historical facts. Don't loosen them to make a failure go away —
+# tight floors are part of the cross-contamination guard (a stock series under
+# the BTC ticker would trip the BTC floor immediately).
 BANDS: dict[str, tuple[float, float, str]] = {
-    "BTC-USD": (
-        1000.0,
-        500_000.0,
-        "BTC has not closed below $1,000 since Dec 2017, and FIRE clamps all "
-        "BTC data fetches to start=2018-01-01 (see data/crypto.py) — so a "
-        "real BTC series cannot legitimately contain values below $1k. "
-        "Tight floor preserves the cross-contamination guard: a stock "
-        "at $60-700 or most ETFs would trip this band immediately. "
-        "$500k upper is 4-5x current ATH (~$100k) — generous headroom for "
-        "multi-year growth.",
-    ),
-    "ETH-USD": (
-        50.0,
-        20_000.0,
-        "ETH has not closed below $80 since Feb 2018 (buffer to $50). "
-        "$20k upper is ~4x current ATH.",
-    ),
-    "SPY": (
-        40.0,
-        2_000.0,
-        "SPY auto-adjusted close bottomed at $49.81 on 2009-03-09 — $40 "
-        "floor leaves headroom under the historical low. $2k cap gives "
-        "3x+ headroom for long-term growth.",
-    ),
-    "^VIX": (
-        5.0,
-        100.0,
-        "VIX historical range ~9 (low-vol regime) to ~82 (Oct 2008), "
-        "~85 (Mar 2020). $100 cap gives headroom for a worse spike.",
-    ),
-    "SHY": (
-        60.0,
-        100.0,
-        "Short-term Treasury ETF has traded in a tight $80-$86 band "
-        "since inception. $60-$100 gives comfortable rate-regime buffer.",
-    ),
+    "BTC-USD": (1000.0, 500_000.0, "BTC has not closed below $1k since Dec 2017"),
+    "ETH-USD": (50.0, 20_000.0, "ETH has not closed below $80 since Feb 2018"),
+    "SPY": (40.0, 2_000.0, "SPY auto-adjusted low was $49.81 on 2009-03-09"),
+    "^VIX": (5.0, 100.0, "VIX historical range ~9 to ~85 (Oct 2008 / Mar 2020)"),
+    "SHY": (60.0, 100.0, "SHY has traded in a tight $80-$86 band since inception"),
 }
 
 

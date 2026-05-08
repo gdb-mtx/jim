@@ -30,7 +30,7 @@ class CryptoMomentum(BaseStrategy):
         if self._btc is None:
             return pd.Series(1.0, index=dates)
 
-        # Strict min_periods for warmup (AUDIT_MONTH2.md C2).
+        # Strict min_periods for warmup.
         btc_ma_full = self._btc.rolling(
             self.btc_ma_period, min_periods=self.btc_ma_period
         ).mean()

@@ -14,7 +14,7 @@ _YFINANCE_LOCK = threading.Lock()
 
 
 def write_parquet_atomic(df: pd.DataFrame, path: Path | str) -> None:
-    """Atomic parquet write via tmp + os.replace (AUDIT_MONTH2 S2)."""
+    """Atomic parquet write via tmp + os.replace."""
     path = Path(path)
     tmp = path.with_suffix(path.suffix + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +31,7 @@ def download_with_retry(
     max_retries: int = 3,
     min_coverage_ratio: float = 0.5,
 ) -> pd.DataFrame:
-    """Download adjusted closes with 3× exponential-backoff retry. Raises on persistent failure (AUDIT_MONTH2 S4)."""
+    """Download adjusted closes with 3× exponential-backoff retry. Raises on persistent failure."""
     if not symbols:
         raise ValueError("symbols list is empty")
 

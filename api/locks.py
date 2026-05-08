@@ -1,16 +1,12 @@
 """Shared locks for rebalance + snapshot concurrency control.
 
-Two layers:
-- AsyncIO locks for in-process concurrency (FastAPI async handlers)
-- File locks for cross-process concurrency (filter_check.py cron vs server)
+Two layers: asyncio locks for in-process (FastAPI handlers), file locks for
+cross-process (cron vs server).
 
-`dual_rebalance_lock` bundles both into a single context manager so every
-rebalance entry point (API endpoint, APScheduler job, filter cron) is
-guaranteed to serialize against every other — closes AUDIT_MONTH2.md S1.
-
-`file_snapshot_lock` serializes snapshot read-modify-write across the four
-concurrent callers (filter cron, dashboard /snapshot, post-rebalance hook,
-server startup) — closes AUDIT_MONTH2.md S3.
+`dual_rebalance_lock` bundles both — every rebalance entry point (API endpoint,
+launchd cron, filter cron) serializes against every other.
+`file_snapshot_lock` serializes snapshot read-modify-write across concurrent
+writers (filter cron, /snapshot endpoint, post-rebalance hook, server startup).
 """
 
 import asyncio

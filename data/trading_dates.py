@@ -1,9 +1,7 @@
-"""ET trading-date helpers.
+"""ET trading-date helpers — TZ-stable across server timezones.
 
-Snapshot dates must be stable across server timezones. AUDIT_MONTH2.md D1/D2:
-`date.today()` and naive `datetime.fromtimestamp(ts)` silently shift by a day
-if the server ever runs in UTC — backfilled (Alpaca UTC-midnight) rows and
-live rows can then disagree for the same trading session.
+`date.today()` and naive `datetime.fromtimestamp(ts)` silently shift by a day on a
+UTC server, so backfilled rows and live rows can disagree for the same session.
 """
 
 from datetime import datetime

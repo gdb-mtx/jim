@@ -97,10 +97,8 @@ def apply_vol_scaling(
         vol_target: Target annualized vol (0.15 = 15%)
         vol_halflife: EWMA half-life in days for vol estimation
         scalar_floor: Minimum exposure (0.5 = never below 50%)
-        scalar_cap: Maximum exposure (1.0 = no leverage; matches Alpaca paper /
-                    spot-only constraints. AUDIT_MONTH2 C4: live had no
-                    vol-scaling overlay and couldn't realize a 1.5x scalar even
-                    if it had one. Cap=1.0 keeps sim and live apples-to-apples.)
+        scalar_cap: Maximum exposure (1.0 = no leverage; Alpaca paper is
+                    spot-only, so cap=1.0 keeps sim and live apples-to-apples).
 
     Returns:
         Vol-scaled daily returns

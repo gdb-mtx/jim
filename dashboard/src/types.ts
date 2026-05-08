@@ -124,10 +124,9 @@ export interface CorrelationReport {
   backtest_expected: Record<string, number>;
 }
 
-// Risk / drawdown types. Schema reshape 2026-04-21 (AUDIT_MONTH2 C5):
+// Risk / drawdown types:
 //   - halted: catastrophe halt at -35% (manual reset)
 //   - alert_active: -10% drawdown alert (non-blocking)
-//   - strategy-level fields removed (was dead code per R3)
 export interface AccountRiskStatus {
   account: number;
   label: string;

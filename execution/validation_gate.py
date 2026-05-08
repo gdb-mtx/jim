@@ -1,24 +1,9 @@
-"""
-Validation Gate — Blocks rebalance execution on unvalidated accounts.
+"""Validation gate: blocks rebalance on unvalidated accounts. Retired status is unconditional (no override).
 
-Reads `data/risk_state/validation_state.json` and checks three things
-before a rebalance proceeds:
-  1. A validation record exists for the account.
-  2. The record's status is "pass" or "marginal" (marginal allowed for paper).
-  3. The record's `expires` date is in the future (quarterly re-validation).
-
-Status "retired" is an UNCONDITIONAL block — no override can bypass it.
-This is deliberate: a retired account should never trade again under any
-circumstance, and an accidental `FIRE_VALIDATION_OVERRIDE=1` must not
-unblock it (R2, AUDIT_MONTH2).
-
-If any check fails, raise ValidationGateError. Callers translate to a
-403 (HTTP) or a graceful abort (scheduled jobs / filter monitor).
-
-Overrides (for FAIL / unvalidated / expired only — never for retired):
-  - `FIRE_VALIDATION_OVERRIDE=1` — global (all active accounts).
-  - `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` — scoped to account N (1-4).
-Either granting an override surfaces a WARNING log line.
+Overrides (FAIL / unvalidated / expired only — never retired):
+  - `FIRE_VALIDATION_OVERRIDE=1` — global.
+  - `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` — scoped to account N.
+Either surfaces a WARNING log.
 """
 
 from __future__ import annotations
