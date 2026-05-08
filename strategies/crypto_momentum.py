@@ -1,21 +1,4 @@
-"""
-Crypto Momentum Rotation with BTC Trend Filter.
-
-Daily-frequency momentum strategy on top cryptocurrencies.
-Ranks coins by trailing 21-day return and holds the top 2 equal-weight.
-BTC 150-day SMA trend filter goes to 100% cash in crypto bear markets.
-
-Academic basis:
-- Momentum in crypto: Liu & Tsyvinski (2021) "Risks and Returns of Cryptocurrency"
-- Trend following: Moskowitz, Ooi, Pedersen (2012) "Time Series Momentum"
-- BTC as regime indicator: analogous to SPY trend filter (Faber 2007)
-
-Parameters reverted 2026-04-18 to conservative defaults after VALIDATION
-Test 3 found the autoresearch-tuned 150d/top2 config was regime-unstable
-(top-5 configs had 0/5 overlap between 2020-22 and 2023-26 halves).
-Current params: 200d SMA filter, top 3, 21d lookback — the null values
-the autoresearch sweep started from.
-"""
+"""Daily crypto momentum rotation: top-N by 21d return, gated by BTC trend filter."""
 
 import numpy as np
 import pandas as pd
@@ -23,13 +6,6 @@ from strategies.base import BaseStrategy
 
 
 class CryptoMomentum(BaseStrategy):
-    """Daily crypto momentum rotation on top coins.
-
-    This strategy exploits the strong momentum effect in crypto markets,
-    where trending coins tend to continue trending due to retail herding
-    and narrative-driven flows. The BTC trend filter avoids crypto winters.
-    """
-
     name = "Crypto Momentum Rotation"
 
     def __init__(
@@ -39,22 +15,7 @@ class CryptoMomentum(BaseStrategy):
         holding_period_days: int = 1,
         btc_ma_period: int = 125,
     ):
-        """
-        Args:
-            lookback_days: Momentum ranking period (21 days — standard)
-            top_n: Number of top coins to hold (2 — robust-opt winner
-                2026-04-18, see scripts/crypto_robust_opt.py)
-            holding_period_days: Rebalance frequency (1 = daily)
-            btc_ma_period: BTC moving average period for trend filter (125 —
-                robust-opt winner 2026-04-18 under CAGR-first framework.
-                Scored configs by min(Calmar_A, Calmar_B) across pre/post-2023
-                halves rather than full-sample Sharpe. SMA-125/top2 has
-                Calmar 2.89/3.10 (near-identical in both regimes); explicitly
-                selected for regime robustness, not backtest peak. Was 200d
-                (conservative default); before that, was 150d (regime-lucky).
-                top-5 config overlap 0/5 across halves, so reverted to the
-                pre-tuning null value)
-        """
+        """top_n=2 and btc_ma_period=125 are robust-opt winners (scripts/crypto_robust_opt.py, 2026-04-18)."""
         self.lookback_days = lookback_days
         self.top_n = top_n
         self.holding_period_days = holding_period_days
@@ -62,30 +23,14 @@ class CryptoMomentum(BaseStrategy):
         self._btc = None
 
     def set_btc(self, btc_prices: pd.Series):
-        """Inject BTC price data for trend filter.
-
-        Mirrors the set_vix() pattern from StockMomentum.
-
-        Args:
-            btc_prices: Series of BTC/USD closing prices with DatetimeIndex
-        """
         self._btc = btc_prices
 
     def _get_btc_trend_scalar(self, dates: pd.DatetimeIndex) -> pd.Series:
-        """Compute BTC trend filter: 1.0 when BTC > MA, 0.0 when below.
-
-        Unlike the SPY filter (which reduces to 0.5), this is binary.
-        Crypto bear markets are severe enough to warrant full exit.
-        Uses 150d SMA (optimized from 200d — crypto cycles are faster).
-
-        Returns:
-            Series of scalars: 1.0 (bull) or 0.0 (bear)
-        """
+        """Binary BTC trend filter: 1.0 when above MA, 0.0 below."""
         if self._btc is None:
             return pd.Series(1.0, index=dates)
 
-        # Compute MA on full BTC history so warmup uses pre-strategy data
-        # (strict min_periods=btc_ma_period; AUDIT_MONTH2.md C2).
+        # Strict min_periods for warmup (AUDIT_MONTH2.md C2).
         btc_ma_full = self._btc.rolling(
             self.btc_ma_period, min_periods=self.btc_ma_period
         ).mean()
@@ -100,51 +45,17 @@ class CryptoMomentum(BaseStrategy):
         return scalar
 
     def generate_signals(self, prices: pd.DataFrame) -> pd.DataFrame:
-        """Generate crypto momentum signals with BTC trend filter.
-
-        Steps:
-        0. Drop today's partial UTC bar if present (see comment below)
-        1. Compute trailing return over lookback period
-        2. Rank all coins, select top N (default 2)
-        3. Equal weight among selected (1/N each)
-        4. Apply BTC 150d SMA trend filter (binary: invest or cash)
-        5. Rebalance at holding period intervals
-        """
-        # --- Drop today's partial UTC bar before computing signal. ---
-        # yfinance daily crypto bars are dated by UTC midnight start.
-        # When queried mid-day (e.g. our 00:05 UTC fire, or any manual run
-        # during the day), yfinance returns the in-progress "today" bar
-        # whose "close" is just the current scratch price, not a settled
-        # day-close. That price mutates throughout the UTC day — the same
-        # strategy will rank coins differently at 06:05 UTC vs 23:55 UTC
-        # even with no real change in market structure, just because the
-        # partial bar absorbed an Asian-session move.
-        #
-        # Backtests historically don't see this because they run on
-        # already-closed historical bars. So live ranks differ from
-        # backtest ranks for the same notional date — exactly the gap
-        # surfaced 2026-05-06 in the live↔backtest reconciliation
-        # (HISTORY.md C9). Dropping the partial today-bar makes
-        # `pct_change(self.lookback_days).iloc[-1]` use yesterday's
-        # SETTLED close, which is what backtest assumes.
-        #
-        # The Hour=20 launchd schedule (= 00:05 UTC during EDT) lands 5
-        # minutes after a UTC bar closes, so "yesterday's settled close"
-        # is freshly-minted at fire time — best of both worlds.
+        """Rank coins by trailing momentum, hold top N equal-weight, gate by BTC trend filter."""
+        # Drop today's partial UTC bar so momentum uses yesterday's settled close (HISTORY.md C9).
         if len(prices) >= 1:
             today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
             if pd.Timestamp(prices.index[-1]) >= today_utc:
                 prices = prices.iloc[:-1]
 
         n_coins = prices.shape[1]
-
-        # Momentum signal: trailing return over lookback period
         momentum = prices.pct_change(self.lookback_days)
-
-        # Rank coins (higher rank = stronger momentum)
         ranks = momentum.rank(axis=1, ascending=True, method="average")
 
-        # Select top N coins
         effective_top_n = min(self.top_n, max(1, n_coins))
         cutoff = n_coins - effective_top_n
         selected = (ranks > cutoff).astype(float)

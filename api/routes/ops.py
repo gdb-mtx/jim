@@ -34,16 +34,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VALIDATION_STATE_PATH = PROJECT_ROOT / "data" / "risk_state" / "validation_state.json"
 VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
 
-# launchd plists currently registered. Source tags are set by the plists
-# themselves (FIRE_FILTER_CHECK_SOURCE env var); see
-# `scripts/com.fire.filter-check-{equity,crypto}.plist`. Order matters for
-# stable UI rendering.
-#
-# `schedule` mirrors the plist's StartCalendarInterval / StartInterval so
-# we can render a "next run" without shelling out to launchctl. Three shapes:
-#   ("daily_local", hour, minute)  -- mirrors StartCalendarInterval (laptop-local TZ)
-#   ("daily_utc",   hour, minute)  -- mirrors StartCalendarInterval + TZ=UTC
-#   ("interval_seconds", seconds)  -- mirrors StartInterval (anchored on last_run)
+# launchd plists. `schedule` mirrors the plist so the UI can render "next run" without launchctl.
+# Schedule shapes: ("daily_local", h, m) | ("daily_utc", h, m) | ("interval_seconds", n)
 LAUNCHD_JOBS: list[tuple[str, str, str, tuple]] = [
     # (plist_label, source_tag, expected_scope, schedule)
     ("com.fire.filter-check-equity", "launchd-equity", "spy", ("interval_seconds", 14400)),

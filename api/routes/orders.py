@@ -243,17 +243,8 @@ async def _execute_under_lock(account: int, strategy_id: str):
     except Exception as e:
         log.warning(f"Post-rebalance snapshot failed for account {account}: {e}")
 
-    # Sync filter_state.json so the dashboard banner reflects the decision we
-    # just traded against, and so launchd's next filter_check run doesn't
-    # compare against a stale "previous" value (which would misdetect or miss
-    # flips that happened between launchd runs while the user was manually
-    # rebalancing — the travel-window failure mode).
-    #
-    # Recompute live instead of trusting `result.{spy,btc}_filter_scalar`:
-    # PORTFOLIOS["crypto_momentum_filtered"] sets `btc_filter=False` because
-    # the filter is internal to CryptoMomentum, which leaves
-    # `result.btc_filter_scalar` at the default 1.0 even when BTC is below
-    # its 125d MA. Recomputing mirrors `scripts/filter_check.py:compute_filters`.
+    # Sync filter_state.json after manual rebalance so the next launchd run sees current state.
+    # Recompute live (don't trust result.btc_filter_scalar — internal-filter strategies leave it at 1.0).
     try:
         from data import filter_state
         from strategies.portfolio_config import (

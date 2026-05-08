@@ -23,12 +23,6 @@ from strategies.mean_reversion import ShortTermReversal
 from strategies.crypto_momentum import CryptoMomentum
 
 
-# ── Preset portfolio configurations ──────────────────────────────────
-#
-# Account 1 (Momentum): profits when trends persist
-# Account 2 (Trend + Low-Vol): crisis alpha + defensive stocks
-# Account 3 (Reversal): anti-momentum, buys short-term losers
-#
 PORTFOLIOS = {
     # --- Account 1: Momentum (existing) ---
     "sm_filtered": {

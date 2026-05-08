@@ -508,12 +508,7 @@ def test_6_walk_forward_refit(adapter: AccountAdapter) -> dict:
         refit_median_calmar / default_median_calmar if default_median_calmar > 1e-6 else 1.0
     )
 
-    # Status semantics:
-    #   PASS    — refit can't meaningfully beat defaults. Either within-band
-    #             or worse than defaults (defaults are robust).
-    #   REVIEW  — refit beats defaults by >20% AND picked config is stable
-    #             (>=40% of windows). This is the only outcome that would
-    #             suggest we should consider changing defaults.
+    # PASS = refit doesn't meaningfully beat defaults; REVIEW = refit beats by >20% with stable pick.
     stable_enough = refit_summary["stability_pct"] >= 0.40
     within_cagr_band = abs(delta_cagr_pct) <= 10.0
 

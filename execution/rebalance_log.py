@@ -81,12 +81,7 @@ def log_rebalance(
         "btc_filter_scalar": btc_filter_scalar,
         "vol_scalar": vol_scalar,
         "vol_scalar_diagnostics": vol_scalar_diagnostics,
-        # N4 (AUDIT_MONTH2_REVIEW): capture the two intermediate weight
-        # vectors — raw strategy output and post-SPY/BTC-filter — so
-        # post-mortems don't have to re-run generate_signals against a
-        # price cache that has since been overwritten. Combined with
-        # the already-persisted scalars + final orders, this lets any
-        # rebalance be fully reconstructed from one journal entry.
+        # Captures intermediate weight stages so post-mortems don't depend on stale price caches (N4).
         "raw_signal_weights": raw_signal_weights,
         "post_filter_weights": post_filter_weights,
         "execute_error": execute_error,
@@ -95,13 +90,7 @@ def log_rebalance(
                 "symbol": o.get("symbol", "?"),
                 "side": o.get("side", "?"),
                 "qty": o.get("qty") or o.get("requested_qty"),
-                # Crypto buys submit a dollar `notional` instead of qty;
-                # the broker echoes back qty=None at pending_new, so the
-                # `qty` field above falls back to a stale preview-time
-                # qty. Logging notional lets a reader see what dollar
-                # amount was actually submitted (and reconcile against
-                # the eventual fill). Surfaced 2026-05-03 on A4 — see
-                # rebalance.py 5b. None for non-notional orders.
+                # Crypto buys submit notional (dollar amount); qty is None until fill.
                 "notional": o.get("notional"),
                 "status": o.get("status", "unknown"),
                 "error": o.get("error"),

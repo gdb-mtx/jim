@@ -1,29 +1,4 @@
-"""Per-ticker value-plausibility checks for cached market data.
-
-Guards against the "yfinance returned wrong data under the right ticker"
-failure mode — AUDIT_MONTH2 S5, session 4. On 2026-04-21, yfinance returned
-a plausibly-shaped DataFrame under "BTC-USD" whose values were clearly not
-BTC (4099 rows starting 2010, values $9-$29). Atomic writes + retry helpers
-defend against missing/partial data but do not defend against plausibly-
-shaped wrong-values data.
-
-This module adds a defensive layer at two points:
-
-1. **Write-time (`assert_plausible`)** — raise `RuntimeError` before any
-   `write_parquet_atomic` call. Bad data never touches the cache.
-
-2. **Read-time cross-validation (`cross_validate_last_close`)** — compare
-   cached last-close against an independent live source (Alpaca).
-   Divergence > threshold → log + record to state + caller-decided action.
-
-State is recorded to `data/risk_state/plausibility_state.json` so the
-dashboard can surface failures even if a caller caught the RuntimeError
-and retried successfully. See `/api/health/plausibility` endpoint.
-
-Bands are hardcoded here (not a config file) on purpose — each band has
-a *reason* that belongs next to the number. If the ticker count grows
-past ~15 or per-environment overrides are needed later, lift to JSON.
-"""
+"""Per-ticker value-plausibility checks for cached market data (AUDIT_MONTH2 S5)."""
 
 from __future__ import annotations
 
@@ -39,29 +14,10 @@ import pandas as pd
 
 log = logging.getLogger("fire.plausibility")
 
-# Module-level state path — risk_state is the existing convention for
-# small JSON files that the dashboard polls (filter_state, circuit_breaker,
-# validation_state all live here).
 STATE_PATH = Path(__file__).resolve().parents[1] / "data" / "risk_state" / "plausibility_state.json"
 
 
-# ---------------------------------------------------------------------------
-# Per-ticker bands — (min_allowed, max_allowed, reason)
-# ---------------------------------------------------------------------------
-# A series is plausible if *every* value falls inside [min_allowed, max_allowed].
-# Any single bar below the floor or above the cap fails the check.
-#
-# The check was tightened 2026-04-22 after IWM data leaked into vix.parquet
-# under concurrent yfinance contamination. IWM's historical range
-# ($36–$280+) overlaps VIX's ($5–$100) at the low end, so the earlier
-# "entire series must be out of range" variant passed the corrupted cache.
-# The bands carry 3-5× headroom over historical extremes, so the tightened
-# check has no false-positive risk on real data for banded tickers.
-#
-# Reasons: all thresholds anchored to verifiable historical facts. If an
-# assumption breaks (e.g. BTC crashes to $500 in 2029), update the band
-# alongside the reason. Do NOT loosen bands just to make a failure go away.
-
+# Bands are anchored to historical facts. Don't loosen to make a failure go away.
 BANDS: dict[str, tuple[float, float, str]] = {
     "BTC-USD": (
         1000.0,
@@ -102,38 +58,12 @@ BANDS: dict[str, tuple[float, float, str]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Assertions — raise RuntimeError if values don't match the band
-# ---------------------------------------------------------------------------
-
-
 class PlausibilityError(RuntimeError):
-    """Raised when a cached-data candidate fails plausibility checks.
-
-    Caller MUST NOT write the failing data to cache. Log, record state,
-    and either retry or fail loud upstream.
-    """
+    """Cached-data candidate failed plausibility — do NOT write to cache."""
 
 
 def assert_plausible(series: pd.Series, ticker: str) -> None:
-    """Raise `PlausibilityError` if series values are implausible for ticker.
-
-    Silently returns (no check) for tickers without a defined band — this
-    is intentional so adding a new ticker to the universe doesn't block
-    downloads. Only known-ticker violations are loud.
-
-    Records write-time failures + successes to plausibility_state.json so
-    the dashboard can surface them.
-
-    Args:
-        series: 1-D price series. NaN values are dropped before checking.
-        ticker: Ticker name used to look up the band.
-
-    Raises:
-        PlausibilityError: If observed max < band floor or observed min > band cap.
-            (Both directions are checked — catches "all values are from a different
-             asset" in either direction.)
-    """
+    """Raise `PlausibilityError` if series values are implausible for ticker. Unknown tickers pass silently."""
     if ticker not in BANDS:
         return
 
@@ -141,9 +71,6 @@ def assert_plausible(series: pd.Series, ticker: str) -> None:
 
     clean = series.dropna()
     if len(clean) == 0:
-        # All-NaN series isn't a plausibility failure on its own — the
-        # coverage-ratio check in `download_with_retry` handles missing data.
-        # Record success so we don't leave stale failures on the dashboard.
         _record_success(ticker, n_obs=0)
         return
 
@@ -165,20 +92,11 @@ def assert_plausible(series: pd.Series, ticker: str) -> None:
 
 
 def assert_plausible_df(df: pd.DataFrame) -> None:
-    """Apply `assert_plausible` to each column of a DataFrame.
-
-    Column names are used as ticker identifiers. Columns whose name is
-    not in BANDS are skipped silently. Raises on the first failure.
-    """
+    """Apply `assert_plausible` to each column. Raises on first failure."""
     if df is None or df.empty:
         return
     for col in df.columns:
         assert_plausible(df[col], str(col))
-
-
-# ---------------------------------------------------------------------------
-# Cross-validation — compare cached last-close to live broker quote
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -197,27 +115,9 @@ def cross_validate_last_close(
     live_price: float,
     threshold_pct: float = 0.05,
 ) -> DivergenceResult:
-    """Compare cached last-close to an independent live price.
-
-    Records divergences to plausibility_state.json. Does NOT raise —
-    caller decides whether to serve, refresh, or block. Threshold default
-    5% is generous; a real data-poisoning event (like 2026-04-21 BTC)
-    would show 99%+ divergence.
-
-    Args:
-        series: Cached price series.
-        ticker: Ticker name (used for state-recording key).
-        live_price: Price from an independent source (e.g. Alpaca).
-        threshold_pct: Allowed relative divergence (0.05 = 5%).
-
-    Returns:
-        DivergenceResult. `within_threshold=False` means the caller
-        should consider the cache suspect.
-    """
+    """Compare cached last-close to live price. Records divergences; does NOT raise."""
     clean = series.dropna()
     if len(clean) == 0:
-        # Empty cache — can't compare. Return "within_threshold=True"
-        # so callers don't block on this; coverage checks handle empty.
         return DivergenceResult(
             ticker=ticker,
             within_threshold=True,
@@ -260,34 +160,6 @@ def cross_validate_last_close(
     )
 
 
-# ---------------------------------------------------------------------------
-# State file — JSON, keyed by ticker
-# ---------------------------------------------------------------------------
-#
-# Schema:
-# {
-#   "BTC-USD": {
-#     "last_success_at": "2026-04-21T19:15:03+00:00",
-#     "last_success_n_obs": 3033,
-#     "last_failure_at": "2026-04-21T14:32:11+00:00",   (optional)
-#     "last_failure_reason": "observed max=$24.50 below floor $1000",
-#     "last_failure_obs_min": 9.12,
-#     "last_failure_obs_max": 24.50,
-#     "last_failure_n_obs": 4099,
-#     "last_divergence_at": "...",   (optional, from cross_validate_last_close)
-#     "last_divergence_cached": 24.50,
-#     "last_divergence_live": 75312.00,
-#     "last_divergence_pct": 3.08
-#   },
-#   ...
-# }
-#
-# Dashboard logic: ticker has an "active issue" if
-#   last_failure_at > (last_success_at OR "epoch")
-# OR
-#   last_divergence_at is within the last 24h.
-
-
 def _load_state() -> dict:
     if not STATE_PATH.exists():
         return {}
@@ -308,9 +180,7 @@ def _write_state(state: dict) -> None:
             json.dump(state, f, indent=2, sort_keys=True)
         os.replace(tmp_path, STATE_PATH)
     except Exception as e:
-        # Callers (_record_failure/_success/_divergence) run inside
-        # exception-suppressing paths; without an explicit log the write
-        # failure disappears silently and the dashboard banner never fires.
+        # Callers run inside exception-suppressing paths; explicit log keeps the dashboard banner accurate.
         log.error(f"Failed to persist plausibility state to {STATE_PATH}: {e}")
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

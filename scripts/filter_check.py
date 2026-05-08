@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Daily filter monitor — detects SPY/BTC filter changes and auto-rebalances.
-
-Designed to run from launchd cron (no server dependency). Checks whether
-the SPY 200d MA or BTC 125d MA filter scalar has changed since the last
-run, and if so, executes rebalances for affected accounts.
-
-Usage:
-    uv run python3 scripts/filter_check.py              # normal: both filters
-    uv run python3 scripts/filter_check.py --filter btc # crypto-only run
-    uv run python3 scripts/filter_check.py --filter spy # equity-only run
-    uv run python3 scripts/filter_check.py --dry-run    # check only, no trades
-
-The two launchd plists invoke this script with different `--filter` scopes
-on different cadences (equity at 4:30 PM ET, crypto every 4 hours), so BTC
-flips are detected within a few hours instead of once daily. `force_refresh`
-is always on here so filter decisions never use a stale cached price.
-"""
+"""Filter monitor: detect SPY/BTC filter flips and auto-rebalance affected accounts. Launchd-fired."""
 
 import argparse
 import fcntl
@@ -49,9 +33,7 @@ from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_fil
 
 LOG_FILE = PROJECT_ROOT / "data" / "filter_check.log"
 
-# Account → filter type. A3 retired 2026-04-21 (removed from auto-rebalance
-# on filter changes). A3's validation_state.json status is "retired" so
-# even if this map were wrong, require_validated() would still block.
+# A3 retired — validation gate also blocks it independently of this map.
 ACCOUNT_FILTERS = {
     1: "spy",
     2: "spy",
@@ -60,16 +42,7 @@ ACCOUNT_FILTERS = {
 
 VALID_SCOPES = ("all", "spy", "btc")
 
-# Cross-process serialization lock. Two LaunchAgents (filter-check-equity and
-# filter-check-crypto, each on StartInterval=14400) can fire within
-# milliseconds of each other when their timers align — observed post-reboot
-# 2026-05-07 when both reset to "now + 4h" simultaneously. Concurrent writers
-# to filter_check.log produced interleaved output that broke the parser's
-# `===`-separator block detection: the crypto run's results would land inside
-# the equity run's block, making the crypto block look empty → outcome
-# misclassified as "error". This lock serializes the two invocations so they
-# log cleanly to a single file. Lock waits up to 120s for the other instance
-# to finish (filter checks take ~1-3s normally), then errors out.
+# Cross-process lock: equity + crypto LaunchAgents can fire concurrently and interleave log writes.
 _FILTER_CHECK_LOCK_PATH = PROJECT_ROOT / "data" / "risk_state" / "filter_check.lock"
 _FILTER_CHECK_LOCK_TIMEOUT_S = 120.0
 

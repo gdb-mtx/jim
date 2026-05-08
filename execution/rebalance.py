@@ -1,16 +1,4 @@
-"""
-Rebalance Engine — converts strategy signals into executable orders.
-
-Flow:
-1. Run strategy on recent prices to get current target weights
-2. Get current Alpaca positions
-3. Compute target positions (weights * portfolio_value / price)
-4. Diff target vs actual → generate buy/sell orders
-5. Apply risk checks (circuit breakers, position limits)
-6. Return order list for preview or execution
-
-Supports both individual strategies and portfolio blends with SPY filter.
-"""
+"""Rebalance engine: strategy signals → target positions → order list."""
 
 import logging
 
@@ -36,11 +24,7 @@ from data.alpaca_crypto_bars import get_crypto_bars, get_btc_bars
 
 
 def to_alpaca_equity_symbol(sym: str) -> str:
-    """Convert yfinance equity ticker to Alpaca format.
-
-    yfinance uses hyphens for share classes (BF-B, BRK-B),
-    Alpaca uses dots (BF.B, BRK.B).
-    """
+    """yfinance hyphens → Alpaca dots for share classes (BF-B → BF.B)."""
     return sym.replace("-", ".")
 
 
@@ -60,9 +44,7 @@ class RebalanceResult:
     btc_filter_scalar: float = 1.0
     vol_scalar: float = 1.0
     vol_scalar_diagnostics: dict | None = None
-    # N4 (AUDIT_MONTH2_REVIEW): intermediate weight snapshots for post-mortem
-    # reconstruction. `raw_signal_weights` = strategy output pre-overlay;
-    # `post_filter_weights` = after SPY/BTC filter, before vol-scaling.
+    # raw_signal_weights = strategy output pre-overlay; post_filter_weights = after SPY/BTC, pre-vol.
     raw_signal_weights: dict[str, float] = field(default_factory=dict)
     post_filter_weights: dict[str, float] = field(default_factory=dict)
     prices: dict[str, float] = field(default_factory=dict)
@@ -76,22 +58,7 @@ def get_current_signals(
     broker: "AlpacaBroker | None" = None,
     stages_out: dict | None = None,
 ) -> dict[str, float]:
-    """Run a strategy on recent data and return the latest target weights.
-
-    Args:
-        strategy_id: Strategy or portfolio ID
-        lookback_start: How far back to fetch prices (strategies need history for signals)
-        broker: Optional broker for real-time price quotes (used by trend filters)
-        stages_out: Optional dict; if provided, gets populated with keys
-            "raw" (pre-filter strategy output) and "post_filter" (after
-            SPY+BTC filter). Used by `compute_rebalance` to persist the
-            intermediate weight vectors to the rebalance journal (N4,
-            AUDIT_MONTH2_REVIEW). For non-portfolio paths no filter runs,
-            so raw == post_filter.
-
-    Returns:
-        Dict of {symbol: weight} for the most recent signal date.
-    """
+    """Run strategy on recent data and return latest target weights. stages_out captures pre/post-filter weights for the journal."""
     if strategy_id in PORTFOLIOS:
         return _get_portfolio_signals(
             strategy_id, lookback_start, broker=broker, stages_out=stages_out
@@ -325,22 +292,14 @@ def compute_rebalance(
     if risk_manager is None:
         risk_manager = RiskManager()
 
-    # 0. Validation gate — hard safety net. Three call sites
-    # (API route, APScheduler, filter_check) already check before
-    # reaching here; this guarantees a future 4th call site can't
-    # silently bypass the gate. Retired accounts raise unconditionally
-    # (no override bypass possible — see validation_gate.check). T4,
-    # AUDIT_MONTH2_REVIEW §4.
+    # Validation gate — hard safety net at the chokepoint (T4, AUDIT_MONTH2_REVIEW §4).
     require_validated(broker.account)
 
     # 1. Get current portfolio state
     portfolio_value = broker.get_portfolio_value()
     current_positions = broker.get_position_map()
 
-    # 2. Drawdown check — peak derived from snapshots; -35% latches the
-    #    catastrophe halt (blocks trading, manual reset required). The -10%
-    #    alert is surfaced in `risk_check` for the dashboard banner but
-    #    does not block. See AUDIT_MONTH2 C5 for the design rationale.
+    # Drawdown check — -35% latches catastrophe halt; -10% surfaces alert (AUDIT_MONTH2 C5).
     dd = compute_drawdown(broker.account, portfolio_value, risk_manager.limits)
     risk_manager.check_and_latch_halt(dd.drawdown, dd.equity_peak, portfolio_value)
     risk_check = {
@@ -360,19 +319,13 @@ def compute_rebalance(
             risk_check=risk_check,
         )
 
-    # 3. Get target weights from strategy (broker provides real-time prices for filters).
-    # N4: capture the raw (pre-overlay) and post-filter (pre-vol-scaling) stages
-    # for the rebalance journal.
+    # Capture raw + post-filter weight stages for the journal (N4).
     stages: dict = {}
     target_weights = get_current_signals(strategy_id, broker=broker, stages_out=stages)
     raw_signal_weights = stages.get("raw", dict(target_weights))
     post_filter_weights = stages.get("post_filter", dict(target_weights))
 
-    # 3a. Vol-scaling overlay (AUDIT_MONTH2 C4) — applies to strategies whose
-    # backtest uses `apply_vol_scaling`. Keeps sim/live parity by multiplying
-    # strategy weights by EWMA-vol-inverse × vol_target, clipped [floor, cap].
-    # Cap forced to 1.0 here regardless of config — Alpaca paper is spot-only /
-    # no margin, so the backtest's cap=1.5 was never reachable live either way.
+    # Vol-scaling overlay (AUDIT_MONTH2 C4). Cap forced to 1.0 — Alpaca paper is spot-only.
     vol_scalar = 1.0
     vol_scalar_diagnostics: dict | None = None
     portfolio_cfg = PORTFOLIOS.get(strategy_id, {})
@@ -466,35 +419,17 @@ def compute_rebalance(
         if qty > 0:
             target_positions[symbol] = qty
 
-    # 5b. Cash-constrained sizing for crypto buys, via Alpaca's notional
-    # (dollar-amount) order path. Crypto prices can drift 1-2% in the
-    # seconds between preview and fill; a qty-based order at a stale
-    # price then exceeds available cash and gets rejected with
-    # "insufficient balance". Specifying a dollar amount lets Alpaca
-    # compute qty at fill price, so we spend exactly what we have.
-    #
-    # Per-symbol notional = target_weight × portfolio_value, capped so
-    # the total crypto buy notional fits inside available cash with a
-    # small safety margin for spread + fees. Sells still use qty (we
-    # know exactly what we hold). Discovered 2026-04-22 on A4's first
-    # trade — three qty-based ETH buys got rejected as ETH rose 2%
-    # between preview and fill; the notional path settles cleanly.
+    # Crypto buys use notional (dollar) sizing — qty-based orders fail when prices drift between preview and fill.
     crypto_buy_notionals: dict[str, float] = {}
     if is_crypto and target_positions:
         available_cash = broker.get_cash()
-        # Sells run before buys in `submit_orders`, so the proceeds they
-        # free fund the buys in the same batch. Without including them in
-        # the cap, a rotation day (sell A → buy B) sizes B against pre-sell
-        # cash (~$0 when fully invested), leaving the proceeds stranded.
-        # Surfaced 2026-05-03 on A4's first ETH→XRP rotation: ETH sell
-        # freed $47K, XRP buy got notional $134, $47K idle for 24h.
+        # Include expected sell proceeds in the cap so rotation days don't strand cash.
         expected_sell_proceeds = sum(
             (current_qty - target_positions.get(s, 0)) * prices[s]
             for s, current_qty in current_positions.items()
             if current_qty > target_positions.get(s, 0) and prices.get(s, 0) > 0
         )
-        # Raw dollar target = weight × portfolio_value (not qty × price,
-        # so we aren't re-exposed to stale prices).
+        # Raw dollar target = weight × portfolio_value (avoid stale price exposure).
         raw_target_notionals = {
             s: target_weights[s] * portfolio_value
             for s in target_positions
@@ -669,10 +604,5 @@ def execute_rebalance(
     if not rebalance.orders:
         return []
 
-    # `submit_orders_settled` waits for crypto sells to fill and rescales
-    # buys against actual post-sell cash before submitting them — closes
-    # the recurring "insufficient non_marginable_buying_power" race that
-    # bit the daily A4 rebalance ~3-4 times. For equity batches and
-    # crypto batches without sells, this falls through to the original
-    # `submit_orders` fast path with no added latency.
+    # submit_orders_settled waits for crypto sells before sizing buys; equity falls through fast path.
     return broker.submit_orders_settled(rebalance.orders)

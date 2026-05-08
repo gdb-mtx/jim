@@ -498,12 +498,7 @@ class AlpacaBroker:
                     f"may credit cash later, leaving the buy under-sized."
                 )
 
-        # --- Rescale buys against actual post-sell cash ---
-        # Only emits a warning + rescale when there's a meaningful shortfall
-        # (>$1). Sub-dollar differences are rounding within the 0.999 buffer
-        # — they'd produce a "scaling by 1.0000" message that looks like a
-        # bug. Bumping the threshold keeps the warning signal-to-noise high
-        # so a real partial-fill or sell-rejection event stands out.
+        # Rescale buys against actual post-sell cash; >$1 threshold filters rounding noise.
         actual_cash = self.get_cash()
         total_buy_notional = sum((o.notional or 0.0) for o in buys)
         if total_buy_notional > 0:

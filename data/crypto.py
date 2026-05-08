@@ -12,19 +12,11 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
 
-# 9-coin BACKTEST universe — yfinance has all nine. Used by backtest/research
-# code paths that read historical prices via download_crypto_prices().
+# 9-coin backtest universe (yfinance); 8-coin live universe excludes BNB (Alpaca non-listing, HISTORY.md C11).
 CRYPTO_UNIVERSE = [
     "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "ADA-USD",
     "AVAX-USD", "LINK-USD", "DOT-USD", "XRP-USD",
 ]
-
-# 8-coin LIVE universe — Alpaca does not list BNB (regulatory non-listing
-# post 2023 SEC v. Binance enforcement; BNB ICO classified as unregistered
-# securities offering). Live signal computation pulls bars from Alpaca and
-# can only trade what Alpaca lists, so the live universe excludes BNB.
-# Backtest still uses the 9-coin set for historical fidelity.
-# See HISTORY.md C10/C11 and HANDOFF_ALPACA_BARS.md.
 LIVE_CRYPTO_UNIVERSE = [s for s in CRYPTO_UNIVERSE if s != "BNB-USD"]
 
 # yfinance ↔ Alpaca symbol mapping
@@ -169,12 +161,7 @@ def download_btc_prices(
     """
     import time
 
-    # Clamp to the BTC-FIRE data floor. yfinance serves BTC back to ~2014 at
-    # ~$400, but the project's plausibility band (and all real use cases —
-    # live trading, IS+OOS validation, crypto_robust_opt) anchor at 2018.
-    # Accepting older data would force either a loose $50 band (worse
-    # cross-contamination guard) or backtests that silently differ based on
-    # cache state. Clamping here keeps the invariant clean.
+    # Clamp to project floor (plausibility band + IS validation anchor at 2018).
     if start < "2018-01-01":
         print(f"download_btc_prices: clamping start {start} → 2018-01-01")
         start = "2018-01-01"
@@ -218,11 +205,6 @@ def download_btc_prices(
     btc = prices.iloc[:, 0]
     btc.name = "BTC-USD"
 
-    # Plausibility guard (AUDIT_MONTH2 S5). Raises PlausibilityError if
-    # yfinance returned a series that's clearly not BTC (e.g. 2026-04-21
-    # $9-$29 range). Caller gets a loud failure; bad data never cached.
-    # Prior inline `max < 1000` check replaced by the unified helper on
-    # 2026-04-21 for consistency across BTC/ETH/SPY/VIX/SHY.
     assert_plausible(btc, "BTC-USD")
 
     btc_df = btc.to_frame()

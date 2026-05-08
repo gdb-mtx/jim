@@ -24,12 +24,7 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
 
-# Single-flight refresh of the S&P 500 price cache. The inner `yf.download`
-# lock in `data.pipeline._YFINANCE_LOCK` only serializes individual batches —
-# concurrent callers of `download_sp500_prices` would still each enter the
-# refresh path and interleave 11×N batches, hammering Yahoo into 429s and
-# corrupting yfinance's internal SQLite cache. This lock ensures one full
-# refresh runs at a time; subsequent callers wait, then read the fresh cache.
+# Single-flight refresh: prevents concurrent callers from interleaving batches and triggering Yahoo 429s.
 _SP500_REFRESH_LOCK = threading.Lock()
 
 
@@ -123,11 +118,7 @@ def download_sp500_prices(
             print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
             return prices
 
-    # Stale path: serialize refresh across threads (concurrent dashboard
-    # endpoints fired 5 simultaneous refreshes on 2026-04-26 → Yahoo 429s
-    # + yfinance SQLite cache corruption). Double-checked locking so callers
-    # waiting on the lock can read the freshly-refreshed cache without
-    # re-doing the download themselves.
+    # Serialize refresh + double-checked re-read after lock release.
     with _SP500_REFRESH_LOCK:
         if _is_fresh():
             prices = pd.read_parquet(cache_path)
@@ -148,11 +139,7 @@ def download_sp500_prices(
         print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {start}...")
         print("This may take a few minutes on first run...")
 
-        # Download in batches to avoid yfinance timeouts. Retry + >=50%-per-batch
-        # coverage guard live in data.pipeline.download_with_retry (S4). If a
-        # batch still fails after retries, we raise rather than silently write
-        # a truncated cache (prior bug: Apr 20 refresh returned 91/451 tickers
-        # and corrupted signals).
+        # Batched download; raise on persistent batch failure rather than write a truncated cache.
         from data.pipeline import download_with_retry
         batch_size = 50
         all_prices = []
@@ -183,14 +170,7 @@ def download_sp500_prices(
 
         prices = pd.concat(all_prices, axis=1)
 
-        # Coverage gate: trailing-window instead of full-history. The old rule
-        # (≥80% of days since `start`) locked the live universe to pre-2013
-        # IPOs, so recent S&P additions could never be picked even once they
-        # had plenty of scoreable history. Measuring coverage over the last
-        # ~2 years lets newer names qualify once they're live-trading-ready,
-        # without corrupting backtests: ranks and vol-scaling use NaN-safe
-        # operations that exclude a ticker from a given day when it has no
-        # price for that day (pre-IPO rows stay NaN → can't be picked).
+        # Trailing-window coverage gate so recent S&P additions can qualify; pre-IPO NaNs are NaN-safe.
         coverage_window = min(500, len(prices))
         min_coverage = 0.80
         coverage = prices.tail(coverage_window).notna().sum() / coverage_window

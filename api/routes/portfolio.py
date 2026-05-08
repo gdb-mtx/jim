@@ -387,11 +387,7 @@ async def filter_status():
             except Exception:
                 pass
 
-            # Read-time cross-validation (AUDIT_MONTH2 S5). If the cached
-            # series' last close diverges >5% from the live broker quote,
-            # the cache is suspect — the MA computed from it may be wrong
-            # and can't be trusted as a filter input. Record the divergence
-            # to plausibility_state.json so the dashboard shows a warning.
+            # Cross-validate cache against live broker quote; >5% divergence flags the cache as suspect (AUDIT_MONTH2 S5).
             if live_spy is not None:
                 cross_validate_last_close(spy_prices, "SPY", live_spy)
 
@@ -473,16 +469,7 @@ async def data_freshness():
     from pathlib import Path
 
     raw_dir = Path(__file__).parent.parent.parent / "data" / "raw"
-    # Caches the dashboard surfaces freshness for. Source of truth here, not
-    # in code. stale_threshold_hours mirrors the cache's max_age_hours
-    # (see data/crypto.py etc.).
-    #
-    # The two crypto caches were load-bearing for live until 2026-05-06,
-    # when live signal computation migrated to Alpaca's bars endpoint
-    # (HISTORY.md C10). Post-migration they're consumed only by
-    # backtesting/research paths, hence the "(backtest)" label — stale
-    # there means "backtest cache is old," not "live is at risk."
-    # Equity caches remain load-bearing for live A1/A2 paths via yfinance.
+    # Crypto caches are backtest-only post-2026-05-06 (HISTORY.md C10); equity caches are still live-load-bearing.
     files = [
         {"name": "BTC prices (backtest)",      "file": "btc_prices.parquet",    "threshold_h": 20, "asset_class": "crypto"},
         {"name": "Crypto universe (backtest)", "file": "crypto_prices.parquet", "threshold_h": 20, "asset_class": "crypto"},

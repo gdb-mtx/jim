@@ -117,11 +117,7 @@ def main() -> int:
         )
         print("Test notification sent.")
 
-    # Daily heartbeat at 14:00 UTC -- one quiet ping per day so the user
-    # has positive confirmation the watcher is alive (otherwise scheduled
-    # runs are silent unless a flip happens, which is correct but feels
-    # like the system is broken). Window is the single cron tick that
-    # falls between 14:00 and 14:30 inclusive.
+    # Daily heartbeat at 14:00 UTC — confirmation the watcher is alive (otherwise silent unless a flip fires).
     now = datetime.now(timezone.utc)
     last_heartbeat_iso = state.get("last_heartbeat_date")
     today_str = now.date().isoformat()

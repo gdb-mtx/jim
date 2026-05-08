@@ -1,16 +1,4 @@
-"""
-FastAPI Backend — Serves strategy data to the React dashboard.
-
-The daily crypto rebalance for Account 4 used to live here as an
-in-process APScheduler job. It was retired on 2026-05-05 after a
-long-uptime drift incident: APScheduler's AsyncIOScheduler silently
-missed a fire after 5 days of uptime — the kind of failure mode an
-in-process scheduler is structurally exposed to. The job now runs
-via launchd (`scripts/com.fire.daily-crypto-rebalance.plist` →
-`scripts/daily_crypto_rebalance.py`), the same primitive the filter
-monitor already uses reliably. Post-Fly migration target is Fly Cron
-Machines (DEPLOYMENT_PLAN.md).
-"""
+"""FastAPI backend serving the React dashboard. Daily A4 rebalance is launchd-fired (see CLAUDE.md)."""
 
 import asyncio
 import logging
@@ -23,20 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import portfolio, orders, ops
 from api.research import strategies, backtests
 
-# Silence yfinance's pandas Timestamp.utcnow() deprecation spam. This MUST
-# come AFTER the imports above — yfinance registers its own
-# `('default', DeprecationWarning, '^yfinance')` filter at import time, and
-# `warnings.filterwarnings` prepends to the filter list. If we set our
-# filter first, yfinance's filter ends up ahead of ours and wins (first
-# match emits). Setting it last puts our ignore-rule at the head of the
-# list so it fires before yfinance's default-action filter.
-#
-# REMOVE THIS FILTER when yfinance migrates to Timestamp.now('UTC').
-# If pandas 5.0 is bumped before yfinance ships the fix, this filter becomes
-# a no-op and the underlying AttributeError will surface immediately — which
-# is the safer failure mode. uv.lock pins both packages, so the bite can
-# only happen when we deliberately upgrade pandas across major versions;
-# coordinate that with a yfinance bump.
+# Suppress yfinance Timestamp.utcnow() deprecation spam. MUST come after imports — yfinance
+# registers its own filter at import-time and warnings.filterwarnings prepends, so ours must be last.
 warnings.filterwarnings(
     "ignore",
     message=r"Timestamp\.utcnow is deprecated.*",
@@ -46,11 +22,7 @@ log = logging.getLogger("fire.api")
 
 
 def _startup_backfill_and_snapshot():
-    """Backfill equity history and take today's snapshots for all accounts.
-
-    Runs in a background thread so the server can start accepting requests immediately.
-    Also logs the current filter monitor state if available.
-    """
+    """Backfill equity history + take today's snapshots; runs in background thread at startup."""
     try:
         from data.snapshots import take_all_snapshots, backfill_from_alpaca
 
@@ -91,8 +63,7 @@ def _startup_backfill_and_snapshot():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: schedule backfill in background. No in-process scheduler —
-    daily crypto rebalance is fired by launchd (see module docstring)."""
+    """Startup: backfill in background. No in-process scheduler — A4 rebalance is launchd-fired."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _startup_backfill_and_snapshot)
     yield

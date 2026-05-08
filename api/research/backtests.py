@@ -119,11 +119,7 @@ async def run_backtest(
         periods = 365 if is_crypto else 252
         report = full_report(returns, name=strategy_name, periods_per_year=periods)
 
-        # IS / OOS split — matches the validation gate's holdout
-        # (train through 2022-12-31, test 2023-01-03 forward). Returns
-        # `is_metrics` / `oos_metrics` as slim scorecards for the UI to
-        # show alongside the full-sample `metrics`. `oos_start` is the
-        # first test-window return-date so the chart can mark the cutoff.
+        # IS/OOS split matches the validation gate's holdout (train through 2022-12-31).
         TRAIN_END = pd.Timestamp("2022-12-31")
         is_returns = returns.loc[:TRAIN_END]
         oos_returns = returns.loc[TRAIN_END + pd.Timedelta(days=1):]

@@ -1,9 +1,4 @@
-"""
-Data Pipeline — Download and manage market data.
-
-Uses yfinance as primary source. Cross-validate against a second source
-before trusting any backtest result (see PLAN.md Section 5: Data Quality).
-"""
+"""yfinance data download + parquet caching."""
 
 import os
 import threading
@@ -14,22 +9,12 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
 
-# Serialize yfinance calls across threads. Concurrent `yf.download` calls
-# share mutable global state and can return one thread's payload to a
-# different thread's request. Reproduced 2026-04-22 after five concurrent
-# calls (^VIX, SPY, 9-coin crypto, 18-ETF, BTC-USD) all came back with the
-# same BTC-USD 843-row shape — corrupted the crypto/VIX/SPY-filter caches
-# and would have put 50% of Account 4 into XLE had the rebalance fired.
+# Serialize yfinance: concurrent yf.download shares mutable globals and can cross-contaminate payloads.
 _YFINANCE_LOCK = threading.Lock()
 
 
 def write_parquet_atomic(df: pd.DataFrame, path: Path | str) -> None:
-    """Write a DataFrame to parquet atomically.
-
-    Writes to `path + .tmp`, then `os.replace()` swaps it into place.
-    A crash or Ctrl-C mid-write leaves the original file intact (or absent)
-    — never partial. Closes AUDIT_MONTH2.md S2.
-    """
+    """Atomic parquet write via tmp + os.replace (AUDIT_MONTH2 S2)."""
     path = Path(path)
     tmp = path.with_suffix(path.suffix + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,16 +31,7 @@ def download_with_retry(
     max_retries: int = 3,
     min_coverage_ratio: float = 0.5,
 ) -> pd.DataFrame:
-    """Download adjusted close prices with 3× exponential-backoff retry.
-
-    Raises on persistent failure — callers get either a full DataFrame or
-    an exception, never silently-partial data. Validates that the result
-    contains at least `min_coverage_ratio` of the requested symbols.
-
-    This is the single retry path for every live-trading yfinance call.
-    Closes AUDIT_MONTH2.md S4; same hardening that fixed the 91/451 S&P
-    corruption is now shared across `download_prices`, crypto, and BTC.
-    """
+    """Download adjusted closes with 3× exponential-backoff retry. Raises on persistent failure (AUDIT_MONTH2 S4)."""
     if not symbols:
         raise ValueError("symbols list is empty")
 
@@ -79,10 +55,6 @@ def download_with_retry(
                 prices = df[["Close"]]
                 prices.columns = symbols
 
-            # Defensive column verification. The lock above should prevent
-            # cross-thread contamination, but if yfinance ever returns
-            # ticker X under a request for ticker Y, raise instead of
-            # caching the wrong asset under the right label.
             extras = set(prices.columns) - requested
             if extras:
                 raise RuntimeError(
@@ -91,20 +63,7 @@ def download_with_retry(
                     f"extras={sorted(extras)}"
                 )
 
-            # Silent-drop guard. yfinance returns fewer columns than
-            # requested when individual tickers fail mid-batch (no error
-            # raised, just a smaller DataFrame). The per-batch coverage
-            # gate below only catches gross failures (>50% missing).
-            # Reproduced 2026-04-26: a 503-ticker S&P 500 refresh silently
-            # dropped 13 long-history names (BEN, FE, FOXA, FSLR, FTV, GL,
-            # GPC, GRMN, HAL, HAS, HBAN, HLT, HSIC) — all at 100% coverage
-            # in yfinance when re-requested individually. Cache landed at
-            # 488 stocks instead of the canonical 501.
-            #
-            # Recover the dropped names with a single follow-up download
-            # of just the missing tickers. If the follow-up *also* drops
-            # them, treat the absence as legitimate (likely a real ticker
-            # issue) and let the downstream coverage gate decide.
+            # yfinance silently drops failed tickers mid-batch. Retry just the missing ones.
             missing = requested - set(prices.columns)
             if missing and len(missing) < len(symbols):
                 print(
@@ -172,19 +131,7 @@ def download_prices(
     end: str | None = None,
     interval: str = "1d",
 ) -> pd.DataFrame:
-    """Download adjusted close prices for a list of symbols.
-
-    Retries on transient yfinance failure (see download_with_retry).
-
-    Args:
-        symbols: List of ticker symbols (e.g., ["SPY", "QQQ", "GLD"])
-        start: Start date string (YYYY-MM-DD)
-        end: End date string, defaults to today
-        interval: Data interval ("1d", "1wk", "1mo")
-
-    Returns:
-        DataFrame with DatetimeIndex and one column per symbol (adjusted close)
-    """
+    """Download adjusted closes; retries on transient yfinance failure."""
     return download_with_retry(symbols, start=start, end=end, interval=interval)
 
 
@@ -196,25 +143,7 @@ def download_and_cache(
     max_age_hours: int = 16,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
-    """Download prices and cache to parquet file for fast reloading.
-
-    Uses cached data if the file exists, has all requested symbols,
-    and is younger than max_age_hours. Otherwise re-downloads.
-
-    Args:
-        symbols: List of ticker symbols
-        start: Start date
-        end: End date
-        cache_name: Name for the cache file
-        max_age_hours: Re-download if cache is older than this (default 16h)
-        force_refresh: If True, skip cache read and re-fetch from yfinance.
-            Used by filter_check.py so filter decisions are never made on
-            hours-old cached prices. Still writes to cache on success so
-            subsequent readers benefit.
-
-    Returns:
-        DataFrame of prices (from cache if available and fresh)
-    """
+    """Download prices with parquet cache. force_refresh skips read but still writes on success."""
     import time
 
     cache_path = DATA_DIR / "raw" / f"{cache_name}.parquet"
@@ -223,11 +152,7 @@ def download_and_cache(
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             cached = pd.read_parquet(cache_path)
-            # Extra columns beyond what was requested signal a prior bad
-            # write (2026-04-22: spy_filter.parquet ended up with [EFA, SPY]
-            # after concurrent download contamination). Treat as corrupt
-            # and re-download rather than serving a subset that happens
-            # to look right.
+            # Extra columns = prior bad write (concurrent-download contamination); treat as corrupt.
             extras = set(cached.columns) - set(symbols)
             if len(cached) == 0:
                 print(f"Cache {cache_path.name} has 0 rows — refreshing")
@@ -243,9 +168,6 @@ def download_and_cache(
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)
 
-    # Plausibility guard (AUDIT_MONTH2 S5). Checks per-column against the
-    # BANDS dict — SPY, ETH-USD, BTC-USD, SHY, ^VIX have bands; other ETFs
-    # pass through silently. Coverage / staleness is handled elsewhere.
     from data.plausibility import assert_plausible_df
     assert_plausible_df(prices)
 
@@ -256,15 +178,6 @@ def download_and_cache(
 
 
 def get_returns(prices: pd.DataFrame, periods: int = 1) -> pd.DataFrame:
-    """Calculate percentage returns from price data.
-
-    Args:
-        prices: DataFrame of prices
-        periods: Number of periods for return calculation (1 = daily returns)
-
-    Returns:
-        DataFrame of returns
-    """
     return prices.pct_change(periods).dropna()
 
 

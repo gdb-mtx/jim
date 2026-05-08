@@ -65,12 +65,7 @@ class FilterCheckRun:
     accounts: list[dict] = field(default_factory=list)
     # [{"account": 4, "status": "executed", "orders": 2}]
     is_dry_run: bool = False
-    # True if the summary section shows any account in a non-production
-    # status — currently `dry_run` (from `--dry-run` CLI flag) or
-    # `blocked_by_harness` (from the 2026-04-22 sandbox harness used to
-    # verify dry-run semantics). Flips detected in such runs did NOT
-    # persist to filter_state.json, so timeline consumers should render
-    # them distinctly from real production flips.
+    # True for any non-production status (dry_run, blocked_by_harness); flips don't persist to filter_state.
 
 
 def _read_tail(path: Path, tail_bytes: int) -> str:
