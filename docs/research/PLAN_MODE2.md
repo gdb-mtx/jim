@@ -1,13 +1,5 @@
 # FIRE Trading System: Two-Mode Architecture
 
-## Reframing
-
-This isn't a hobby project and it isn't desperation either. It's a calculated bet: George has 76 months until 59½, a bridge plan that works (SEPP + RRIF + rental = ~$9.8K/mo), and ~$50K of investable capital. The bridge covers survival. The trading system's job is to compound that $50K at materially better than SPY over 6 years — turning it into $100-150K by 59½ when the retirement accounts unlock.
-
-$50K at 10% for 6 years = $88K. At 15% = $116K. At 20% = $149K. The difference between 10% (slightly above SPY) and 20% (real alpha) is $61K — meaningful money during the bridge. But a -30% drawdown at the wrong time = $15K gone from an already tight cash position. Risk management isn't optional — it's the difference between "this was smart" and "this was reckless."
-
-**The honest constraint:** We cannot afford to lose principal in the first 12 months while the bridge is tightest. After planned asset sales land through late 2026, cash stabilizes. So the trading system should be conservative in months 1-6, then can take more risk as the cash cushion builds.
-
 ---
 
 ## The Two Modes
