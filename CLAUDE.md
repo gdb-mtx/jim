@@ -9,7 +9,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
 - **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
 - `HISTORY.md` — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Look here when a code path mentions "post-CN fix" and you want to know what changed.
-- `VALIDATION_PLAN.md` — CAGR-first evaluation framework (v2, 2026-04-18)
+- `VALIDATION.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `docs/research/` — open research scoping (PLAN_MODE2: Mode 1+2 strategic plan, Phase A live; RATE_VOL_SCOPE: A5 candidate, MOVE-conditional TLT reversal). Revisit when picking up the vector.
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
@@ -24,7 +24,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Frontend**: React + TypeScript + TradingView Lightweight Charts (v5)
 - **Backend**: Python + FastAPI
 - **Risk**: Equal-weight top-N position sizing (at strategy layer) + SPY/BTC trend filters + vol-scaling overlay + a two-tier drawdown monitor (**-10% dashboard alert**, **-35% catastrophe halt with manual reset**). The -10% tier is a dashboard banner only, not persisted, no notifications. The -35% tier is the only persisted state (`{"halted": bool}`). Older controls (-15% auto-halt, -10% strategy-level breaker, Kelly + 2% rule + 20% position cap) are retired — see HISTORY.md C5/C7.
-- **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION_PLAN.md`.
+- **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION.md`.
 - **Statistical validation**: Six-test scorecard (all required before real money; quarterly re-validation enforced via gate):
   - **Test 1** — OOS holdout (train 2010-2022, test 2023-today).
   - **Test 2** — Rolling OOS with fixed parameters.
@@ -75,7 +75,7 @@ Rebalance schedule (two layers — exposure management + signal rotation):
 
 ### Strategies — OOS scorecard (live accounts)
 
-**Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION_PLAN.md`.**
+**Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.**
 
 Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), and C10 (Alpaca-bars migration for live crypto, 2026-05-06). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money. C11 (BNB excluded from live universe, regulatory non-listing) is documented and structurally handled, not a numerical caveat.
 
@@ -175,7 +175,7 @@ strategies/portfolio_config.py   — LIVE surface: PORTFOLIOS dict + ETF/STOCK/C
 strategies/portfolio_backtest.py — RESEARCH surface: run_portfolio / run_equity_core / run_combined_portfolio / apply_vol_scaling / _generate_strategy_returns. May import from portfolio_config (one-way).
 backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
 backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests + walk_forward_refit_analysis (per-window param refit)
-backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION_PLAN Test 4)
+backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION Test 4)
 backtesting/account_adapters.py — Per-account (returns, prices, strategy_fn) bundles for the validation runner
 backtesting/drawdown_halt.py — Post-hoc halt-and-hold layer. No-op at -35% across all current strategies.
 backtesting/costs.py      — Per-strategy transaction-cost layer. 5 bps equity / 20 bps crypto round-trip; subtracts `bps × turnover` from each day's return. `apply_costs=False` recovers gross returns for calibration runs.
@@ -206,7 +206,7 @@ dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with e
 dashboard/                — React + Vite + TradingView Charts
 scripts/start.sh          — Start backend + frontend (recommended)
 scripts/filter_check.py   — Daily filter monitor — auto-rebalances on SPY/BTC filter change
-scripts/run_validation.py — VALIDATION_PLAN Tests 1-6 runner; updates data/risk_state/validation_state.json
+scripts/run_validation.py — VALIDATION Tests 1-6 runner; updates data/risk_state/validation_state.json
 scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config
 scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
 scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
@@ -241,10 +241,10 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes). Backend on :8001, frontend on :5174.
 - **Backend only**: `uv run uvicorn api.main:app --reload --port 8001` (from project root). Port **8001** is the FIRE convention; :8000 is reserved for FIREMaster.
 - **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5174 (proxies API calls to :8001)
-- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION_PLAN.md`.
+- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION.md`.
   - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
   - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` and `walk_forward_refit_a2.py`. Support `--grid small|medium|large`.
-  - **Strategy-discovery workflow** — how to evaluate a new candidate strategy: see `VALIDATION_PLAN.md` → "Test 6 → Recipe for a new candidate strategy" (5-step process: write class → pick grid → run standalone refit → decide → wire into adapter).
+  - **Strategy-discovery workflow** — how to evaluate a new candidate strategy: see `VALIDATION.md` → "Test 6 → Recipe for a new candidate strategy" (5-step process: write class → pick grid → run standalone refit → decide → wire into adapter).
 - **Filter monitor**: Runs automatically via launchd every 4h (no server needed)
   - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
   - Check status: `launchctl list | grep fire`

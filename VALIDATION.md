@@ -1,4 +1,4 @@
-# Validation Plan — April 2026 (v2, CAGR-first)
+# Validation Framework — CAGR-first (v2)
 
 **Status:** Framework rebuilt 2026-04-18 under the CAGR-first thesis. Previous Sharpe-based version is in git history. All 4 accounts have been re-validated under the new scorecard.
 

@@ -248,4 +248,4 @@ Prior framework gated on OOS Sharpe ≥ 1.0; this is the wrong objective
 function for a 3-5 year wealth compounder (Sharpe penalizes upside vol
 and normalizes absolute return magnitude). Sharpe still shown on reports
 as informational context but not gated. Primary gates are CAGR + MaxDD
-+ Calmar. See `VALIDATION_PLAN.md`.
++ Calmar. See `VALIDATION.md`.

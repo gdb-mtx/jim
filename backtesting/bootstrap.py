@@ -1,7 +1,7 @@
 """
 Block Bootstrap — Monte Carlo confidence intervals on strategy returns.
 
-VALIDATION_PLAN.md Test 4: resample 20-day blocks with replacement to
+VALIDATION.md Test 4: resample 20-day blocks with replacement to
 preserve short-horizon autocorrelation, then compute Sharpe / MaxDD on
 each resample. The distribution gives a confidence interval on the
 claimed headline number.
@@ -36,7 +36,7 @@ def block_bootstrap(
 
     Returns:
         Dict with percentile Sharpes, MaxDDs, and pass/fail against the
-        5th-percentile threshold from VALIDATION_PLAN.md (Sharpe > 0.3).
+        5th-percentile threshold from VALIDATION.md (Sharpe > 0.3).
     """
     rng = np.random.default_rng(seed)
     arr = returns.dropna().values

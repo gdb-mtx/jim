@@ -17,7 +17,7 @@ Overlays:
   - turn_of_month_boost    — Ariel 1987 / Ogden 1990, exposure multiplier
   - spy_trend_filter       — Faber 2007, 200d MA regime binary 0.5/1.0
 
-Gate (CAGR-first framework per VALIDATION_PLAN.md):
+Gate (CAGR-first framework per VALIDATION.md):
   - OOS CAGR      ≥ 15%
   - OOS Calmar    ≥ 1.2
   - OOS/IS CAGR   ≥ 70%

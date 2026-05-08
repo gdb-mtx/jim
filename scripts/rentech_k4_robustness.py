@@ -14,7 +14,7 @@ it on four axes:
      orthogonal or are we re-picking the same names as existing accounts?
   D. Comparison to K=5 full consensus — is 4/5 the sweet spot?
 
-If K=4 holds up across all four tests, proceed to full 6-test VALIDATION_PLAN.
+If K=4 holds up across all four tests, proceed to full 6-test VALIDATION.
 If it fails any, narrow to what specifically is real.
 
 Usage:

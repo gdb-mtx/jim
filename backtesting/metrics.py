@@ -24,7 +24,7 @@ The primary scorecard is:
 
 Sharpe is still computed and returned (for comparison to external
 benchmarks) but is informational — no pass/fail threshold is anchored to
-it. See VALIDATION_PLAN.md for the current thresholds.
+it. See VALIDATION.md for the current thresholds.
 """
 
 import numpy as np

@@ -160,7 +160,7 @@ Three lines of evidence:
 
 2. **[HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)** (formerly BREAKTHROUGH.md) — two proposed strategy breakthroughs were tested under pre-committed thresholds. Both were killed honestly. The discipline of accepting those negative results is what surfaced the in-sample-tuned Sharpe problem that triggered the audit. Kill discipline > alpha claim.
 
-3. **[VALIDATION_PLAN.md](VALIDATION_PLAN.md)** — all three active accounts carry a current validation record with a pass/marginal status and a quarterly expiry. The gate refuses to trade on un-validated accounts, refuses override bypass on retired accounts, and logs warnings when override is active. This isn't a policy document — it's enforced code.
+3. **[VALIDATION.md](VALIDATION.md)** — all three active accounts carry a current validation record with a pass/marginal status and a quarterly expiry. The gate refuses to trade on un-validated accounts, refuses override bypass on retired accounts, and logs warnings when override is active. This isn't a policy document — it's enforced code.
 
 ---
 
@@ -256,7 +256,7 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 
 **Strategic + design references:**
 - **[PLAN_MODE2.md](docs/research/PLAN_MODE2.md)** — two-mode architecture strategic framing.
-- **[VALIDATION_PLAN.md](VALIDATION_PLAN.md)** — CAGR-first validation framework, thresholds, gate logic.
+- **[VALIDATION.md](VALIDATION.md)** — CAGR-first validation framework, thresholds, gate logic.
 - **[DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)** — Fly.io migration plan, phased rollout.
 - **[SDD.md](SDD.md)** — Software Design Decisions (patterns, lessons learned).
 - **[DATA_SOURCES.md](DATA_SOURCES.md)** — yfinance pain log + replacement candidates. Becomes load-bearing at Phase 5.
@@ -293,7 +293,7 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 - **Calmar** — CAGR / |MaxDD|. Primary risk-adjusted return metric.
 - **MAR** — equivalent to Calmar in this codebase (used interchangeably in older reports).
 - **Sortino, Omega, Sterling, Burke, Pain, Ulcer, UPI** — supplementary scorecard metrics from `backtesting/metrics.py:full_scorecard`. None are gated.
-- **Sharpe** — kept for cross-comparability, **not gated**. Treasury bills had Sharpe 5-10 from 2010-2022 — penalizing upside vol is the wrong objective for a wealth-compounding book. See VALIDATION_PLAN.md.
+- **Sharpe** — kept for cross-comparability, **not gated**. Treasury bills had Sharpe 5-10 from 2010-2022 — penalizing upside vol is the wrong objective for a wealth-compounding book. See VALIDATION.md.
 
 **System concepts:**
 - **Filter scalar** — multiplier applied to target weights based on regime filter (SPY 200d MA, BTC 125d SMA). 1.0 = full exposure, 0.5 = half, 0.0 = cash.

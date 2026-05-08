@@ -1,5 +1,5 @@
 """
-Validation Runner — VALIDATION_PLAN.md Tests 1-4 on a live-paper account.
+Validation Runner — VALIDATION.md Tests 1-4 on a live-paper account.
 
 CAGR-first framework (reaffirmed 2026-04-18). Project thesis: maximize
 CAGR subject to tolerable drawdowns over a 3-5 year horizon. Sharpe is

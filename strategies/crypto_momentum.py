@@ -10,7 +10,7 @@ Academic basis:
 - Trend following: Moskowitz, Ooi, Pedersen (2012) "Time Series Momentum"
 - BTC as regime indicator: analogous to SPY trend filter (Faber 2007)
 
-Parameters reverted 2026-04-18 to conservative defaults after VALIDATION_PLAN
+Parameters reverted 2026-04-18 to conservative defaults after VALIDATION
 Test 3 found the autoresearch-tuned 150d/top2 config was regime-unstable
 (top-5 configs had 0/5 overlap between 2020-22 and 2023-26 halves).
 Current params: 200d SMA filter, top 3, 21d lookback — the null values
