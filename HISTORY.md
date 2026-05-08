@@ -20,8 +20,9 @@ Numbering is chronological by discovery, not by topic. Gaps are real
 (e.g. C8 was never assigned). Tier 2 items use `S` prefix (S1, S2, ...),
 Tier 3 use `D`, Tier 4 use `R` — same convention, different sections.
 
-The authoritative ranked bug list with full per-item detail lives in
-`AUDIT_MONTH2.md`. This file is the digest.
+Full per-item history (with all the discovery context, Slack-style status
+threads, and follow-up sessions) lives in `docs/archive/AUDIT_MONTH2.md` —
+time-capsule, kept for forensic reference. HISTORY.md is the digest.
 
 ## April 2026 fix pack — Tier 1 (changed reported numbers)
 
@@ -30,10 +31,10 @@ The authoritative ranked bug list with full per-item detail lives in
 to equity trading calendar with A4 compounded Fri→Mon + ppy=252. Empirical
 delta ≤ 0.3pp CAGR / 0.05 Calmar.
 
-**C2 — BTC MA warmup bias** (fixed 2026-04-20). Strict `min_periods=period`
-on BTC moving-average warmup. SMA-125/top2 remains the min-Calmar winner
-(half A 2.89 / half B 2.94 with strict warmup; half B was 3.10 under the
-old min_periods=1 convention).
+**C2 — BTC MA warmup bias** (fixed 2026-04-20). BTC and SPY MA warmup is
+strict (`min_periods=window`) at every live and research site. SMA-125/top2
+remains the min-Calmar winner (half A 2.89 / half B 2.94 under strict warmup;
+half B was 3.10 under the old min_periods=1 convention).
 
 **C3 — S&P 500 survivorship bias** (NOT fixed). A1 standalone CAGR is ~1-2pp
 overstated. Acknowledged caveat; week+ of work to fix; only matters
@@ -140,8 +141,10 @@ unchanged (4.31 → 4.28).
 ## Tier 2 — Safety / concurrency (all fixed)
 
 - **S1 (2026-04-20)**: cross-process lock race. All three rebalance entry
-  points (API `/rebalance/execute`, APScheduler A4 job, `filter_check.py`)
-  serialize via `dual_rebalance_lock` (async + file lock).
+  points (API `/rebalance/execute`, the launchd-fired
+  `scripts/daily_crypto_rebalance.py`, and `filter_check.py`) serialize via
+  the same file lock (`dual_rebalance_lock` for the API; `file_rebalance_lock`
+  directly in the cron paths).
 - **S2 (2026-04-20)**: parquet writes are now atomic via `write_parquet_atomic`
   (write to `.tmp`, `os.replace`).
 - **S3 (2026-04-20)**: `save_snapshot` read-modify-write race fixed.
@@ -161,9 +164,62 @@ unchanged (4.31 → 4.28).
 
 ## Tier 4 — Reporting / audit hygiene (partial)
 
-Fixed: R1, R3, R11 (price-staleness flags unfetchable as drifted), R12, R16.
-Open: R2, R4-R10, R13-R15. None block paper or real-money operation. See
-`AUDIT_MONTH2.md` for per-item detail.
+Fixed:
+- **R1** (2026-04-20). Validation Test 2 was labeled `walk_forward_refit`
+  but never refit parameters. Renamed to `rolling_oos_fixed_params`; true
+  walk-forward REFIT added as Test 6 + standalone explorers
+  (`scripts/walk_forward_refit_a1.py`, `_a2.py`).
+- **R2** (2026-04-21). `FIRE_VALIDATION_OVERRIDE=1` was global and could
+  accidentally unblock retired A3. Retired status is now an unconditional
+  block (no override bypasses it); per-account override
+  `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` added; global override still works
+  for fail/unvalidated/expired only.
+- **R3** (2026-04-21, alongside C5). Strategy-level circuit breaker (-10%
+  per strategy) was dead code — never wired into `compute_rebalance`.
+  Deleted.
+- **R4** (2026-04-21). Journal entries were lost if execute raised mid-
+  flight. All three call sites (API, daily crypto cron, filter_check) now
+  wrap `execute_rebalance` in try/finally; `log_rebalance` carries
+  `execute_error`.
+- **R5** (2026-04-21). `reset_circuit_breaker` left no audit trail. Reset
+  now writes a journal entry with `source="halt_reset"` and pulls broker
+  equity best-effort.
+- **R9** (2026-04-21). Crypto bootstrap block size widened from 20d to 40d
+  to capture longer regime autocorrelation (BTC bull/bear cycles); equity
+  stays on 20d. A4 p5 CAGR tightened +25.1% → +20.9% — more conservative,
+  still passes p5≥0.
+- **R11** (2026-04-21). `check_price_staleness` silently skipped symbols
+  with unfetchable new prices. Now flagged as `drifted` with
+  `reason="unfetchable"`; API renders "(unfetchable)" in the 409 detail.
+- **R12** (2026-04-21, alongside C7). Kelly / fractional-Kelly position
+  sizing in `RiskManager` was dead code — never called from any rebalance
+  path. Deleted (`calculate_position_size`, `PositionSize`,
+  `kelly_fraction`, `max_loss_per_trade_pct`, `max_position_pct`).
+  `kelly_criterion` remains as an informational reporting metric in
+  `backtesting/metrics.py` only.
+- **R16** (2026-04-21). Rebalance journal didn't persist `vol_scalar` /
+  `vol_scalar_diagnostics`. Now does, across all three callers.
+
+Still open (none block paper or real-money operation):
+- **R6** — `marginal_portfolio_contribution` correlation uses native
+  overlap; CAGR uses union+fillna. Different samples for the two halves
+  of the portfolio-fit metric.
+- **R7** — Sterling ratio groups by `.index.year`, so partial start-year
+  inflates the mean.
+- **R8** — OOS/IS CAGR ratio gate threshold (70%) is gameable by moving
+  `TRAIN_END`; not load-bearing today since all strategies clear by a
+  wide margin.
+- **R10** — `is_non_tradeable` regex matches "CVR" anywhere in symbol,
+  so future small-cap expansion could spuriously reject CVR-prefixed
+  tickers.
+- **R13** — Live rejects negative weights as a defensive guard, but no
+  current strategy generates negatives. Belt-and-suspenders, kept as-is.
+- **R14** — Backtest uses yfinance adjusted closes; live uses Alpaca
+  `get_latest_prices()`. Indirectly counted under C6 (transaction costs);
+  vendor discrepancy itself is a latent gotcha around splits.
+- **R15** — Live qty rounding (`int(dollar/price)` for stocks, 8-decimal
+  for crypto) silently drops sub-1-share positions; backtest assumes
+  fractional. Cumulative impact <0.1% CAGR.
 
 ## 2026-04-22 — A4 first-entry cascading bugs (all resolved same session)
 

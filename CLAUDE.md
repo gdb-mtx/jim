@@ -7,16 +7,14 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 
 ### Key Documents
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
-- **`AUDIT_47.md`** — re-review checklist for code/docs created during the Opus 4.7 era (mid-Apr → 2026-05-08). Treat work from that window with skepticism: confidently-wrong narratives, over-engineering, comment essays, deference-driven architecture were the dominant failure modes. Read this before trusting any doc from that period. Move to `docs/archive/` after the full audit pass.
-- **`AUDIT_MONTH2.md`** — open bugs and fix plan from the 2026-04-20 adversarial review. Has caveats on every headline number; read this before trusting CAGR/Calmar figures below.
-- `HISTORY.md` — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Look here when a code path mentions "post-CN fix" and you want to know what changed.
+- **`HISTORY.md`** — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Canonical per-item description for every C/S/D/R label referenced in code or commits. Look here first when a code path mentions "post-CN fix" and you want to know what changed. The verbose original audit cycle (status-threaded discovery + follow-up sessions) is at `docs/archive/AUDIT_MONTH2.md`; the 4.7-era re-review checklist is at `docs/archive/AUDIT_47.md`. Both are time-capsules — read for forensic context only.
 - `VALIDATION.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `docs/research/` — open research scoping (PLAN_MODE2: Mode 1+2 strategic plan, Phase A live; RATE_VOL_SCOPE: A5 candidate, MOVE-conditional TLT reversal). Revisit when picking up the vector.
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
 - `DATA_SOURCES.md` — standing observation that yfinance is the root cause of nearly every cache-corruption incident, with an incident log and candidate replacements (Alpaca/Polygon/hybrid). Becomes load-bearing at Phase 5 (real money).
-- `docs/archive/` — superseded design docs and time-capsule research (PLAN, HUNT_APR2026, AUDIT, AUDIT_MONTH2_REVIEW, DECISIONS_RESOLVED, OPS_DASHBOARD_PLAN, HANDOFF_ALPACA_BARS). Read for historical context only.
+- `docs/archive/` — superseded design docs and time-capsule research (PLAN, HUNT_APR2026, AUDIT, AUDIT_MONTH2, AUDIT_MONTH2_REVIEW, AUDIT_47, DECISIONS_RESOLVED, OPS_DASHBOARD_PLAN, HANDOFF_ALPACA_BARS). Read for historical context only.
 - `References/` — Original 2020 proposal and Ernie Chan books
 
 ### Project Decisions
@@ -296,7 +294,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 **Validation status:** All three active accounts PASS the CAGR-first gates. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
 
-**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HISTORY.md` C10/C11 for the authoritative narrative. Tiers 2+3 fully closed. Tier 4 R2/R4-R10/R13-R15 are reporting hygiene, non-blocking. See `AUDIT_MONTH2.md` for the ranked detail; `HISTORY.md` for what each closed item changed.
+**Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HISTORY.md` C10/C11 for the authoritative narrative. Tiers 2+3 fully closed. Tier 4 R6/R7/R8/R10/R13/R14/R15 are reporting hygiene, non-blocking. See `HISTORY.md` for per-item detail.
 
 **Mode 2 (Informational Alpha):** Phase A in progress.
 - PEAD data pipeline + transcript scraper + scoring prompts + recommendation tracker built (`mode2/`).
@@ -315,8 +313,8 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
 
 **Next steps:**
-- **4.7-era audit pass** (priority). George switched back to Opus 4.6 (1M ctx) on 2026-05-08 after confirming the 4.7 quality regression. Code and docs from mid-Apr → 2026-05-08 need a skeptical re-review. Start with `AUDIT_47.md`; top of the list is `AUDIT_MONTH2.md` (verify "closed" claims), `HISTORY.md` (verify C-numbered narratives), `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py`.
-- **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items in AUDIT_MONTH2 are non-blocking cleanup.
+- **4.7-era audit pass** (done 2026-05-08). Cold-read of AUDIT_MONTH2.md against the current code came back clean: every closed claim that affects behavior matches code. Audit docs archived to `docs/archive/`; HISTORY.md is now the canonical digest. `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py` are still on the watch list for residual narrative drift; spot-check as you touch them.
+- **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items (R6-R8, R10, R13-R15) are non-blocking cleanup; see `HISTORY.md`.
 - **Find/build a new Account 4-class strategy** — directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `docs/research/RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).

@@ -156,7 +156,7 @@ Concretely: things here that most solo / small-team setups don't do.
 
 Three lines of evidence:
 
-1. **[AUDIT_MONTH2.md](AUDIT_MONTH2.md)** — an adversarial review surfaced 20+ latent bugs across Tier 1 (headline numbers), Tier 2 (concurrency + safety), Tier 3 (data correctness), and Tier 4 (reporting hygiene). 95% closed as of 2026-04-21. The remaining 5% is C3 survivorship (disclosed, pre-real-money) and low-severity hygiene. Every fix has a commit, a test, and a docstring citation.
+1. **[HISTORY.md](HISTORY.md)** — an adversarial review (April 2026) surfaced 20+ latent bugs across Tier 1 (headline numbers), Tier 2 (concurrency + safety), Tier 3 (data correctness), and Tier 4 (reporting hygiene). 95% closed as of 2026-04-21. The remaining 5% is C3 survivorship (disclosed, pre-real-money) and low-severity hygiene. Every fix has a commit and a test. Per-item digest in HISTORY.md; full status-threaded discovery context in `docs/archive/AUDIT_MONTH2.md`.
 
 2. **[HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)** (formerly BREAKTHROUGH.md) — two proposed strategy breakthroughs were tested under pre-committed thresholds. Both were killed honestly. The discipline of accepting those negative results is what surfaced the in-sample-tuned Sharpe problem that triggered the audit. Kill discipline > alpha claim.
 
@@ -225,7 +225,7 @@ None block paper or real-money operation.
 1. **Run it locally:** `./scripts/start.sh` → backend on :8001, dashboard on http://localhost:5174.
 2. **Read [CLAUDE.md](CLAUDE.md)** next — the operational manual. Loaded every Claude session, so it's the canonical "current state" reference.
 3. **Then [BOOK_SHAPE.md](BOOK_SHAPE.md)** for forward direction — what the book is, what's missing, what's prioritized.
-4. **Skim [AUDIT_MONTH2.md](AUDIT_MONTH2.md)** before trusting any headline number above — every CAGR/Calmar figure has caveats; this doc tracks them.
+4. **Skim [HISTORY.md](HISTORY.md)** before trusting any headline number above — every CAGR/Calmar figure has caveats; this doc tracks them.
 
 When something looks wrong, `git log --follow <file>` first — file behavior often predates current code (lesson learned the hard way; see CLAUDE.md "Working with Claude" section).
 
@@ -263,14 +263,14 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 - **[RATE_VOL_SCOPE.md](docs/research/RATE_VOL_SCOPE.md)** — candidate A4-class strategy scoping.
 
 **Bug catalog + audit trail:**
-- **[AUDIT_MONTH2.md](AUDIT_MONTH2.md)** — month-2 adversarial review, ranked bug catalog, per-finding resolution. Includes the architecture-decisions section (A3 retirement + A4 33% upgrade plan).
+- **[HISTORY.md](HISTORY.md)** — canonical per-item digest of every C/S/D/R finding (resolved + still-open).
 
 **Time-capsule context (in `docs/archive/`):**
 - **[PLAN.md](docs/archive/PLAN.md)** — original project plan, research roadmap, academic references.
 - **[HUNT_APR2026.md](docs/archive/HUNT_APR2026.md)** — April 2026 breakthrough hunt (both hypotheses falsified, cascaded into the audit).
-- **[DECISIONS_RESOLVED.md](docs/archive/DECISIONS_RESOLVED.md)** — full record of the A3-retirement + A4-weight decisions (must-knows now in AUDIT_MONTH2).
+- **[DECISIONS_RESOLVED.md](docs/archive/DECISIONS_RESOLVED.md)** — full record of the A3-retirement + A4-weight decisions.
 - **[HANDOFF_ALPACA_BARS.md](docs/archive/HANDOFF_ALPACA_BARS.md)** — the C10 migration brief (live crypto signal computation moved to Alpaca bars). Authoritative narrative is now in HISTORY.md C10/C11.
-- **[OPS_DASHBOARD_PLAN.md](docs/archive/OPS_DASHBOARD_PLAN.md)** + **[AUDIT.md](docs/archive/AUDIT.md)** + **[AUDIT_MONTH2_REVIEW.md](docs/archive/AUDIT_MONTH2_REVIEW.md)** — design records and review cycles, all closed.
+- **[AUDIT_MONTH2.md](docs/archive/AUDIT_MONTH2.md)** + **[AUDIT_47.md](docs/archive/AUDIT_47.md)** + **[AUDIT.md](docs/archive/AUDIT.md)** + **[AUDIT_MONTH2_REVIEW.md](docs/archive/AUDIT_MONTH2_REVIEW.md)** + **[OPS_DASHBOARD_PLAN.md](docs/archive/OPS_DASHBOARD_PLAN.md)** — full audit cycles + design records, all closed.
 
 ---
 
@@ -300,7 +300,7 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 - **Vol scalar** — Moreira-Muir overlay multiplier from realized-vol EWMA. Bounded [0.1, 1.0] (A4) or [0.5, 1.0] (A2).
 - **Filter monitor** — `scripts/filter_check.py`, runs every 4h via launchd, auto-rebalances on filter flip.
 - **Validation gate** — `execution/validation_gate.py`, blocks rebalance on accounts without a passing record. Quarterly expiry enforced.
-- **C-numbering** — `C1`, `C2`, ..., `C11` are stable identifiers for Tier 1 audit findings (changed reported numbers or remain open caveats). `S` = Tier 2, `D` = Tier 3, `R` = Tier 4. Per-item canonical descriptions in HISTORY.md; ranked detail in AUDIT_MONTH2.md.
+- **C-numbering** — `C1`, `C2`, ..., `C11` are stable identifiers for Tier 1 audit findings (changed reported numbers or remain open caveats). `S` = Tier 2, `D` = Tier 3, `R` = Tier 4. Per-item canonical descriptions in HISTORY.md; status-threaded discovery context in `docs/archive/AUDIT_MONTH2.md`.
 - **Robust-opt** — parameter search via `min(Calmar_half_A, Calmar_half_B)` rather than naive Sharpe-max. Picked SMA-125/top2 for A4 from a 144-config grid.
 
 ---

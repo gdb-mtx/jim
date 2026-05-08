@@ -174,12 +174,12 @@ Overrides (intentional friction, WARNING-logged when active):
 - `FIRE_VALIDATION_OVERRIDE=1` — global (all active accounts).
 - `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` — scoped to account N (1-4).
 
-Override covers FAIL, unvalidated, and expired. **Retired accounts are an unconditional block** — no override can bypass them (AUDIT_MONTH2 R2, 2026-04-21).
+Override covers FAIL, unvalidated, and expired. **Retired accounts are an unconditional block** — no override can bypass them (HISTORY.md R2).
 
 Gate wired into:
 - `POST /api/orders/rebalance/execute` → 403
 - `scripts/filter_check.py` auto-rebalance → skip + log
-- APScheduler daily crypto job → skip + log
+- launchd-fired `scripts/daily_crypto_rebalance.py` → skip + log
 
 Tests in `tests/test_validation_gate.py` (14 cases).
 

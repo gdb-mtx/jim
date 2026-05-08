@@ -24,7 +24,7 @@
 2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. `FIRE_SCHEDULER_ENABLED` flag keeps APScheduler off in laptop dev runs once Fly is the canonical scheduler host.
 3. **Boring tech.** Prefer documented, well-trodden tools over shiny. One CLI, one Dockerfile, one config file.
 4. **Every phase is reversible.** No one-way doors until Phase 5 pre-real-money split.
-5. **Paper-first — and paper *on the deployed infra* is itself a validation phase, not just a rehearsal.** The whole point of running paper on Fly before real money is that infrastructure bugs (cron fires at wrong time, volume unmounts, log drain silently breaks, auth middleware has a bypass, `fly scale count 2` slips through) only surface on production infra. We already found that our local backtest and local live didn't agree (AUDIT_MONTH2 C4). The equivalent for deployment is: laptop-paper and Fly-paper won't agree in ways we can't predict until Fly-paper has been running for weeks. **Real money requires deployed-paper time, not just laptop-paper time.**
+5. **Paper-first — and paper *on the deployed infra* is itself a validation phase, not just a rehearsal.** The whole point of running paper on Fly before real money is that infrastructure bugs (cron fires at wrong time, volume unmounts, log drain silently breaks, auth middleware has a bypass, `fly scale count 2` slips through) only surface on production infra. We already found that our local backtest and local live didn't agree (HISTORY.md C4). The equivalent for deployment is: laptop-paper and Fly-paper won't agree in ways we can't predict until Fly-paper has been running for weeks. **Real money requires deployed-paper time, not just laptop-paper time.**
 6. **Timeline alignment.** Paper-trading clock was reset 2026-04-20 after the stale-data bug invalidated the Mar 10 → Apr 17 window (see CLAUDE.md). Minimum 3 months of clean paper before real money is considered → **earliest real-money date: ~2026-07-20.** That's the backstop; the actual trigger is the deployed-paper validation gate in Phase 5, whichever is later.
 
 ---
@@ -212,7 +212,7 @@ Current FastAPI runs on localhost with **no auth**. Once it's on Fly on a public
 This is the near-term work. Everything happens on the laptop; the existing stack keeps running throughout. Purpose is to make the live surface explicit *before* we ever touch Fly — so that when we do, the Dockerfile copy-list writes itself and we're not also debugging a refactor at the same time we're debugging a deploy.
 
 - **Split `strategies/portfolio.py`** into `portfolio_config.py` (live: PORTFOLIOS dict, `compute_spy_trend_filter`, `compute_btc_trend_filter`) and `portfolio_backtest.py` (research: `run_combined_portfolio`, `apply_vol_scaling`, `run_equity_core`, `marginal_portfolio_contribution`, `_generate_strategy_returns`). Keep `strategies/portfolio.py` as a re-export shim during the transition so nothing breaks.
-- **Audit live imports.** Grep every file under `execution/`, `api/`, `scripts/filter_check.py` for any import from `backtesting/`, `mode2/`, or the backtest half of `portfolio.py`. There should be zero after the split. (AUDIT_MONTH2.md C4 is a reminder that the two halves used to differ silently — this audit closes the other direction: the live half doesn't accidentally depend on the research half.)
+- **Audit live imports.** Grep every file under `execution/`, `api/`, `scripts/filter_check.py` for any import from `backtesting/`, `mode2/`, or the backtest half of `portfolio.py`. There should be zero after the split. (HISTORY.md C4 is a reminder that the two halves used to differ silently — this audit closes the other direction: the live half doesn't accidentally depend on the research half.)
 - **Document the laptop↔cloud contract.** `data/risk_state/validation_state.json` is the only file that has to move from one side to the other. Add a sync step to `scripts/run_validation.py` that copies the fresh file to a predictable path, and later a runbook entry for uploading it to the Fly volume.
 - **Keep running locally as-is** for as long as we want. The refactor should be 100% behavior-preserving — nothing about how the live book trades changes. The only deliverable is "you can now draw a clean line around the live surface."
 - **Success:** all tests + dashboard still green; grep proves no live→backtest imports; laptop continues executing scheduled rebalances correctly for at least 2 weeks post-refactor before we start Phase 1.
@@ -271,7 +271,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - `scripts/filter_check.py` imports from `strategies.portfolio` — the shim must preserve every existing export name or the launchd-triggered rebalance path breaks.
 - `tests/` import from the same path — same constraint.
 - `PORTFOLIOS` references the strategy factory maps (ETF/STOCK/CRYPTO_STRATEGIES). Keep those maps in `portfolio_config.py` — don't let them drift into backtest, or the live surface pulls in research code.
-- `apply_vol_scaling` is research-side, but `execution/vol_scaling.py:compute_live_vol_scalar` mirrors its math for live. They share `vol_target`/`vol_halflife`/`scalar_cap` semantics — when editing either, the other must stay in 1e-6 parity (AUDIT_MONTH2 C4).
+- `apply_vol_scaling` is research-side, but `execution/vol_scaling.py:compute_live_vol_scalar` mirrors its math for live. They share `vol_target`/`vol_halflife`/`scalar_cap` semantics — when editing either, the other must stay in 1e-6 parity (HISTORY.md C4).
 
 **Non-goals for this refactor**
 - No behavior change. Pure reorganization.
@@ -316,7 +316,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 
 ### Phase 5 — Pre-real-money hardening
 **Gates — ALL must be satisfied before graduating to real money:**
-1. AUDIT_MONTH2 Tier 1 items C4 (vol-scaling), C5 (circuit breaker sim), C6 (fee model) fixed and validation reports re-issued.
+1. Tier 1 items C4 (vol-scaling), C5 (circuit breaker sim), C6 (fee model) fixed and validation reports re-issued (see HISTORY.md).
 2. **≥8 weeks of clean deployed-paper trading on Fly** with no unresolved incidents. "Clean" = all scheduled rebalances fired on time, no circuit breakers tripped by infrastructure flakes (only real signals), no duplicate orders, no silent cron misses caught by healthchecks.io.
 3. Calendar date ≥ 2026-07-20 (3 months post paper-clock reset).
 4. Runbook drilled end-to-end (not just written).
@@ -348,7 +348,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 2. **Alerting channel.** Pushover ($5 one-time, reliable push notifications to phone) or Telegram bot (free, but requires installed Telegram app)? Need to pick one to implement in Phase 4.
 3. **CI/CD for deploys.** Manual `flyctl deploy` from laptop, or GitHub Actions on push to `main`? Manual is fine for Phase 1–2; automation is a Phase 4/5 polish item.
 4. **Budget ceiling.** Estimated $5-8/mo Fly + free tiers for everything else. Any hard cap?
-5. **When to split paper/live.** Phase 5 = pre-real-money. Is that driven by a calendar date, by the AUDIT_MONTH2 Tier 1 C4/C5/C6 fixes landing, or by a separate gate?
+5. **When to split paper/live.** Phase 5 = pre-real-money. Is that driven by a calendar date, by the Tier 1 C4/C5/C6 fixes landing (HISTORY.md), or by a separate gate?
 
 **New concerns raised in discussion — folded in:**
 - **Deployed-paper is its own validation phase**, not a rehearsal. Phase 5 gate now requires ≥8 weeks of clean deployed-paper time. Infrastructure bugs (wrong-TZ cron, silent volume unmount, stale log drain, auth bypass) only surface in production.
@@ -371,8 +371,8 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 ## References
 
 - `CLAUDE.md` — system overview, ET time convention, current schedule
-- `AUDIT_MONTH2.md` — C4/C5/C6 sim-live parity findings gating the Phase 5 real-money graduation
-- `api/main.py` — APScheduler lifespan to be cut over in Phase 2
+- `HISTORY.md` — C4/C5/C6 sim-live parity findings gating the Phase 5 real-money graduation
+- `api/main.py` — FastAPI lifespan (post-2026-05-05 the daily crypto rebalance is launchd-fired, not in-process)
 - `scripts/filter_check.py` + `scripts/com.fire.filter-check.plist` — launchd cron to be migrated in Phase 3
 - `api/locks.py` — fcntl lock implementation, single-machine constraint source
 - `data/trading_dates.py` — ET-stable date helpers (already in place from Tier 3 D1/D2 fixes)
