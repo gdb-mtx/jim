@@ -50,3 +50,6 @@ Thumbs.db
 
 # References (large PDFs)
 References/*.pdf
+
+# Playwright
+.playwright-mcp/
