@@ -53,3 +53,6 @@ References/*.pdf
 
 # Playwright
 .playwright-mcp/
+
+# Claude Code
+.claude/
