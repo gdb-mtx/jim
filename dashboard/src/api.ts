@@ -1,5 +1,8 @@
 const BASE_URL = "http://localhost:8001/api";
 const DEFAULT_TIMEOUT_MS = 20_000;
+// Backtests can trigger cold-cache yfinance downloads (S&P 500 = ~5min for
+// 451 tickers). 20s is too short after overnight inactivity.
+const BACKTEST_TIMEOUT_MS = 360_000;
 // Rebalance execute submits orders serially to Alpaca (~0.5-1s per order);
 // a 40-order rebalance needs 40-50s. Use a generous timeout so the frontend
 // waits for the backend to finish, matching the backend file-lock guarantee
@@ -55,13 +58,17 @@ export async function fetchPortfolio(account = 1) {
 
 export async function fetchBacktest(strategyId: string, start = "2010-01-01") {
   return fetchJSON(
-    `${BASE_URL}/backtests/run/${strategyId}?start=${start}`
+    `${BASE_URL}/backtests/run/${strategyId}?start=${start}`,
+    {},
+    BACKTEST_TIMEOUT_MS,
   );
 }
 
 export async function fetchEquityCurve(strategyId: string, start = "2010-01-01") {
   return fetchJSON(
-    `${BASE_URL}/backtests/equity/${strategyId}?start=${start}`
+    `${BASE_URL}/backtests/equity/${strategyId}?start=${start}`,
+    {},
+    BACKTEST_TIMEOUT_MS,
   );
 }
 

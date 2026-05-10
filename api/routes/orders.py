@@ -235,6 +235,8 @@ async def _execute_under_lock(account: int, strategy_id: str):
             post_filter_weights=result.post_filter_weights,
             execute_error=execute_error,
             source="manual",
+            prices=result.prices,
+            target_positions=result.target_positions,
         )
 
     if execute_error:

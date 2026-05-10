@@ -98,7 +98,7 @@ def download_sp500_prices(
     import time
 
     cache_path = DATA_DIR / "raw" / "sp500_prices.parquet"
-    # S&P 500 refresh is slow (~5 minutes for 451 tickers); longer TTL than other caches.
+    # S&P 500 refresh is slow (~5 minutes for ~500 tickers); longer TTL than other caches.
     max_age_hours = 24
 
     def _is_fresh() -> bool:

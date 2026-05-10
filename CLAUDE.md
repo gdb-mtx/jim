@@ -213,6 +213,7 @@ scripts/daily_crypto_rebalance.py — Account 4 daily rebalance, launchd-fired a
 scripts/com.fire.daily-crypto-rebalance.plist — macOS launchd plist for the daily crypto rebalance (Hour=20, Minute=5 laptop-local; = 00:05 UTC in EDT)
 scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (every 4h, `--filter spy`)
 scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
+scripts/signal_tracker.py — Signal-only vs live return decomposition for A4 (reads rebalance journal + snapshots)
 scripts/watch_filters.py  — GitHub Actions travel-window watcher; pushes ntfy.sh alerts on SPY/BTC crossings while the laptop is asleep.
 
 # Mode 2: PEAD / Informational Alpha
@@ -259,6 +260,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
     ```
   - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist`
   - View daily rebalance logs: `cat data/daily_rebalance.log` (script log) or `cat data/daily_rebalance_stderr.log` (launchd stderr)
+- **Signal tracker**: `uv run python3 scripts/signal_tracker.py` — compares signal-only (perfect execution) returns to live Alpaca equity for A4. Decomposes the gap into execution drag by date. Run after rough periods or monthly as a sanity check. `--since YYYY-MM-DD` for a recent window. Drag < 2pp/month is normal; > 5pp/month points to an infrastructure incident.
 
 ### Development Rules
 - **Package manager**: Always use `uv` (not pip/poetry/conda). Use `uv run` to execute Python, `uv add` to install packages.

@@ -32,6 +32,8 @@ def log_rebalance(
     post_filter_weights: dict[str, float] | None = None,
     execute_error: str | None = None,
     source: str = "manual",
+    prices: dict[str, float] | None = None,
+    target_positions: dict[str, float] | None = None,
 ):
     """Append a rebalance event to the JSONL log.
 
@@ -81,6 +83,8 @@ def log_rebalance(
         "raw_signal_weights": raw_signal_weights,
         "post_filter_weights": post_filter_weights,
         "execute_error": execute_error,
+        "prices": prices,
+        "target_positions": {k: round(v, 8) for k, v in target_positions.items()} if target_positions else None,
         "orders": [
             {
                 "symbol": o.get("symbol", "?"),

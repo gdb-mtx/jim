@@ -148,6 +148,8 @@ def run_once(dry_run: bool = False) -> dict:
                     post_filter_weights=result.post_filter_weights,
                     execute_error=execute_error,
                     source="scheduled",
+                    prices=result.prices,
+                    target_positions=result.target_positions,
                 )
 
             if execute_error:
