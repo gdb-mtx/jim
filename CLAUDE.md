@@ -15,7 +15,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `BOOK_SHAPE.md` — what the book IS, what it ISN'T, and what functional components are missing (crisis alpha, non-price edge, regime adaptivity). The pivot from "hunt for A5" to "complete the book's architecture." Read before proposing new strategies.
 - `docs/research/` — open research scoping. Active tracks:
   - `HighYield_Strategy_STRC_NVDY_AMZY.md` — yield-harvesting flywheel (bridge-income strategy, different objective function than Mode 1 — see "Research Tracks" below)
-  - `ML_REGIME_OVERLAY.md` — LSTM/XGBoost regime detector as book-level overlay signal (Gap 3). Gated behind price-based macro composite — build the deterministic version first.
+  - `ML_REGIME_OVERLAY.md` — LSTM/XGBoost as standalone strategy (A5 candidate or A4 replacement) OR book-level regime overlay (Gap 3). Dual-role — kill gates determine which.
   - `RATE_VOL_SCOPE.md` — A5 candidate, MOVE-conditional TLT reversal (shelved: MOVE at multi-year lows)
   - `PLAN_MODE2.md` — Mode 1+2 strategic plan, Phase A live
 - **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`) — the full financial picture, bridge-plan projections. Yield strategy deep research docs (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`, `SCOUT_REVIEW_MAY2026.md`) moved to `docs/archive/` here in FIRE as of 2026-05-13.
@@ -39,7 +39,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
   - **Test 4** — Block bootstrap CAGR p5/p50/p95 (gated: p5 ≥ 0%).
   - **Test 5** — Portfolio fit (satellite marginal contribution; not gated).
   - **Test 6** — Walk-forward REFIT vs defaults (non-gating). Per-window grid search on adapter-defined `refit_param_grid`; PASS if defaults within 10% of refit or better, REVIEW only if refit stably beats defaults by >20%. Strategy-discovery pattern: new candidates get dropped in as `refit_strategy_factory` + grid on an adapter or run via `scripts/walk_forward_refit_*.py`.
-- **No shorting**: Use reverse ETFs instead when needed (avoids margin/borrow complexity)
+- **No shorting (current constraint, not permanent)**: Use reverse ETFs instead when needed. Avoids margin/borrow complexity on Alpaca. BOOK_SHAPE identifies IBKR + futures as the real crisis alpha unlock — revisit this constraint if/when broker migration happens.
 
 ### Three-Account Live Architecture
 Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of total book. A3 is retired but its Alpaca account slot is preserved for future strategy assignment.
@@ -115,7 +115,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
 - **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
 - **Stock Universe**: 501 S&P 500 stocks (cached parquet, survivorship bias noted). Coverage gate: trailing 500 trading days ≥80% non-NaN — lets recent S&P additions enter the rotation once they have ~2y of history without corrupting backtests (pre-IPO NaN rows propagate to NaN ranks → excluded from selection for periods before the ticker existed).
-- **Crypto Universe**: 9 coins for backtest, 8 coins for live (BTC, ETH, SOL, BNB*, ADA, AVAX, LINK, DOT, XRP). *BNB is in the backtest universe but excluded from live — Alpaca doesn't list it (regulatory non-listing post 2023 SEC v. Binance, see HISTORY.md C11). `data/crypto.CRYPTO_UNIVERSE` is the 9-coin backtest set; `data/crypto.LIVE_CRYPTO_UNIVERSE` is the 8-coin tradeable subset that live signal computation operates on. Quality/volume-gated by design — top-cap L1s and major smart-contract platforms only. Deliberate exclusion of memecoins (DOGE, SHIB, PEPE, etc.) and low-float altcoins. Any future crypto strategy must reuse the same universe or a subset; no expansion into thin-liquidity or narrative-speculation coins.
+- **Crypto Universe**: 9 coins for backtest, 8 coins for live (BTC, ETH, SOL, BNB*, ADA, AVAX, LINK, DOT, XRP). *BNB is in the backtest universe but excluded from live — Alpaca doesn't list it (regulatory non-listing post 2023 SEC v. Binance, see HISTORY.md C11). `data/crypto.CRYPTO_UNIVERSE` is the 9-coin backtest set; `data/crypto.LIVE_CRYPTO_UNIVERSE` is the 8-coin tradeable subset that live signal computation operates on. Quality/volume-gated by design — top-cap L1s and major smart-contract platforms only. Deliberate exclusion of memecoins (DOGE, SHIB, PEPE, etc.) and low-float altcoins. No memecoins (DOGE, SHIB, PEPE) or low-float narrative coins. An ML or alternative crypto strategy may use different data sources (on-chain metrics, funding rates, exchange flows) or a modified universe if justified by the thesis.
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007).
 - **BTC 125-day SMA trend filter**: Binary 100% cash when BTC < 125d SMA (sat out all of 2022). Robust-opt picked 125d from 200d/150d/125d/100d grid.
@@ -329,7 +329,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 **Next steps:**
 - **4.7-era audit pass** (done 2026-05-08). Cold-read of AUDIT_MONTH2.md against the current code came back clean: every closed claim that affects behavior matches code. Audit docs archived to `docs/archive/`; HISTORY.md is now the canonical digest. `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py` are still on the watch list for residual narrative drift; spot-check as you touch them.
 - **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items (R6-R8, R10, R13-R15) are non-blocking cleanup; see `HISTORY.md`.
-- **Open factor-strategy research** (Mode 1 expansion, no active sprint): rate vol (see `docs/research/RATE_VOL_SCOPE.md`, shelved — MOVE at lows), commodity vol, narrative-aware crypto. The April 2026 A5 hunt (`BOOK_SHAPE.md`) exhausted 12 vectors; the honest conclusion was diminishing returns on "find another uncorrelated factor strategy." Don't re-enter this loop without a specific new thesis.
+- **Open strategy research** (no active sprint): The April 2026 A5 hunt exhausted 12 vectors of *uncorrelated factor strategies* specifically — that search space has diminishing returns. But fundamentally different approaches (yield/carry, ML signals, non-price edges) are open vectors with active research docs. See `docs/research/` for current tracks. Shelved factor-strategy vectors: rate vol (`RATE_VOL_SCOPE.md`, MOVE at lows), commodity vol, narrative-aware crypto.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: Track C recommendation for 40 days (check price by 2026-05-25).
