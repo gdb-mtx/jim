@@ -47,38 +47,11 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** at 8:05 PM laptop-local time via launchd (`com.fire.daily-crypto-rebalance` plist → `scripts/daily_crypto_rebalance.py`). Lands at 00:05 UTC when the laptop is in EDT (UTC-4); drifts to other UTC offsets when traveling. Strategy uses 21d momentum so a few-hour intraday drift is signal noise. Replaced in-process APScheduler on 2026-05-05 after a long-uptime drift incident. Schedule was originally Hour=0 with `TZ=UTC` env var, but launchd interprets `StartCalendarInterval` in laptop-local TZ regardless of env var (and LaunchAgents queue during darkwake), so Hour=20 in laptop-local was chosen to fire while the laptop is reliably in FullWake. Cloud target post-Fly is Fly Cron Machines, which honor schedule TZ properly. Parameters picked via `scripts/crypto_robust_opt.py` by maximizing `min(Calmar_half_A, Calmar_half_B)` across 144 configs — regime-robust objective. SMA-125/top2 is the robust winner (half A 2.89 / half B 2.94). A4 weight in combined book is **33%**, with a pre-committed **40% upgrade** once ≥6 months of signal-trading days (not cash-on-filter) confirm live Calmar ≥ 2.0 and A4↔equity correlation ≤ 0.25.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via launchd at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for launchd details.
 
-Cross-account correlations (OOS backtest 2023-01-03 → 2026-03-10):
-- A1↔A2: **0.38** (backtest) — genuinely diversified
-- A1↔A4: 0.10-0.19
-- A2↔A4: 0.10-0.19
+Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +40.4%, Calmar 3.18** in backtest.
 
-**Live correlation panel** (dashboard) shows A1/A2/A4 pairs only. A4 first-entered positions on 2026-04-22 (50% BTC/USD + 50% ETH/USD); live correlations populate once A4 has ≥21 daily returns post-entry.
-
-Combined OOS (2023-01-03 → 2026-04-20; equity trading calendar, A4 compounded Fri→Mon, ppy=252; net of costs + vol-scaling):
-
-- Equity core (A1+A2 at 50/50): **CAGR +19.0%, MaxDD -6.1%, Calmar 3.13**
-- 3-account live book (A1+A2+A4 at 1/3 each): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**
-
-A4 weight sweep (OOS, current vs upgrade target):
-- A4 @ 33% / equity 67%: CAGR +26.4% / MaxDD −6.2% / Calmar **4.27** (current)
-- A4 @ 40% / equity 60%: CAGR +28.0% / MaxDD −6.5% / Calmar **4.33** (upgrade target)
-- Higher A4 → higher Calmar, monotonic across 25/33/40/50. The 40% upgrade gate (Calmar ≥ 2.0) is cleared with wide margin in backtest.
-
-**Forward-looking haircut on the combined Calmar 4.28:** mathematically correct (low pairwise correlations, time-offset drawdowns) but probably optimistic for real-money projections. The 3.3-year OOS window is mostly benign and contains regimes generous to our factor mix. Correlations spike in crises — the live A1↔A3 correlation of 0.84 vs backtest 0.38 is a cautionary example. Expect a realistic live Calmar closer to **2.5-3.5** over a multi-year period once you account for: (a) one stress-event correlation spike, (b) potential filter whipsaw on A4, (c) C3 survivorship ~1-2pp of A1 CAGR. The 2.0 upgrade gate is conservative by design — 4.28 clears it ~2×, which is the right margin, but don't cite 4.28 as "what we'll realize." The live-tracking clock (reset 2026-04-20) is the only thing that will settle this; expect the gap to show up in the A1↔A2 live correlation first.
-
-Account 4 standalone (OOS 2023-01-03 → 2026-04-20):
-**CAGR +40.4%, MaxDD -12.7%, Calmar 3.18** (Sharpe 1.76 informational). Block-bootstrap CAGR p5/p50/p95: **+20.9% / +42.9% / +73.6%** (40-day blocks per R9, captures crypto's longer regime autocorrelation).
-
-Multi-account credentials in `.env` (ALPACA_API_KEY, ALPACA_API_KEY_2, ALPACA_API_KEY_3, ALPACA_API_KEY_4). `AlpacaBroker(account=1|2|3|4)` selects credentials. Account 3 is retired; orders endpoint `_require_active()` guard + validation_gate both block rebalance attempts against it.
-
-Rebalance schedule (two layers — exposure management + signal rotation):
-- **Every 4 hours (launchd)**: Filter monitor checks all active accounts — auto-rebalances if SPY/BTC filter flips. Both equity and crypto plists use `StartInterval=14400`. Was once-daily-at-16:30 for equity but macOS dropped a fire after a closed-laptop deferred run; relative-interval re-arms reliably on wake. Pre-Fly.io measure.
-- **Daily at 8:05 PM laptop-local time**: Account 4 crypto signal rotation — automated via launchd (`com.fire.daily-crypto-rebalance` plist runs `scripts/daily_crypto_rebalance.py`, server-independent). Lands at 00:05 UTC when laptop is in EDT; drifts to other UTC offsets when traveling. Schedule chosen to fire while laptop is reliably in FullWake (LaunchAgents queue during darkwake).
-- **First Monday of month**: Accounts 1 & 2 momentum/trend signal rotation (manual).
-
-**Concurrency:** all three rebalance entry points (API `/rebalance/execute`, launchd A4 job, `filter_check.py`) serialize via `dual_rebalance_lock` (async + file lock) or, for the sync cron paths, the same `file_rebalance_lock` they observe. Contention raises `RebalanceLockedError` → 409 from the API, `status="locked"` from the cron.
+Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (launchd), A1/A2 first Monday of month (manual), filter monitor every 4h (launchd). See `AUTOMATION.md` for full operational detail.
 
 ### Strategies — OOS scorecard (live accounts)
 
@@ -124,151 +97,31 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period.
 - Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/crypto_momentum.py`, `strategies/portfolio.py`.
 
-### Risk Controls — Operational Behavior
+### Risk Controls (summary — see `AUTOMATION.md` for operational detail)
 
-**Time convention — ET is the system reference timezone.** All scheduled times in FIRE are anchored to America/New_York (ET, DST-aware). The equity market runs on ET, and the user is a digital nomad whose laptop local time shifts constantly — laptop-local timezones must never be load-bearing. Same discipline for both local (launchd) and cloud (Fly cron) schedulers: `TZ=America/New_York` or `CRON_TZ=America/New_York`. Enforced at the code layer by `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`) — use these, don't call `date.today()` or `datetime.now()` directly. The A4 crypto launchd job is the local-laptop exception: it fires at 8:05 PM laptop-local (= 00:05 UTC during EDT). launchd's `StartCalendarInterval` is interpreted in laptop-local TZ regardless of any `TZ` env var on the plist (LaunchAgents also queue during darkwake), so we picked an evening laptop-local hour for FullWake reliability. Cloud target (Fly Cron Machines) will fire at exact 00:05 UTC.
+- **Time convention:** ET (America/New_York) is the system reference timezone. Use `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`), never `date.today()` or `datetime.now()`.
+- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via launchd. Auto-rebalances on flip. Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
+- **Drawdown monitor:** Two tiers — **-10% dashboard alert** (amber banner, non-blocking) and **-35% catastrophe halt** (per-account kill-switch, manual reset required, 403 on rebalance). Neither threshold fires in 16y of backtest.
+- **Concurrency:** All rebalance entry points serialize via `dual_rebalance_lock` (async + file lock). Contention → 409 / `status="locked"`.
+- **Sub-broker-minimum rejections** on A4 (sub-$10 BTC dust orders) are expected and harmless — revisit only if recurring >30 days.
 
-**When are filters and circuit breakers checked?**
-Risk controls are checked at two levels:
+### Architecture (summary — see `docs/architecture.d2` for the visual, explore the code for detail)
 
-1. **Filter monitor (every 4h, automated)**: `scripts/filter_check.py` runs via macOS launchd every 4 hours (both equity and crypto plists, `StartInterval=14400`) — even when the server is off. Computes SPY and BTC filter scalars, compares to last-known state in `data/risk_state/filter_state.json`. If a filter flips, **auto-executes rebalances** for affected accounts with full safety rails. Logs to `data/filter_check.log` with `source="filter_monitor"` in the rebalance journal.
-
-2. **Scheduled rebalance (signal rotation)**: Rotates *which* stocks/assets to hold at the strategy's native cadence:
-   - **Account 4** (daily): launchd `com.fire.daily-crypto-rebalance` at 8:05 PM laptop-local (= 00:05 UTC in EDT; drifts on travel). Server-independent.
-   - **Accounts 1 & 2** (monthly): Manual trigger first Monday of month
-
-**Key design: exposure management is decoupled from signal rotation.** The filter monitor handles *how much* to hold (reacts same-day to filter changes). The scheduled rebalance handles *what* to hold (monthly/weekly signal rotation). Backtesting showed this split is critical: daily filter reaction = Sharpe 1.27, monthly lag = Sharpe 0.79 (worse than no filter). *Caveat for A4*: A4's signal rotation is daily, matching its filter cadence — so the decoupling is really about A1/A2.
-
-The dashboard's RiskStatusPanel and FilterStatusBanner show current status. FilterStatusBanner also shows the filter monitor's last check time and any recent auto-rebalances.
-
-**Drawdown monitor — two tiers:**
-
-- **-10% dashboard alert** — computed live in `/api/portfolio/risk` from current Alpaca equity + the daily snapshot history. Renders as an amber banner in `RiskStatusPanel`. Not persisted, no push notifications, no heartbeat. Reaction time = next dashboard poll (30s) or next rebalance preview. The SPY/BTC filters + vol-scaling are already de-risking continuously; the alert is a heads-up, not a gate.
-- **-35% catastrophe halt** — per-account kill-switch. Latches on first breach seen by either the `/risk` endpoint or a rebalance preview. `POST /api/orders/rebalance/execute` returns **403** while latched; manual reset via dashboard button or `POST /api/portfolio/risk/reset?account=N`.
-- **Peak is derived from snapshots, not stored.** `data/snapshots.py` writes one equity row per trading day per account; `compute_drawdown()` takes `max(snapshot_max, current_alpaca_equity)`. Removes the stale-peak failure mode entirely.
-
-**What the -35% threshold is and isn't:**
-- Deepest OOS MaxDD observed across live strategies: A1 -9.8%, A2 -7.3%, A4 -11.4%, combined -7.0%. Deepest IS MaxDD: A4 -13.68% (2022 crypto winter, filter trimmed it). -35% sits ~3× deeper than any observed event.
-- A test sweep across 16y of IS+OOS confirms **neither -35% nor the old -15% threshold ever fires** in backtest. The old -15% auto-halt was structurally redundant AND empirically inert.
-- -10% alert would fire ~3× per 16y per strategy in backtest — rare signal, not spam.
-
-**Breaker state** persists to disk (`data/risk_state/circuit_breaker_acct{N}.json`) — schema: `{"halted": bool}`. That's it. Corrupted file → fail-safe `halted=True` until manual reset.
-
-**Backtest parity:** `backtesting/drawdown_halt.py` provides `simulate_drawdown_halt(returns, halt_threshold=0.35)` — a post-hoc halt-and-hold layer. For the -35% threshold it's a no-op on every current strategy's historical returns (sim/live parity exact), but the scaffolding exists for stress-test scenarios or future threshold experiments.
-
-**Sub-broker-minimum order rejections are expected, not a bug.** Small drift on A4's daily crypto rebalance can produce sub-$10 BTC orders that Alpaca rejects with `cost basis must be >= minimal amount of order 10`. The journal correctly captures `orders_submitted: 2, orders_failed: 1` with the broker error message. Other legs execute normally — net financial impact zero. **Revisit only if dust rejections become recurring** (e.g., daily for >30 days) and start obscuring real failures in the `orders_failed` field.
-
-### Architecture
-```
-# Mode 1: Factor Trading System
-data/pipeline.py          — yfinance ETF data download & caching (threading.Lock serializes yf.download; returned-column verification rejects cross-thread contamination; cache-read schema check refuses corrupt caches; 0-row write+read guards reject empty data)
-data/sp500.py             — S&P 500 stock universe + VIX data
-data/crypto.py            — Crypto data pipeline (yfinance, BACKTEST surface; symbol mapping; `normalize_alpaca_position_symbol` converts `BTCUSD` → `BTC/USD` so position-API + order-API forms match in the rebalance diff). Exports `CRYPTO_UNIVERSE` (9 coins, backtest) and `LIVE_CRYPTO_UNIVERSE` (8 coins; BNB excluded — Alpaca regulatory non-listing, see HISTORY.md C11).
-data/alpaca_crypto_bars.py — Crypto data pipeline (Alpaca bars endpoint, LIVE surface; broker-native, no third-party publishing delay — see HISTORY.md C10). Returns yfinance-shaped DataFrame for drop-in compatibility: `get_crypto_bars()` defaults to LIVE_CRYPTO_UNIVERSE; `get_btc_bars()` for the BTC trend filter. No cache — fetches fresh each call by design.
-data/snapshots.py         — Daily equity snapshots (parquet) + Alpaca backfill
-data/trading_dates.py     — ET trading-date helpers (today_et, utc_ts_to_et_date) — TZ-stable
-data/correlation.py       — Inter-account correlation monitoring (rolling 21-day)
-data/plausibility.py      — Per-ticker value-plausibility checks + cross-validation + state
-strategies/base.py        — Abstract strategy interface
-strategies/trend_following.py — Time-Series & Multi-Timeframe Momentum
-strategies/momentum.py    — Cross-Sectional & Dual Momentum (ETF-based)
-strategies/stock_momentum.py — Individual stock momentum + VIX filter
-strategies/multi_asset_trend.py — Multi-asset trend following (SPY/TLT/GLD/DBC/EFA)
-strategies/low_volatility.py — Low-vol anomaly + momentum quality filter
-strategies/mean_reversion.py — Short-term reversal (buy weekly losers)
-strategies/crypto_momentum.py — Crypto momentum rotation (21-day, top 2, BTC filter)
-strategies/portfolio.py   — Re-export shim. Preserves existing import path.
-strategies/portfolio_config.py   — LIVE surface: PORTFOLIOS dict + ETF/STOCK/CRYPTO_STRATEGIES factory maps + compute_spy_trend_filter + compute_btc_trend_filter. Hard invariant: zero imports from backtesting/ or mode2/.
-strategies/portfolio_backtest.py — RESEARCH surface: run_portfolio / run_equity_core / run_combined_portfolio / apply_vol_scaling / _generate_strategy_returns. May import from portfolio_config (one-way).
-backtesting/metrics.py    — Sharpe, drawdown, Kelly, profit factor
-backtesting/validation.py — Rolling-OOS + Monte Carlo + regime tests + walk_forward_refit_analysis (per-window param refit)
-backtesting/bootstrap.py  — Block bootstrap for confidence intervals (VALIDATION Test 4)
-backtesting/account_adapters.py — Per-account (returns, prices, strategy_fn) bundles for the validation runner
-backtesting/drawdown_halt.py — Post-hoc halt-and-hold layer. No-op at -35% across all current strategies.
-backtesting/costs.py      — Per-strategy transaction-cost layer. 5 bps equity / 20 bps crypto round-trip; subtracts `bps × turnover` from each day's return. `apply_costs=False` recovers gross returns for calibration runs.
-execution/risk_manager.py — Halt-latch + pure `compute_drawdown(account, equity, ...)` helper. State file is `{"halted": bool}` only.
-execution/notifications.py — Shared macOS notification helper (osascript) used by `scripts/filter_check.py`. `FIRE_DISABLE_NOTIFICATIONS=1` silences for tests/headless.
-execution/vol_scaling.py  — Live vol-scaling scalar. Reads account equity returns and computes EWMA vol-target scalar.
-execution/validation_gate.py — Rebalance gate; blocks accounts without a passing validation record
-execution/alpaca_broker.py — Multi-account Alpaca client (4 paper accounts)
-execution/rebalance.py    — Signal-to-order pipeline (target weights → trade list). Crypto orders use `time_in_force="gtc"` and notional (dollar-amount) sizing on buys — sidesteps the price-drift-between-preview-and-fill "insufficient balance" reject path. Notional total capped to 99.9% of live Alpaca cash.
-execution/rebalance_log.py — Structured JSONL rebalance audit trail. Each entry carries `raw_signal_weights` (pre-overlay) + `post_filter_weights` (post-SPY/BTC, pre-vol) alongside scalars and final orders.
-api/main.py               — FastAPI backend (lifespan; no in-process scheduler — daily crypto rebalance is launchd-fired, see scripts/daily_crypto_rebalance.py)
-api/locks.py              — Per-account locks: async (in-process) + file-based (cross-process via fcntl)
-api/routes/portfolio.py   — Account summary, positions, equity history, correlation, risk status, filter status (LIVE — ships to cloud)
-api/routes/orders.py      — Rebalance preview/execute, order history, rebalance journal (LIVE — ships to cloud)
-api/routes/ops.py         — Scheduler status, filter state, validation, event timeline (LIVE — ships to cloud)
-api/research/backtests.py — Backtest runner (individual + combined + crypto). LAPTOP-ONLY — imports from backtesting/, won't ship to Fly.
-api/research/strategies.py — Strategy list with live metrics. LAPTOP-ONLY — same rationale.
-dashboard/src/strategyMetadata.ts — Strategy categories, descriptions, sort order
-dashboard/src/components/Tooltip.tsx — Reusable hover tooltip (dark theme)
-dashboard/src/components/Toast.tsx — Global toast notification system (error/warning/info)
-dashboard/src/components/EquityHistoryChart.tsx — Live equity curves (TradingView, per-account + combined)
-dashboard/src/components/CorrelationPanel.tsx — Correlation matrix + rolling chart + alerts (Combined view)
-dashboard/src/components/StrategyPanel.tsx — Grouped strategy list (Live/Portfolio/Building Blocks)
-dashboard/src/components/RiskStatusPanel.tsx — Circuit breaker status + reset (polls every 30s)
-dashboard/src/components/FilterStatusBanner.tsx — SPY/BTC trend filter status with price vs 200d MA
-dashboard/src/components/RebalancePanel.tsx — Preview/execute rebalance with action-classified order table (new/increase/decrease/exit)
-dashboard/src/components/RebalanceHistory.tsx — Rebalance event journal with expandable order details
-dashboard/                — React + Vite + TradingView Charts
-scripts/start.sh          — Start backend + frontend (recommended)
-scripts/filter_check.py   — Daily filter monitor — auto-rebalances on SPY/BTC filter change
-scripts/run_validation.py — VALIDATION Tests 1-6 runner; updates data/risk_state/validation_state.json
-scripts/crypto_robust_opt.py — Crypto parameter search via min(Calmar_A, Calmar_B); produced SMA-125/top2 production config
-scripts/walk_forward_refit_a1.py — True walk-forward REFIT for A1 Stock Momentum (per-window grid search + OOS eval)
-scripts/walk_forward_refit_a2.py — Same for A2 Low-Volatility leg
-scripts/daily_crypto_rebalance.py — Account 4 daily rebalance, launchd-fired at 00:05 UTC (replaced in-process APScheduler 2026-05-05)
-scripts/com.fire.daily-crypto-rebalance.plist — macOS launchd plist for the daily crypto rebalance (Hour=20, Minute=5 laptop-local; = 00:05 UTC in EDT)
-scripts/com.fire.filter-check-equity.plist — macOS launchd plist for SPY filter (every 4h, `--filter spy`)
-scripts/com.fire.filter-check-crypto.plist — macOS launchd plist for BTC filter (every 4h, `--filter btc`)
-scripts/signal_tracker.py — Signal-only vs live return decomposition for A4 (reads rebalance journal + snapshots)
-scripts/watch_filters.py  — GitHub Actions travel-window watcher; pushes ntfy.sh alerts on SPY/BTC crossings while the laptop is asleep.
-
-# Mode 2: PEAD / Informational Alpha
-mode2/earnings.py         — Finnhub EPS data + Insider Monkey transcript scraper + SEC EDGAR
-mode2/pead.py             — PEAD scoring prompt templates (structured JSON + quick analysis)
-mode2/tracker.py          — Recommendation JSONL tracker with outcome logging
-mode2/run_analysis.py     — CLI runner: fetch, summary, analyze, status commands
-data/mode2/transcripts/   — Cached transcript JSON files ({SYMBOL}_Q{N}_{YEAR}.json)
-data/mode2/recommendations.jsonl — Recommendation log with entry/exit/P&L tracking
-data/mode2/reports/       — Weekly markdown research reports
-References/mode2-data-sources-research.md — Full data source evaluation (9 sources tested)
-```
-
-### Mode 2 Usage
-- **Fetch earnings + transcripts**: `uv run python3 -m mode2.run_analysis fetch --symbols JPM,GS,C --quarter 1 --year 2026`
-- **Show summary**: `uv run python3 -m mode2.run_analysis summary --quarter 1 --year 2026`
-- **Generate analysis prompt**: `uv run python3 -m mode2.run_analysis analyze --symbol JPM`
-- **Tracker status**: `uv run python3 -m mode2.run_analysis status`
-- **Data sources**: Finnhub (free, EPS surprise + news), Insider Monkey (free, transcript scraping), yfinance (prices). See `References/mode2-data-sources-research.md`.
-- **API keys**: `FINNHUB_API_KEY` and `ALPHA_VANTAGE_API_KEY` in `.env`
-- **Transcript URL discovery**: Search `site:insidermonkey.com "{COMPANY}" "Q1 2026 earnings call transcript"`, add URL to `TRANSCRIPT_URLS` dict in `run_analysis.py`
-- **PEAD drift expectations by market cap**: Large-cap 1-3%, mid-cap 3-5%, small-cap 5-8%. Don't set small-cap targets on mega-cap banks.
+**Data:** `data/pipeline.py` (ETF/stock cache), `data/crypto.py` (backtest), `data/alpaca_crypto_bars.py` (live), `data/snapshots.py` (equity history), `data/trading_dates.py` (ET helpers), `data/plausibility.py` (value guards).
+**Strategies:** `strategies/portfolio_config.py` (LIVE surface — PORTFOLIOS dict, filters), `strategies/portfolio_backtest.py` (RESEARCH surface). Individual strategies in `strategies/*.py`. `strategies/portfolio_config.py` has a hard invariant: zero imports from `backtesting/` or `mode2/`.
+**Execution:** `execution/rebalance.py` (weights → orders), `execution/risk_manager.py` (drawdown), `execution/vol_scaling.py` (EWMA), `execution/validation_gate.py` (rebalance gate), `execution/alpaca_broker.py` (multi-account), `execution/rebalance_log.py` (JSONL audit).
+**API:** FastAPI on :8001. Live routes (`/portfolio`, `/orders`, `/ops`) ship to cloud. Research routes (`/backtests`, `/strategies`) are laptop-only.
+**Dashboard:** React + Vite + TradingView on :5174. 5-tab account switcher, equity charts, correlation monitor, rebalance UI, ops panel, backtests.
+**Mode 2:** `mode2/` — PEAD pipeline (Finnhub EPS + Insider Monkey transcripts + scoring prompts + tracker). CLI: `uv run python3 -m mode2.run_analysis {fetch|summary|analyze|status}`.
+**Scripts:** `scripts/start.sh` (both servers), `scripts/filter_check.py` (launchd 4h), `scripts/daily_crypto_rebalance.py` (launchd daily), `scripts/run_validation.py` (6-test runner), `scripts/signal_tracker.py` (A4 execution drag).
 
 ### Running the Project
-- **Both servers**: `./scripts/start.sh` (recommended — starts backend + frontend, cleans up stale processes). Backend on :8001, frontend on :5174.
-- **Backend only**: `uv run uvicorn api.main:app --reload --port 8001` (from project root). Port **8001** is the FIRE convention; :8000 is reserved for FIREMaster.
-- **Frontend only**: `cd dashboard && npm run dev` → http://localhost:5174 (proxies API calls to :8001)
-- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. Writes a markdown report + updates `data/risk_state/validation_state.json`. Rebalances on accounts without a `status="pass"` record (and unexpired) return 403. Quarterly re-validation enforced via `expires`. See `VALIDATION.md`.
-  - Test 6 runs if the adapter defines a `refit_param_grid`; adds ~15-60s per account depending on grid size.
-  - Standalone refit explorers: `scripts/walk_forward_refit_a1.py` and `walk_forward_refit_a2.py`. Support `--grid small|medium|large`.
-  - **Strategy-discovery workflow** — how to evaluate a new candidate strategy: see `VALIDATION.md` → "Test 6 → Recipe for a new candidate strategy" (5-step process: write class → pick grid → run standalone refit → decide → wire into adapter).
-- **Filter monitor**: Runs automatically via launchd every 4h (no server needed)
-  - Manual run: `uv run python3 scripts/filter_check.py` (or `--dry-run` to check without trading)
-  - Check status: `launchctl list | grep fire`
-  - View logs: `cat data/filter_check.log` or `cat data/risk_state/filter_state.json`
-  - Install (first time or re-install):
-    ```
-    launchctl unload ~/Library/LaunchAgents/com.fire.filter-check.plist 2>/dev/null  # remove old single-plist if present
-    rm -f ~/Library/LaunchAgents/com.fire.filter-check.plist
-    cp scripts/com.fire.filter-check-equity.plist scripts/com.fire.filter-check-crypto.plist scripts/com.fire.daily-crypto-rebalance.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.fire.filter-check-equity.plist
-    launchctl load ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist
-    launchctl load ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist
-    ```
-  - Uninstall: `launchctl unload ~/Library/LaunchAgents/com.fire.filter-check-equity.plist ~/Library/LaunchAgents/com.fire.filter-check-crypto.plist ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist`
-  - View daily rebalance logs: `cat data/daily_rebalance.log` (script log) or `cat data/daily_rebalance_stderr.log` (launchd stderr)
-- **Signal tracker**: `uv run python3 scripts/signal_tracker.py` — compares signal-only (perfect execution) returns to live Alpaca equity for A4. Decomposes the gap into execution drag by date. Run after rough periods or monthly as a sanity check. `--since YYYY-MM-DD` for a recent window. Drag < 2pp/month is normal; > 5pp/month points to an infrastructure incident.
+- **Both servers**: `./scripts/start.sh` (recommended). Backend on :8001, frontend on :5174. Port :8000 is FIREMaster.
+- **Backend only**: `uv run uvicorn api.main:app --reload --port 8001`
+- **Frontend only**: `cd dashboard && npm run dev`
+- **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. See `VALIDATION.md` for the strategy-discovery workflow.
+- **Filter monitor**: Runs automatically via launchd every 4h. Manual: `uv run python3 scripts/filter_check.py` (or `--dry-run`). Install/uninstall commands in `AUTOMATION.md`.
+- **Signal tracker**: `uv run python3 scripts/signal_tracker.py` — A4 signal-only vs live return decomposition. `--since YYYY-MM-DD` for recent window.
 
 ### Development Rules
 - **Package manager**: Always use `uv` (not pip/poetry/conda). Use `uv run` to execute Python, `uv add` to install packages.
@@ -316,15 +169,7 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 - Week 1 (2026-04-15): 6 companies analyzed, 1 long recommendation (C, conviction 4/5), 5 skips. C long at $131.69, stop $125, target $138, 40-day hold (paper).
 - **Key learning**: Large-cap PEAD drift is 1-3% (not 5-8% as in academic literature which skews small-cap). Best PEAD opportunities will be mid-caps with less analyst coverage in weeks 2-4 of earnings season.
 
-**Dashboard infrastructure:**
-- 5-tab account switcher, live equity charts, correlation monitor, Backtests with grouped strategy panel
-- All components `React.memo` optimized, no loading gates on background polls
-- Data caching: ETF/SPY/S&P500/VIX/crypto parquets with staleness checks
-- Daily equity snapshots, Alpaca backfill, circuit breaker monitoring, filter status
-- Rebalance UI: preview → confirm → execute, action-classified orders, per-account locks
-- Filter monitor: `scripts/filter_check.py` via launchd every 4h
-- Ticker mapping: yfinance hyphens → Alpaca dots via `to_alpaca_equity_symbol()`
-- Snapshot data quality: Alpaca backfill writes NaN for cash/positions — don't treat as zero
+**Dashboard:** React + TradingView on :5174. Tabs: Live Portfolio (5-account switcher + equity charts + correlation), Rebalance (preview → execute), Ops (filter/validation/events), Backtests. Ticker mapping: yfinance hyphens → Alpaca dots via `to_alpaca_equity_symbol()`.
 
 **Next steps:**
 - **4.7-era audit pass** (done 2026-05-08). Cold-read of AUDIT_MONTH2.md against the current code came back clean: every closed claim that affects behavior matches code. Audit docs archived to `docs/archive/`; HISTORY.md is now the canonical digest. `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py` are still on the watch list for residual narrative drift; spot-check as you touch them.
