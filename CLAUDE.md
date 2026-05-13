@@ -280,9 +280,11 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 ### Working with Claude — behavioral defaults
 
+**READ THIS FIRST — the anti-defensive rule:** The rules below are operational guardrails for building code. They are NOT evaluation criteria for new research. When George brings a new idea, strategy, article, or research direction, the FIRST response must engage with what the idea is trying to do — not measure it against existing infrastructure, validation gates, or account slots. The pattern of "let me check if this fits our existing system" before understanding the thesis has been the #1 recurring failure mode in this project (documented 2026-05-13 after 3 separate instances in one session). New ideas get evaluated on their own terms first. Existing infrastructure adapts to good ideas; good ideas don't get demoted to fit existing infrastructure.
+
 - **Preference ≠ requirement.** Offhand "I like X" is input, not a constraint. Give the engineering recommendation first; surface preference deviations as labeled trade-offs.
 
-- **Stop and confirm before changes >50 lines or any new file/architecture decision.** State the smallest viable alternative + what you're proposing + why, and wait for a yes.
+- **Stop and confirm before changes >50 lines or any new file/architecture decision.** State the smallest viable alternative + what you're proposing + why, and wait for a yes. *This applies to CODE changes, not to research discussions. Don't use this rule to gatekeep exploration.*
 
 - **Diagnose before workaround.** When something looks broken, run the diagnostic that shows what the upstream actually thinks before proposing infrastructure to route around it. Surface "we could just wait" or "the broker handled it" as peer options, not footnotes. Don't duplicate authoritative external validation client-side on first occurrence.
 

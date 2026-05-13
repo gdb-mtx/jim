@@ -1,8 +1,8 @@
-# ML Regime Overlay — Scoping Doc (2026-05-13)
+# ML Signal Research — Scoping Doc (2026-05-13)
 
-**Goal:** Evaluate whether a neural network (LSTM or similar) trained on multi-asset features can serve as a book-level regime detector that coordinates de-risking across accounts BEFORE individual trend filters trigger. This addresses BOOK_SHAPE Gap 3 (regime adaptivity).
+**Goal:** Evaluate whether a neural network (LSTM/XGBoost) trained on multi-asset features can generate a tradeable signal — either as a **standalone strategy** (Account 5 candidate, or A4 replacement if it outperforms momentum on walk-forward) or as a **book-level regime overlay** that coordinates de-risking across accounts. The data and the kill gates decide which role it plays, not architectural bias.
 
-**Origin:** @RohOnChain article on X (2026-05-06, ~1M views) describing an LSTM-based directional prediction framework. George flagged it as a research vector. The article's framework is technically sound on the hard parts (stationarity, walk-forward validation, early stopping) but aspirational on results (no actual backtest numbers reported). Our interest is not in the article's "complete trading system" framing — we have strategies. We need a smarter regime signal.
+**Origin:** @RohOnChain article on X (2026-05-06, ~1M views) describing an LSTM-based directional prediction framework. George flagged it as a research vector. The article's framework is technically sound on the hard parts (stationarity, walk-forward validation, early stopping) but aspirational on results (no actual backtest numbers reported).
 
 **Relationship to BOOK_SHAPE:** Gap 3 names three candidate approaches, ranked by risk:
 1. **Price-based macro composite** (WALCL/DXY/M2/VIX term structure) — deterministic, ~1 week, MEDIUM-HIGH confidence. **This should be built first.**
@@ -15,11 +15,21 @@ The ML overlay is the natural escalation from the price-based composite. Same fe
 
 ---
 
-## What this is NOT
+## Two possible roles — let the data decide
 
-This is NOT a standalone trading strategy. Not an Account 5 candidate. Not trying to predict price or pick stocks. It's an **overlay signal** — a scalar between 0.0 and 1.0 that tells the entire book how much risk to take right now. It would sit alongside the existing SPY 200d and BTC 125d filters in `strategies/portfolio_config.py`, not replace them.
+### Role A: Standalone strategy (Account 5 candidate or A4 replacement)
 
-Think of it as vol-scaling's smarter cousin: vol-scaling adjusts exposure based on recent realized volatility. An ML overlay would adjust exposure based on learned regime patterns across multiple data streams simultaneously.
+An LSTM/XGBoost that takes multi-asset features and outputs a directional signal IS a strategy — the same way momentum rank + top-N is a strategy. Both are signal → position pipelines. The ML version uses 8-15 features and learns non-linear interactions; our current strategies use 1 feature each (trailing return). If walk-forward performance clears the validation gates (CAGR ≥ 15%, Calmar ≥ 1.0), it has the same standing as any other account.
+
+Concrete: train on crypto-specific features (funding rates, exchange flows, BTC dominance, cross-coin momentum dispersion) → directional signal on BTC/ETH/SOL → position sizing via vol-scaling. This would compete directly with A4's 21-day momentum signal. A4 has a 3.18 Calmar in backtest and -7.29% live in 3 weeks. If an ML signal beats momentum on walk-forward AND has better execution characteristics (less turnover, less whipsaw), it could replace A4.
+
+### Role B: Book-level regime overlay
+
+A scalar between 0.3 and 1.0 that tells the entire book how much risk to take right now. Sits alongside the existing SPY 200d and BTC 125d filters in `strategies/portfolio_config.py`. Think of it as vol-scaling's smarter cousin: vol-scaling adjusts based on recent realized volatility, the overlay adjusts based on learned regime patterns across multiple data streams simultaneously. Addresses BOOK_SHAPE Gap 3.
+
+### The kill gates determine which role (or neither)
+
+Phase 1 produces walk-forward accuracy + feature importance. If directional accuracy > 56% on a tradeable asset (SPY, BTC), it's a strategy candidate. If accuracy is 52-55% but the signal fires early relative to existing filters, it's an overlay candidate. If accuracy < 52%, it's noise — kill and document.
 
 ---
 
