@@ -51,6 +51,8 @@ Applied to FIRE, this reframes the hunt from "more of what we have" to "what's m
 
 The three rows in bold are the real gaps.
 
+**Why everything above is factor/price-based:** The system was built around what we could validate rigorously — price-based signals with 16 years of backtest data, pre-committed thresholds, and walk-forward testing. Factor strategies (momentum, trend, mean-reversion, low-vol) have the deepest academic literature, the longest data, and the clearest mechanisms. Vol-scaling (Moreira & Muir 2017) replaced Kelly for sizing because our signals tell us *which* assets to hold, not *how much we expect to earn* — and vol-scaling is the reduced-form Kelly that sidesteps the hardest estimation problem (forward expected returns). This was the right foundation. But it also means every account shares the same vulnerability: they all need price to move in our favor to make money. A yield/carry strategy that generates distributions mechanically — or a non-price signal that fires on fundamentals — would be structurally different from everything in the map, which is itself a form of diversification the current book lacks. The A4 live performance gap (-7% live vs +5% signal in 3 weeks, as of 2026-05-13) is a reminder that backtest-validated factor strategies and real-world execution are different things.
+
 ---
 
 ## The three functional gaps
