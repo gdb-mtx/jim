@@ -15,6 +15,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `BOOK_SHAPE.md` — what the book IS, what it ISN'T, and what functional components are missing (crisis alpha, non-price edge, regime adaptivity). The pivot from "hunt for A5" to "complete the book's architecture." Read before proposing new strategies.
 - `docs/research/` — open research scoping. Active tracks:
   - `HighYield_Strategy_STRC_NVDY_AMZY.md` — yield-harvesting flywheel (bridge-income strategy, different objective function than Mode 1 — see "Research Tracks" below)
+  - `ML_REGIME_OVERLAY.md` — LSTM/XGBoost regime detector as book-level overlay signal (Gap 3). Gated behind price-based macro composite — build the deterministic version first.
   - `RATE_VOL_SCOPE.md` — A5 candidate, MOVE-conditional TLT reversal (shelved: MOVE at multi-year lows)
   - `PLAN_MODE2.md` — Mode 1+2 strategic plan, Phase A live
 - **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`) — the full financial picture, bridge-plan projections. Yield strategy deep research docs (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`, `SCOUT_REVIEW_MAY2026.md`) moved to `docs/archive/` here in FIRE as of 2026-05-13.
