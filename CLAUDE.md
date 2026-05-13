@@ -5,12 +5,19 @@
 ### Guiding Principle
 We're optimized for a builder with an AI partner. Different constraints, different optimal path. We build fast, iterate fast, and the infrastructure serves the research.
 
+**Bigger picture:** FIRE is one piece of George's bridge-to-59.5 financial plan. The full life picture — net worth, property sales, SEPP 72(t), income targets, risk tolerance — lives in **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`). Not all research that touches FIRE is a factor-trading strategy. Some serves income generation, yield harvesting, or life-design objectives with different evaluation criteria. When George brings research from outside (Gemini sessions, personal analysis), engage with the thesis on its own terms before reaching for the CAGR/Calmar gates.
+
 ### Key Documents
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
 - **`HISTORY.md`** — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Canonical per-item description for every C/S/D/R label referenced in code or commits. Look here first when a code path mentions "post-CN fix" and you want to know what changed. The verbose original audit cycle (status-threaded discovery + follow-up sessions) is at `docs/archive/AUDIT_MONTH2.md`; the 4.7-era re-review checklist is at `docs/archive/AUDIT_47.md`. Both are time-capsules — read for forensic context only.
 - `VALIDATION.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
-- `docs/research/` — open research scoping (PLAN_MODE2: Mode 1+2 strategic plan, Phase A live; RATE_VOL_SCOPE: A5 candidate, MOVE-conditional TLT reversal). Revisit when picking up the vector.
+- `BOOK_SHAPE.md` — what the book IS, what it ISN'T, and what functional components are missing (crisis alpha, non-price edge, regime adaptivity). The pivot from "hunt for A5" to "complete the book's architecture." Read before proposing new strategies.
+- `docs/research/` — open research scoping. Active tracks:
+  - `HighYield_Strategy_STRC_NVDY_AMZY.md` — yield-harvesting flywheel (bridge-income strategy, different objective function than Mode 1 — see "Research Tracks" below)
+  - `RATE_VOL_SCOPE.md` — A5 candidate, MOVE-conditional TLT reversal (shelved: MOVE at multi-year lows)
+  - `PLAN_MODE2.md` — Mode 1+2 strategic plan, Phase A live
+- **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`) — the full financial picture, bridge-plan projections, yield strategy deep research (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`). Yield/income strategy context often lives here, not in FIRE.
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
 - `DATA_SOURCES.md` — standing observation that yfinance is the root cause of nearly every cache-corruption incident, with an incident log and candidate replacements (Alpaca/Polygon/hybrid). Becomes load-bearing at Phase 5 (real money).
@@ -23,7 +30,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - **Frontend**: React + TypeScript + TradingView Lightweight Charts (v5)
 - **Backend**: Python + FastAPI
 - **Risk**: Equal-weight top-N position sizing (at strategy layer) + SPY/BTC trend filters + vol-scaling overlay + a two-tier drawdown monitor (**-10% dashboard alert**, **-35% catastrophe halt with manual reset**). The -10% tier is a dashboard banner only, not persisted, no notifications. The -35% tier is the only persisted state (`{"halted": bool}`). Older controls (-15% auto-halt, -10% strategy-level breaker, Kelly + 2% rule + 20% position cap) are retired — see HISTORY.md C5/C7.
-- **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION.md`.
+- **Evaluation framework (v2, 2026-04-18)**: CAGR-first scorecard, not Sharpe. **Applies to Mode 1 factor-trading strategies (momentum, trend, reversal, mean-reversion).** Primary gates: OOS CAGR ≥ 15%, OOS MaxDD ≥ -40%, OOS Calmar ≥ 1.0, OOS/IS CAGR ratio ≥ 70%. Full scorecard (MAR, Sterling, Burke, Pain, Ulcer, UPI, Sortino, Omega, Gain-to-Pain, time underwater, max recovery days) reported for context. Sharpe shown informational only — not gated. See `VALIDATION.md`. **Not all research uses these gates** — yield/income strategies, bridge-plan research, and life-design explorations have their own success criteria (e.g., sustainable withdrawal coverage, principal preservation, total return with DRIP).
 - **Statistical validation**: Six-test scorecard (all required before real money; quarterly re-validation enforced via gate):
   - **Test 1** — OOS holdout (train 2010-2022, test 2023-today).
   - **Test 2** — Rolling OOS with fixed parameters.
@@ -284,6 +291,8 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 
 - **Test live↔backtest semantic parity, not just numeric parity.** When a live system reads "the same data" backtest used, ask: are the bars settled? Closed or still-forming partial? Timezone assumptions implicit? The C9 partial-bar contamination silently diverged live from backtest for ~14 days because "yfinance returned a row, therefore it's a closed bar" was an unstated assumption. First question for any live↔backtest gap: "is the strategy reading the same kind of data point in both modes?"
 
+- **Match the evaluation framework to the strategy's objective function.** Not everything is a factor strategy competing for Calmar supremacy. When George brings yield research, bridge-income ideas, or life-design explorations, evaluate them by what they're trying to do (income floor, principal preservation, withdrawal coverage) — not by the Mode 1 CAGR/Calmar gates. The defensive pattern of measuring every new idea against the existing book's metrics is the single most recurring failure mode in this project. Engage with the thesis first, identify the right success criteria second, then evaluate.
+
 - **Idea Farm mode for strategic stagnation.** When George signals defensive-cycle fatigue ("do nothing new" verdicts repeating, "breakthrough" in mocking quotes, austerity framing he rejects, "we need bold"), invoke the `/idea-farm` skill BEFORE running another optimization round. Skill at `~/.claude/skills/idea-farm/`. Default cadence: monthly minimum.
 
 ### Current Phase & Next Steps
@@ -317,7 +326,14 @@ References/mode2-data-sources-research.md — Full data source evaluation (9 sou
 **Next steps:**
 - **4.7-era audit pass** (done 2026-05-08). Cold-read of AUDIT_MONTH2.md against the current code came back clean: every closed claim that affects behavior matches code. Audit docs archived to `docs/archive/`; HISTORY.md is now the canonical digest. `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py` are still on the watch list for residual narrative drift; spot-check as you touch them.
 - **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items (R6-R8, R10, R13-R15) are non-blocking cleanup; see `HISTORY.md`.
-- **Find/build a new Account 4-class strategy** — directive 2026-04-18: current crypto account is acceptable baseline but not extraordinary. Target: OOS CAGR and Calmar that meaningfully exceed the existing single-account results. Funding-rate carry on perps was explored and shelved (infra + exchange risk). Open research vectors: rate vol (see `docs/research/RATE_VOL_SCOPE.md`), commodity vol, narrative-aware crypto.
+- **Open factor-strategy research** (Mode 1 expansion, no active sprint): rate vol (see `docs/research/RATE_VOL_SCOPE.md`, shelved — MOVE at lows), commodity vol, narrative-aware crypto. The April 2026 A5 hunt (`BOOK_SHAPE.md`) exhausted 12 vectors; the honest conclusion was diminishing returns on "find another uncorrelated factor strategy." Don't re-enter this loop without a specific new thesis.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: Track C recommendation for 40 days (check price by 2026-05-25).
+
+### Research Tracks (outside Mode 1/Mode 2 framework)
+
+**Yield / Bridge-Income Strategy (active research, 2026-05):**
+George is researching a yield-harvesting "Diversified Flywheel" strategy (STRC/NVDY/AMZY) as a potential Account 5 candidate, iterated with Gemini over multiple sessions. This serves a DIFFERENT objective than Mode 1 — it targets reliable monthly income that exceeds a sustainable withdrawal rate during the bridge years, with principal preservation. The strategy spec is at `docs/research/HighYield_Strategy_STRC_NVDY_AMZY.md`; deeper context (funding sources, SEPP 72(t) deployment, Gemini audit) is in FIREMaster (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`).
+
+**Key framing:** This is NOT competing with A1/A2/A4 on CAGR/Calmar. It's a carry/yield factor play targeting income floor + principal preservation. Evaluate by: total return with DRIP, yield sustainability, drawdown behavior in stress, withdrawal coverage ratio. The Mode 1 validation gates (OOS CAGR ≥ 15%, etc.) do not apply here.
