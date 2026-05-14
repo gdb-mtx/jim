@@ -538,6 +538,36 @@ async def data_freshness():
     return {"any_stale": any_stale, "caches": caches}
 
 
+@router.post("/refresh-cache")
+async def refresh_cache():
+    """Force-refresh data caches (excludes S&P 500 which takes ~5min)."""
+    def _refresh():
+        from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
+        from data.sp500 import download_vix
+        from data.crypto import download_crypto_prices, download_btc_prices
+
+        errors = []
+        refreshed = []
+        for name, fn in [
+            ("ETF universe", lambda: download_and_cache(
+                EXPANDED_UNIVERSE + ["SHY"], cache_name="etf_prices", force_refresh=True)),
+            ("SPY filter", lambda: download_and_cache(
+                ["SPY"], cache_name="spy_filter", force_refresh=True)),
+            ("VIX", lambda: download_vix(force_refresh=True)),
+            ("BTC", lambda: download_btc_prices(force_refresh=True)),
+            ("Crypto universe", lambda: download_crypto_prices(force_refresh=True)),
+        ]:
+            try:
+                fn()
+                refreshed.append(name)
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+
+        return {"refreshed": refreshed, "errors": errors, "ok": len(errors) == 0}
+
+    return await asyncio.to_thread(_refresh)
+
+
 @router.get("/filter-state")
 async def filter_monitor_state():
     """Get the filter monitor's last-known state and any recent auto-rebalances.

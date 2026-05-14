@@ -63,6 +63,7 @@ def download_crypto_prices(
     symbols: list[str] | None = None,
     start: str = "2020-01-01",
     end: str | None = None,
+    force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Download daily crypto close prices via yfinance.
 
@@ -92,7 +93,7 @@ def download_crypto_prices(
     if symbols is None:
         symbols = CRYPTO_UNIVERSE
 
-    if cache_path.exists():
+    if not force_refresh and cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < max_age_hours:
             prices = pd.read_parquet(cache_path)
@@ -109,8 +110,12 @@ def download_crypto_prices(
                     f"— refreshing"
                 )
             else:
-                print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
-                return prices
+                from data.pipeline import content_is_stale
+                if content_is_stale(prices, asset_class="crypto"):
+                    print("Crypto cache content is stale — refreshing")
+                else:
+                    print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
+                    return prices
         else:
             print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
@@ -191,8 +196,12 @@ def download_btc_prices(
                 except PlausibilityError as e:
                     print(f"BTC cache failed plausibility ({e}) — refreshing")
                 else:
-                    print(f"Loaded BTC prices from cache: {len(btc)} rows")
-                    return btc
+                    from data.pipeline import content_is_stale
+                    if content_is_stale(cached_df, asset_class="crypto"):
+                        print("BTC cache content is stale — refreshing")
+                    else:
+                        print(f"Loaded BTC prices from cache: {len(btc)} rows")
+                        return btc
         else:
             print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 

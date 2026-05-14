@@ -135,6 +135,32 @@ def download_prices(
     return download_with_retry(symbols, start=start, end=end, interval=interval)
 
 
+def content_is_stale(df: pd.DataFrame, asset_class: str = "equity") -> bool:
+    """True when the latest settled bar is older than expected.
+
+    Catches yfinance publishing delays where the cache file is mtime-fresh
+    but the actual data has a gap (the C10 pattern).
+
+    crypto (24/7): latest settled bar should be >= yesterday UTC.
+    equity (M-F): latest bar should be within 4 calendar days of today.
+    """
+    if len(df) < 2:
+        return True
+    today_utc = pd.Timestamp.now(tz="UTC").normalize()
+    if today_utc.tzinfo is not None:
+        today_utc = today_utc.tz_localize(None)
+    latest = pd.Timestamp(df.index[-1])
+    if latest.tzinfo is not None:
+        latest = latest.tz_localize(None)
+    if latest >= today_utc:
+        latest = pd.Timestamp(df.index[-2])
+        if latest.tzinfo is not None:
+            latest = latest.tz_localize(None)
+    if asset_class == "crypto":
+        return latest < today_utc - pd.Timedelta(days=1)
+    return latest < today_utc - pd.Timedelta(days=4)
+
+
 def download_and_cache(
     symbols: list[str],
     start: str = "2005-01-01",
@@ -162,8 +188,11 @@ def download_and_cache(
                     f"{sorted(extras)} — refreshing"
                 )
             elif all(s in cached.columns for s in symbols):
-                print(f"Loaded {len(cached)} rows from cache: {cache_path}")
-                return cached[symbols]
+                if content_is_stale(cached):
+                    print(f"Cache {cache_path.name} content is stale — refreshing")
+                else:
+                    print(f"Loaded {len(cached)} rows from cache: {cache_path}")
+                    return cached[symbols]
 
     print(f"Downloading {len(symbols)} symbols from {start}...")
     prices = download_prices(symbols, start=start, end=end)

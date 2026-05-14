@@ -100,6 +100,14 @@ export async function fetchDataFreshness() {
   );
 }
 
+export async function refreshCache() {
+  return fetchJSON<{ refreshed: string[]; errors: string[]; ok: boolean }>(
+    `${BASE_URL}/portfolio/refresh-cache`,
+    { method: "POST" },
+    BACKTEST_TIMEOUT_MS,
+  );
+}
+
 export async function takeSnapshot(account?: number) {
   const url =
     account !== undefined

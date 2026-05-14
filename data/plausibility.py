@@ -25,7 +25,7 @@ BANDS: dict[str, tuple[float, float, str]] = {
     "ETH-USD": (50.0, 20_000.0, "ETH has not closed below $80 since Feb 2018"),
     "SPY": (40.0, 2_000.0, "SPY auto-adjusted low was $49.81 on 2009-03-09"),
     "^VIX": (5.0, 100.0, "VIX historical range ~9 to ~85 (Oct 2008 / Mar 2020)"),
-    "SHY": (60.0, 100.0, "SHY has traded in a tight $80-$86 band since inception"),
+    "SHY": (40.0, 100.0, "SHY adjusted-close goes to ~$54 in 2005 due to dividend adjustments"),
 }
 
 

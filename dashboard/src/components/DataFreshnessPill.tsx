@@ -1,5 +1,5 @@
-import { memo, useEffect, useState } from "react";
-import { fetchDataFreshness } from "../api";
+import { memo, useCallback, useEffect, useState } from "react";
+import { fetchDataFreshness, refreshCache } from "../api";
 import type { DataFreshnessResponse } from "../types";
 import Tooltip from "./Tooltip";
 
@@ -12,35 +12,41 @@ function formatAge(age_h: number | null): string {
 
 export default memo(function DataFreshnessPill() {
   const [data, setData] = useState<DataFreshnessResponse | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const poll = useCallback(() => {
+    fetchDataFreshness()
+      .then((d) => setData(d))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    function refresh() {
-      fetchDataFreshness()
-        .then((d) => {
-          if (!cancelled) setData(d);
-        })
-        .catch(() => {});
+    poll();
+    const interval = setInterval(poll, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [poll]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshCache();
+    } finally {
+      poll();
+      setRefreshing(false);
     }
-    refresh();
-    const interval = setInterval(refresh, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
+  }, [poll]);
 
   if (!data) return null;
 
   const stale = data.any_stale;
-  const dotColor = stale ? "bg-[#ff4d6a]" : "bg-[#00d4aa]";
+  const dotColor = refreshing
+    ? "bg-[#ffc04d]"
+    : stale
+      ? "bg-[#ff4d6a]"
+      : "bg-[#00d4aa]";
   const borderColor = stale ? "border-[#ff4d6a40]" : "border-[#2a2a3e]";
   const bgColor = stale ? "bg-[#ff4d6a08]" : "bg-[#1a1a2e]";
 
-  // Show both stale modes distinctly in the tooltip — they have different
-  // remediation. mtime-stale = refresh job is dead. content-stale =
-  // upstream returned incomplete data (e.g. yfinance hadn't published
-  // yesterday's settled bar yet at fire time — the C10 incident).
   const tooltip = data.caches
     .map((c) => {
       const flags: string[] = [];
@@ -57,13 +63,27 @@ export default memo(function DataFreshnessPill() {
       <div
         className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 ${borderColor} ${bgColor}`}
       >
-        <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+        <span
+          className={`h-2 w-2 rounded-full ${dotColor}${refreshing ? " animate-pulse" : ""}`}
+        />
         <span className="text-sm text-[#8888a0]">
           Data{" "}
           <span className="text-[#e8e8f0]">
-            {stale ? "stale" : "fresh"}
+            {refreshing ? "refreshing…" : stale ? "stale" : "fresh"}
           </span>
         </span>
+        {stale && !refreshing && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRefresh();
+            }}
+            className="ml-0.5 text-sm text-[#8888a0] hover:text-[#e8e8f0] transition-colors"
+            title="Force-refresh all data caches"
+          >
+            ↻
+          </button>
+        )}
       </div>
     </Tooltip>
   );

@@ -113,8 +113,12 @@ def download_sp500_prices(
         if len(prices) == 0:
             print("S&P 500 cache has 0 rows — refreshing")
         else:
-            print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
-            return prices
+            from data.pipeline import content_is_stale
+            if content_is_stale(prices):
+                print("S&P 500 cache content is stale — refreshing")
+            else:
+                print(f"Loaded S&P 500 prices from cache: {prices.shape[0]} rows, {prices.shape[1]} stocks")
+                return prices
 
     # Serialize refresh + double-checked re-read after lock release.
     with _SP500_REFRESH_LOCK:
@@ -123,8 +127,12 @@ def download_sp500_prices(
             if len(prices) == 0:
                 print("S&P 500 cache has 0 rows — refreshing (after waiting on lock)")
             else:
-                print(f"Loaded S&P 500 prices from cache (after waiting on refresh): {prices.shape[0]} rows, {prices.shape[1]} stocks")
-                return prices
+                from data.pipeline import content_is_stale
+                if content_is_stale(prices):
+                    print("S&P 500 cache content is stale — refreshing (after waiting on lock)")
+                else:
+                    print(f"Loaded S&P 500 prices from cache (after waiting on refresh): {prices.shape[0]} rows, {prices.shape[1]} stocks")
+                    return prices
 
         if cache_path.exists():
             age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
@@ -234,8 +242,12 @@ def download_vix(
                 except PlausibilityError as e:
                     print(f"VIX cache failed plausibility ({e}) — refreshing")
                 else:
-                    print(f"Loaded VIX from cache: {len(vix)} rows")
-                    return vix
+                    from data.pipeline import content_is_stale
+                    if content_is_stale(cached_df):
+                        print("VIX cache content is stale — refreshing")
+                    else:
+                        print(f"Loaded VIX from cache: {len(vix)} rows")
+                        return vix
         else:
             print(f"VIX cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
