@@ -85,6 +85,22 @@ def run_once(dry_run: bool = False) -> dict:
 
             if result.position_mismatch:
                 log.error("Position reconciliation failed — skipping rebalance")
+                log_rebalance(
+                    account=4,
+                    strategy_id="crypto_momentum_filtered",
+                    portfolio_value=result.portfolio_value,
+                    orders_submitted=0,
+                    orders_failed=0,
+                    order_details=[],
+                    btc_filter_active=result.btc_filter_active,
+                    btc_filter_scalar=result.btc_filter_scalar,
+                    vol_scalar=result.vol_scalar,
+                    vol_scalar_diagnostics=result.vol_scalar_diagnostics,
+                    raw_signal_weights=result.raw_signal_weights,
+                    post_filter_weights=result.post_filter_weights,
+                    execute_error="position_reconciliation_failed",
+                    source="scheduled",
+                )
                 return {"status": "position_mismatch"}
 
             if result.price_error:
@@ -160,7 +176,7 @@ def run_once(dry_run: bool = False) -> dict:
             _sync_btc_filter_state(broker)
 
             from execution.position_reconciliation import save_expected_positions
-            save_expected_positions(4, broker.get_position_map(), broker.get_portfolio_value())
+            save_expected_positions(4, result.target_positions or {}, result.portfolio_value)
 
             return {
                 "status": "executed",

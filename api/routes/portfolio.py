@@ -540,10 +540,10 @@ async def data_freshness():
 
 @router.post("/refresh-cache")
 async def refresh_cache():
-    """Force-refresh data caches (excludes S&P 500 which takes ~5min)."""
+    """Force-refresh all data caches including S&P 500 (~30-40s total)."""
     def _refresh():
         from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
-        from data.sp500 import download_vix
+        from data.sp500 import download_sp500_prices, download_vix
         from data.crypto import download_crypto_prices, download_btc_prices
 
         errors = []
@@ -556,6 +556,7 @@ async def refresh_cache():
             ("VIX", lambda: download_vix(force_refresh=True)),
             ("BTC", lambda: download_btc_prices(force_refresh=True)),
             ("Crypto universe", lambda: download_crypto_prices(force_refresh=True)),
+            ("S&P 500", lambda: download_sp500_prices(force_refresh=True)),
         ]:
             try:
                 fn()

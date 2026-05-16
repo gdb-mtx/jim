@@ -234,7 +234,7 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
             take_snapshot(account)
 
             from execution.position_reconciliation import save_expected_positions
-            save_expected_positions(account, broker.get_position_map(), broker.get_portfolio_value())
+            save_expected_positions(account, result.target_positions or {}, result.portfolio_value)
 
             log.info(
                 f"  Account {account}: {len(order_results)} orders"

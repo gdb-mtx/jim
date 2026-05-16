@@ -255,9 +255,7 @@ async def _execute_under_lock(account: int, strategy_id: str):
     # Save expected positions for the reconciliation guard.
     try:
         from execution.position_reconciliation import save_expected_positions
-        post_positions = await asyncio.to_thread(broker.get_position_map)
-        post_value = await asyncio.to_thread(broker.get_portfolio_value)
-        save_expected_positions(account, post_positions, post_value)
+        save_expected_positions(account, result.target_positions or {}, result.portfolio_value)
     except Exception as e:
         log.warning(f"Post-rebalance position snapshot failed for account {account} (non-fatal): {e}")
 

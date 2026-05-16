@@ -81,6 +81,7 @@ def download_sp500_prices(
     start: str = "2010-01-01",
     end: str | None = None,
     max_tickers: int | None = None,
+    force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Download adjusted close prices for S&P 500 stocks.
 
@@ -108,7 +109,7 @@ def download_sp500_prices(
         return age_hours < max_age_hours
 
     # Fast path: lock-free read for the common case where the cache is fresh.
-    if _is_fresh():
+    if not force_refresh and _is_fresh():
         prices = pd.read_parquet(cache_path)
         if len(prices) == 0:
             print("S&P 500 cache has 0 rows — refreshing")
@@ -122,7 +123,7 @@ def download_sp500_prices(
 
     # Serialize refresh + double-checked re-read after lock release.
     with _SP500_REFRESH_LOCK:
-        if _is_fresh():
+        if not force_refresh and _is_fresh():
             prices = pd.read_parquet(cache_path)
             if len(prices) == 0:
                 print("S&P 500 cache has 0 rows — refreshing (after waiting on lock)")

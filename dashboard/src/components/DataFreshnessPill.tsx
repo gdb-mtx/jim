@@ -14,10 +14,11 @@ export default memo(function DataFreshnessPill() {
   const [data, setData] = useState<DataFreshnessResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const poll = useCallback(() => {
-    fetchDataFreshness()
-      .then((d) => setData(d))
-      .catch(() => {});
+  const poll = useCallback(async () => {
+    try {
+      const d = await fetchDataFreshness();
+      setData(d);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export default memo(function DataFreshnessPill() {
     try {
       await refreshCache();
     } finally {
-      poll();
+      await poll();
       setRefreshing(false);
     }
   }, [poll]);
