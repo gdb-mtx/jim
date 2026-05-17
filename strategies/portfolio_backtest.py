@@ -14,7 +14,7 @@ import pandas as pd
 
 from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
-from data.crypto import download_crypto_prices, download_btc_prices
+from data.crypto import download_crypto_prices, download_btc_prices, LIVE_CRYPTO_UNIVERSE
 from strategies.portfolio_config import (
     PORTFOLIOS,
     ETF_STRATEGIES,
@@ -156,7 +156,7 @@ def run_portfolio(
     crypto_prices = None
     btc_prices = None
     if any(sid in CRYPTO_STRATEGIES for sid in weights):
-        crypto_prices = download_crypto_prices(start=start)
+        crypto_prices = download_crypto_prices(start=start, symbols=LIVE_CRYPTO_UNIVERSE)
         btc_prices = download_btc_prices()
 
     # Generate returns for each component strategy

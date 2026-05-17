@@ -114,8 +114,9 @@ def download_crypto_prices(
                 if content_is_stale(prices, asset_class="crypto"):
                     print("Crypto cache content is stale — refreshing")
                 else:
-                    print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {prices.shape[1]} coins")
-                    return prices
+                    present = [s for s in symbols if s in prices.columns]
+                    print(f"Loaded crypto prices from cache: {prices.shape[0]} rows, {len(present)} coins")
+                    return prices[present]
         else:
             print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 

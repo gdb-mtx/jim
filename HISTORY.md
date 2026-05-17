@@ -128,6 +128,56 @@ where BNB was top-2 in backtest, accepted as "use what the broker can
 trade." Sources: [Alpaca's supported crypto list](https://alpaca.markets/support/what-cryptocurrencies-does-alpaca-currently-support),
 [SEC v. Binance press release](https://www.sec.gov/newsroom/press-releases/2023-101).
 
+### A4 live vs backtest divergence analysis (2026-05-17)
+
+Post-mortem on the -$11K gap between A4 live ($87,847) and backtest
+($98,869) over Apr 22 → May 16. Three root causes, all resolved:
+
+**1. Late entry (Apr 22-24): ~$2K drag.**
+BTC crossed the 125d SMA on Apr 22. Backtest entered at close. Live
+account was being set up (first-entry cascading bugs, see below) —
+five failed manual attempts before clean fills. First scheduled signal
+didn't run until Apr 24 00:05 UTC. The initial BTC+ETH move was missed.
+
+**2. Filter whipsaw (Apr 28-30): ~$2K drag.**
+BTC oscillated within 1% of the 125d SMA for three days (Apr 28: -0.15%
+below, Apr 29: -0.79%, Apr 30: +0.02% above). Backtest: one clean
+cash→invested round-trip. Live: three round-trips — the 4-hourly filter
+monitor triggered intraday flips (13:44, 05:44, 16:46, 21:28) each
+incurring crypto spread + slippage. Architectural tradeoff: intraday
+filter speed is valuable for real regime changes (Sharpe 1.27 daily vs
+0.79 monthly) but whipsaws near the SMA threshold.
+
+**3. C9 signal contamination (May 5-8): ~$7-8K drag (dominant).**
+Partial-bar bug made live momentum ranks differ from settled-bar ranks.
+Live picked BTC+XRP/BTC+LINK while backtest picked ADA+DOT/BNB+BTC.
+Three rebalances in 6 hours on May 6 (00:52, 01:17, 06:05 UTC) with
+different signals each time. Gap exploded from -$5K to -$16K in four
+days. Resolved by C9+C10 fixes (drop partial bar, Alpaca bars for live).
+
+**Structural residual: BNB exclusion (C11).**
+Backtest picks from 9 coins, live from 8 (no BNB). BNB selected on
+19.2% of OOS days. Impact in the Apr-May window: ~0.56pp ($563). Full
+OOS impact is larger (Calmar 6.83 → 5.32 pre-cost/pre-vol-scaling, 9 vs
+8 coin). The 8-coin backtest is the honest live-comparable reference.
+
+**Post-fix convergence:** After C9/C10 resolved May 8 and the
+liquidation+re-entry reset, live and backtest signals aligned (both
+picked ADA+LINK May 9-10). Gap stabilized at ~$11K — the early damage
+was permanent because the missed moves and whipsaw losses compounded.
+
+### C12 — Reconciliation race condition (fixed 2026-05-16)
+
+`save_expected_positions` read `broker.get_position_map()` immediately
+after order submission — before fills settled. On May 15, DOT buy of
+22,162 was still `pending_new`, saved as 10,475 (partial). May 16
+reconciliation saw 108% drift → blocked rebalance (invisible on Events
+Timeline because the failure returned before `log_rebalance()` was
+called). Fix: save `result.target_positions` (intent, not transient
+broker state) across all three callers (daily rebalance, filter monitor,
+manual API). Reconciliation failures now logged to `rebalance_log.jsonl`
+with `execute_error="position_reconciliation_failed"`.
+
 ### Combined OOS deltas across the C4+C6 fix wave
 
 - Equity core (A1+A2 at 50/50): **22.3% CAGR / -7.7% MaxDD / Calmar 2.88 → 19.0% / -6.1% / 3.13** (post C4+C6).

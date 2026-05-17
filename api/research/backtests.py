@@ -13,7 +13,7 @@ from strategies.low_volatility import LowVolatility
 from strategies.mean_reversion import ShortTermReversal
 from strategies.crypto_momentum import CryptoMomentum
 from strategies.portfolio import PORTFOLIOS, run_portfolio, run_combined_portfolio
-from data.crypto import download_crypto_prices, download_btc_prices
+from data.crypto import download_crypto_prices, download_btc_prices, LIVE_CRYPTO_UNIVERSE
 from backtesting.metrics import full_report
 import pandas as pd
 
@@ -50,8 +50,8 @@ DEFAULT_SYMBOLS = EXPANDED_UNIVERSE + ["SHY"]
 def _run_strategy(strategy_id: str, start: str, end: str | None = None):
     """Run a strategy and return (strategy_name, returns Series)."""
     if strategy_id in CRYPTO_STRATEGIES:
-        # Crypto strategies use crypto universe
-        prices = download_crypto_prices(start=start)
+        # 8-coin live universe (excludes BNB, see HISTORY.md C11)
+        prices = download_crypto_prices(start=start, symbols=LIVE_CRYPTO_UNIVERSE)
         btc = download_btc_prices()
         strategy = CRYPTO_STRATEGIES[strategy_id]()
         strategy.set_btc(btc)
