@@ -182,7 +182,7 @@ with `execute_error="position_reconciliation_failed"`.
 
 - Equity core (A1+A2 at 50/50): **22.3% CAGR / -7.7% MaxDD / Calmar 2.88 → 19.0% / -6.1% / 3.13** (post C4+C6).
 - 3-account live book (A1+A2+A4 at 1/3): **30.3% / -7.0% / 4.31 → 26.5% / -6.2% / 4.28**.
-- A4 standalone bootstrap CAGR p5/p50/p95: **+25.1% / +45.9% / +74.8%** (20-day blocks) → **+20.9% / +42.9% / +73.6%** (40-day blocks per R9, captures crypto's longer regime autocorrelation).
+- A4 standalone bootstrap CAGR p5/p50/p95: **+25.1% / +45.9% / +74.8%** (20-day blocks) → **+20.9% / +42.9% / +73.6%** (40-day blocks per R9) → **+19.4% / +43.3% / +74.8%** (8-coin live universe, 2026-05-17).
 
 Net: cost-adjusted returns are honestly lower; vol-scaling in both sim and
 live cut peak CAGR but improved MaxDD; combined Calmar essentially

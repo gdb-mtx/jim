@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from backtesting.costs import generate_costed_returns
-from data.crypto import download_btc_prices, download_crypto_prices
+from data.crypto import download_btc_prices, download_crypto_prices, LIVE_CRYPTO_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from strategies.crypto_momentum import CryptoMomentum
 from strategies.mean_reversion import ShortTermReversal
@@ -232,7 +232,7 @@ def _build_account_4() -> AccountAdapter:
     these fixed params across windows — no per-window parameter refit.
     """
     full_returns = run_portfolio("crypto_momentum_filtered", start="2018-01-01")[1].dropna()
-    prices = download_crypto_prices(start="2018-01-01")
+    prices = download_crypto_prices(start="2018-01-01", symbols=LIVE_CRYPTO_UNIVERSE)
     btc = download_btc_prices(start="2018-01-01")
 
     def strategy_fn(slice_prices: pd.DataFrame) -> pd.Series:

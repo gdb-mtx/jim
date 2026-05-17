@@ -49,7 +49,7 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
 - **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via launchd at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for launchd details.
 
-Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +40.4%, Calmar 3.18** in backtest.
+Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +38.6%, Calmar 3.05** in backtest (8-coin live universe, post C11 BNB removal).
 
 Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (launchd), A1/A2 first Monday of month (manual), filter monitor every 4h (launchd). See `AUTOMATION.md` for full operational detail.
 
@@ -57,11 +57,11 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 **Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.**
 
-Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), and C10 (Alpaca-bars migration for live crypto, 2026-05-06). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money. C11 (BNB excluded from live universe, regulatory non-listing) is documented and structurally handled, not a numerical caveat.
+Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), C10 (Alpaca-bars migration for live crypto, 2026-05-06), and the 8-coin universe switch (2026-05-17, backtest now uses `LIVE_CRYPTO_UNIVERSE` matching Alpaca's tradeable set — see HISTORY.md C11). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money.
 
 | Strategy | Status | CAGR | MaxDD | Calmar | MAR | Sortino | *Sharpe (info)* |
 |---|---|---|---|---|---|---|---|
-| **Crypto Momentum (Acct 4)** | PASS | **+40.4%** | **-12.7%** | **3.18** | 3.18 | — | *1.76* |
+| **Crypto Momentum (Acct 4)** | PASS | **+38.6%** | **-12.6%** | **3.05** | 3.05 | — | *1.76* |
 | **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+27.2%** | **-9.9%** | **2.76** | 2.76 | 2.10 | *2.04* |
 | **Trend + Low-Vol (Acct 2)** | MARGINAL | **+11.0%** | **-7.3%** | **1.51** | 1.51 | — | *1.37* |
 | *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — |
@@ -156,7 +156,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 **Mode 1 (Structural Alpha):** 3-account live book (A1+A2+A4) at 1/3 each; pre-Fly hardening mode.
 - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.2%
 - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 11.0% MARGINAL
-- Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 production, OOS CAGR 40.4%, Calmar 3.18. First live entry 2026-04-22; A4 33%→40% upgrade clock counts from that date (cash-on-filter days don't count).
+- Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 production, OOS CAGR 38.6%, Calmar 3.05 (8-coin live universe). First live entry 2026-04-22; A4 33%→40% upgrade clock counts from that date (cash-on-filter days don't count).
 - Live-tracking clock reset to 2026-04-20 (the Mar 10 → Apr 17 window was compromised by stale-data bug).
 
 **Validation status:** All three active accounts PASS the CAGR-first gates. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
