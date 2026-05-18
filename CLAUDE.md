@@ -10,6 +10,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 ### Key Documents
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
 - **`HISTORY.md`** — resolved fixes and decision deltas (April 2026 fix pack, A4 first-entry cascade, framework changes). Canonical per-item description for every C/S/D/R label referenced in code or commits. Look here first when a code path mentions "post-CN fix" and you want to know what changed. The verbose original audit cycle (status-threaded discovery + follow-up sessions) is at `docs/archive/AUDIT_MONTH2.md`; the 4.7-era re-review checklist is at `docs/archive/AUDIT_47.md`. Both are time-capsules — read for forensic context only.
+- `STRATEGIES.md` — OOS scorecards, research strategy tables, universe definitions, filters & overlays, strategy source files
 - `VALIDATION.md` — CAGR-first evaluation framework (v2, 2026-04-18)
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `BOOK_SHAPE.md` — what the book IS, what it ISN'T, and what functional components are missing (crisis alpha, non-price edge, regime adaptivity). The pivot from "hunt for A5" to "complete the book's architecture." Read before proposing new strategies.
@@ -44,58 +45,18 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 ### Three-Account Live Architecture
 Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of total book. A3 is retired but its Alpaca account slot is preserved for future strategy assignment.
 
-- **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Monthly rebalance.
-- **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Monthly rebalance.
+- **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Every-21-trading-days rebalance (manual).
+- **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
 - **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via launchd at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for launchd details.
 
 Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +38.6%, Calmar 3.05** in backtest (8-coin live universe, post C11 BNB removal).
 
-Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (launchd), A1/A2 first Monday of month (manual), filter monitor every 4h (launchd). See `AUTOMATION.md` for full operational detail.
+Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (launchd), A1/A2 every 21 trading days anchored to 2026-04-21 (manual, ~3:00 PM ET), filter monitor every 4h (launchd). See `AUTOMATION.md` for full operational detail. Upcoming A1/A2 rebalance dates: **2026-05-20 (Wed)**, 2026-06-22 (Mon), 2026-07-22 (Wed), 2026-08-20 (Thu).
 
-### Strategies — OOS scorecard (live accounts)
+### Strategies
 
-**Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.**
-
-Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), C10 (Alpaca-bars migration for live crypto, 2026-05-06), and the 8-coin universe switch (2026-05-17, backtest now uses `LIVE_CRYPTO_UNIVERSE` matching Alpaca's tradeable set — see HISTORY.md C11). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money.
-
-| Strategy | Status | CAGR | MaxDD | Calmar | MAR | Sortino | *Sharpe (info)* |
-|---|---|---|---|---|---|---|---|
-| **Crypto Momentum (Acct 4)** | PASS | **+38.6%** | **-12.6%** | **3.05** | 3.05 | — | *1.76* |
-| **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+27.2%** | **-9.9%** | **2.76** | 2.76 | 2.10 | *2.04* |
-| **Trend + Low-Vol (Acct 2)** | MARGINAL | **+11.0%** | **-7.3%** | **1.51** | 1.51 | — | *1.37* |
-| *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — |
-
-A1 + A4 PASS the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates. **A2 is MARGINAL** — backtest used to leverage the low-vol leg up to 1.5× in calm regimes that live could never realize; cap=1.0 alignment brings it to 11%. MARGINAL is allowed for paper per `execution/validation_gate.py`.
-
-A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
-
-Research/building-block strategies (in-sample only — never went to a live account, OOS not measured):
-
-| Strategy | Sharpe (IS) | Return (IS) | MaxDD (IS) | Notes |
-|---|---|---|---|---|
-| Short-Term Reversal + SPY | 1.41 | 12.7% | -10.0% | Anti-momentum |
-| Low Volatility + SPY | 1.32 | 14.7% | -11.9% | Defensive |
-| Blended Portfolio + SPY Filter | 1.37 | 14.2% | -9.3% | 60/20/20 momentum |
-| Stock Momentum (S&P 500) | 1.16 | 15.9% | -18.6% | No filter |
-| Cross-Sectional Momentum | 0.85 | 7.0% | -10.8% | ETF-based |
-| Time-Series Momentum | 0.85 | 6.2% | -15.2% | ETF-based |
-| Multi-Asset Trend | 0.76 | 5.8% | -13.0% | Crisis alpha |
-| Dual Momentum (Antonacci) | 0.83 | 7.6% | -19.9% | ETF-based |
-| Multi-Timeframe Momentum | 0.67 | 4.1% | -11.0% | Regime fail |
-| *SPY Buy & Hold (benchmark)* | *0.87* | *14.5%* | *-33.7%* | — |
-
-- **ETF Universe**: 18 assets (8 broad ETFs + 9 sector ETFs + SHY cash proxy)
-- **Multi-Asset Universe**: SPY, EFA, TLT, GLD, DBC (5 uncorrelated asset classes)
-- **Stock Universe**: 501 S&P 500 stocks (cached parquet, survivorship bias noted). Coverage gate: trailing 500 trading days ≥80% non-NaN — lets recent S&P additions enter the rotation once they have ~2y of history without corrupting backtests (pre-IPO NaN rows propagate to NaN ranks → excluded from selection for periods before the ticker existed).
-- **Crypto Universe**: 9 coins for backtest, 8 coins for live (BTC, ETH, SOL, BNB*, ADA, AVAX, LINK, DOT, XRP). *BNB is in the backtest universe but excluded from live — Alpaca doesn't list it (regulatory non-listing post 2023 SEC v. Binance, see HISTORY.md C11). `data/crypto.CRYPTO_UNIVERSE` is the 9-coin backtest set; `data/crypto.LIVE_CRYPTO_UNIVERSE` is the 8-coin tradeable subset that live signal computation operates on. Quality/volume-gated by design — top-cap L1s and major smart-contract platforms only. Deliberate exclusion of memecoins (DOGE, SHIB, PEPE, etc.) and low-float altcoins. No memecoins (DOGE, SHIB, PEPE) or low-float narrative coins. An ML or alternative crypto strategy may use different data sources (on-chain metrics, funding rates, exchange flows) or a modified universe if justified by the thesis.
-- **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
-- **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007).
-- **BTC 125-day SMA trend filter**: Binary 100% cash when BTC < 125d SMA (sat out all of 2022). Robust-opt picked 125d from 200d/150d/125d/100d grid.
-- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 + Account 4.
-- **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone.
-- **Warmup trimming**: Equity curves and metrics exclude the flat warmup period.
-- Strategies in `strategies/trend_following.py`, `strategies/momentum.py`, `strategies/stock_momentum.py`, `strategies/multi_asset_trend.py`, `strategies/low_volatility.py`, `strategies/mean_reversion.py`, `strategies/crypto_momentum.py`, `strategies/portfolio.py`.
+**See `STRATEGIES.md`** for full OOS scorecards, research/building-block tables, universe definitions, filters & overlays, and strategy source files. Quick status: A1 PASS (CAGR 27.2%), A4 PASS (CAGR 38.6%), A2 MARGINAL (CAGR 11.0%), A3 RETIRED. Open caveat: C3 (S&P 500 survivorship bias, ~1-2pp on A1).
 
 ### Risk Controls (summary — see `AUTOMATION.md` for operational detail)
 
@@ -108,11 +69,17 @@ Research/building-block strategies (in-sample only — never went to a live acco
 ### Architecture (summary — see `docs/architecture.d2` for the visual, explore the code for detail)
 
 **Data:** `data/pipeline.py` (ETF/stock cache), `data/crypto.py` (backtest), `data/alpaca_crypto_bars.py` (live), `data/snapshots.py` (equity history), `data/trading_dates.py` (ET helpers), `data/plausibility.py` (value guards).
+
 **Strategies:** `strategies/portfolio_config.py` (LIVE surface — PORTFOLIOS dict, filters), `strategies/portfolio_backtest.py` (RESEARCH surface). Individual strategies in `strategies/*.py`. `strategies/portfolio_config.py` has a hard invariant: zero imports from `backtesting/` or `mode2/`.
+
 **Execution:** `execution/rebalance.py` (weights → orders), `execution/risk_manager.py` (drawdown), `execution/vol_scaling.py` (EWMA), `execution/validation_gate.py` (rebalance gate), `execution/alpaca_broker.py` (multi-account), `execution/rebalance_log.py` (JSONL audit).
+
 **API:** FastAPI on :8001. Live routes (`/portfolio`, `/orders`, `/ops`) ship to cloud. Research routes (`/backtests`, `/strategies`) are laptop-only.
+
 **Dashboard:** React + Vite + TradingView on :5174. 5-tab account switcher, equity charts, correlation monitor, rebalance UI, ops panel, backtests.
+
 **Mode 2:** `mode2/` — PEAD pipeline (Finnhub EPS + Insider Monkey transcripts + scoring prompts + tracker). CLI: `uv run python3 -m mode2.run_analysis {fetch|summary|analyze|status}`.
+
 **Scripts:** `scripts/start.sh` (both servers), `scripts/filter_check.py` (launchd 4h), `scripts/daily_crypto_rebalance.py` (launchd daily), `scripts/run_validation.py` (6-test runner), `scripts/signal_tracker.py` (A4 execution drag).
 
 ### Running the Project
@@ -133,7 +100,18 @@ Research/building-block strategies (in-sample only — never went to a live acco
 
 ### Working with Claude — behavioral defaults
 
-**READ THIS FIRST — the anti-defensive rule:** The rules below are operational guardrails for building code. They are NOT evaluation criteria for new research. When George brings a new idea, strategy, article, or research direction, the FIRST response must engage with what the idea is trying to do — not measure it against existing infrastructure, validation gates, or account slots. The pattern of "let me check if this fits our existing system" before understanding the thesis has been the #1 recurring failure mode in this project (documented 2026-05-13 after 3 separate instances in one session). New ideas get evaluated on their own terms first. Existing infrastructure adapts to good ideas; good ideas don't get demoted to fit existing infrastructure.
+<!-- 4.7-SPECIFIC GUARDRAILS: The rules below were written to correct recurring failure
+     modes observed with Claude 4.7 (over-engineering, defensive gatekeeping of new ideas,
+     deference to casual preferences, measuring everything against existing infrastructure).
+     Opus 4.6 does not exhibit these patterns. SKIP this section if running on 4.6.
+     Re-activate if Anthropic forces a 4.7 upgrade. -->
+
+**The following rules apply to Claude 4.7 only.** Opus 4.6 handles these correctly by default. Kept here in case of forced model upgrade.
+
+<details>
+<summary>4.7 behavioral corrections (click to expand)</summary>
+
+**The anti-defensive rule:** The rules below are operational guardrails for building code. They are NOT evaluation criteria for new research. When George brings a new idea, strategy, article, or research direction, the FIRST response must engage with what the idea is trying to do — not measure it against existing infrastructure, validation gates, or account slots. The pattern of "let me check if this fits our existing system" before understanding the thesis has been the #1 recurring failure mode with 4.7 (documented 2026-05-13 after 3 separate instances in one session). New ideas get evaluated on their own terms first. Existing infrastructure adapts to good ideas; good ideas don't get demoted to fit existing infrastructure.
 
 - **Preference ≠ requirement.** Offhand "I like X" is input, not a constraint. Give the engineering recommendation first; surface preference deviations as labeled trade-offs.
 
@@ -147,9 +125,11 @@ Research/building-block strategies (in-sample only — never went to a live acco
 
 - **Test live↔backtest semantic parity, not just numeric parity.** When a live system reads "the same data" backtest used, ask: are the bars settled? Closed or still-forming partial? Timezone assumptions implicit? The C9 partial-bar contamination silently diverged live from backtest for ~14 days because "yfinance returned a row, therefore it's a closed bar" was an unstated assumption. First question for any live↔backtest gap: "is the strategy reading the same kind of data point in both modes?"
 
-- **Match the evaluation framework to the strategy's objective function.** Not everything is a factor strategy competing for Calmar supremacy. When George brings yield research, bridge-income ideas, or life-design explorations, evaluate them by what they're trying to do (income floor, principal preservation, withdrawal coverage) — not by the Mode 1 CAGR/Calmar gates. The defensive pattern of measuring every new idea against the existing book's metrics is the single most recurring failure mode in this project. Engage with the thesis first, identify the right success criteria second, then evaluate.
+- **Match the evaluation framework to the strategy's objective function.** Not everything is a factor strategy competing for Calmar supremacy. When George brings yield research, bridge-income ideas, or life-design explorations, evaluate them by what they're trying to do (income floor, principal preservation, withdrawal coverage) — not by the Mode 1 CAGR/Calmar gates. The defensive pattern of measuring every new idea against the existing book's metrics is the single most recurring failure mode with 4.7. Engage with the thesis first, identify the right success criteria second, then evaluate.
 
 - **Idea Farm mode for strategic stagnation.** When George signals defensive-cycle fatigue ("do nothing new" verdicts repeating, "breakthrough" in mocking quotes, austerity framing he rejects, "we need bold"), invoke the `/idea-farm` skill BEFORE running another optimization round. Skill at `~/.claude/skills/idea-farm/`. Default cadence: monthly minimum.
+
+</details>
 
 ### Current Phase & Next Steps
 
@@ -157,7 +137,7 @@ Research/building-block strategies (in-sample only — never went to a live acco
 - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.2%
 - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 11.0% MARGINAL
 - Account 4: Crypto Momentum Rotation — daily at 00:05 UTC, SMA-125/top2 production, OOS CAGR 38.6%, Calmar 3.05 (8-coin live universe). First live entry 2026-04-22; A4 33%→40% upgrade clock counts from that date (cash-on-filter days don't count).
-- Live-tracking clock reset to 2026-04-20 (the Mar 10 → Apr 17 window was compromised by stale-data bug).
+- Live-tracking clock reset to 2026-04-21 (the Mar 10 → Apr 17 window was compromised by stale-data bug). April 21 is the anchor for the 21-trading-day rebalance cycle.
 
 **Validation status:** All three active accounts PASS the CAGR-first gates. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
 
