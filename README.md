@@ -4,7 +4,7 @@ Multi-strategy systematic trading book operating across Alpaca paper accounts. F
 
 ## Status (2026-05-26)
 
-Mechanics are solid. Strategies are middle-of-the-road — paper performance roughly matches backtest in most months (with notable A4 live execution drag), but the book is not delivering what we hoped for. Two months elapsed, ~one month of clean data post-bug-fixes. **No active strategy hunt.** A1+A2+A4 keep running. Vectors in `docs/research/` (yield, ML regime, VIX term-structure) remain unimplemented and unowned. Not shutting down; not expanding. Revisit if/when a specific hypothesis hits.
+Mechanics are solid. Strategies are middle-of-the-road — paper performance roughly matches backtest in most months (with notable A4 live execution drag), but the book is not delivering what we hoped for. Two months elapsed, ~one month of clean data post-bug-fixes. **Actively hunting for a breakthrough** — middle-of-the-road is not the goal. A1+A2+A4 keep running while we look. Vectors in `docs/research/` (yield, ML regime, VIX term-structure) are live candidates, not just bookmarks.
 
 ## Where to start
 

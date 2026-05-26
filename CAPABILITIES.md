@@ -2,7 +2,7 @@
 
 *A standing overview of the system's design, validation discipline, and honest limits. Intended for a sophisticated reader (LP, operator, future-self) who wants to understand what was built, what it does, what makes it credible, and what it deliberately isn't.*
 
-> **Operator sentiment (2026-05-26):** The infrastructure described below is real and serviceable. The *strategies running on top of it* are middle-of-the-road — paper performance is roughly what backtests promised in most months (A4 live execution drag is the notable exception), but the book is not what George was hoping for. After two months elapsed and ~one month of clean post-bug-fix data, there is no active strategy hunt. A1+A2+A4 keep running. Read this doc as "what the system can do" — not as "what the system is currently delivering."
+> **Operator sentiment (2026-05-26):** The infrastructure described below is real and serviceable. The *strategies running on top of it* are middle-of-the-road — paper performance is roughly what backtests promised in most months (A4 live execution drag is the notable exception), but the book is not what George was hoping for. **The response is to hunt for a breakthrough, not coast.** Pitches welcome — the named gaps in BOOK_SHAPE.md (crisis alpha, non-price edge, regime adaptivity) remain real. Read this doc as "what the system can do" — not as "what the system is currently delivering."
 
 **Last updated:** 2026-05-07 (body); 2026-05-26 (operator-sentiment header).
 **Status:** Paper-first operational since 2026-03-10 across 3 active Alpaca accounts (A3 retired 2026-04-20).
@@ -311,6 +311,6 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 
 FIRE's strongest edge is the **discipline layer**: pre-committed thresholds, enforced validation gates, sim/live parity verification, willingness to kill hypotheses honestly. The mechanics are solid; the audit trail is real; the infrastructure works.
 
-What it has *not* delivered (as of 2026-05-26): a strategy book that meaningfully exceeds passive baselines on a risk-adjusted basis once you account for live execution drag, regime sensitivity, and the gap between OOS backtest and forward live performance. The April 2026 A5 hunt exhausted 12 vectors without finding a transformative add; subsequent research vectors (yield, ML regime, mid-cap drift) remain scoped but unowned. The book runs; it does not currently grow.
+What it has *not* yet delivered (as of 2026-05-26): a strategy book that meaningfully exceeds passive baselines on a risk-adjusted basis once you account for live execution drag, regime sensitivity, and the gap between OOS backtest and forward live performance. The April 2026 A5 hunt exhausted 12 vectors of uncorrelated factor strategies without finding a transformative add. The honest read is that George is still looking for the breakthrough — yield/carry, ML regime, non-price edges, or something not yet on the radar. The infrastructure is built; the question is what to run on top of it that actually moves the bridge math.
 
-That's not a failure verdict — it's an honest mid-stream read. The discipline that produced this honest read is itself the most durable artifact of the project.
+That's not a failure verdict — it's an active search. The discipline that produced this honest read is what will make a future breakthrough trustworthy when one lands.

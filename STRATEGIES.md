@@ -1,6 +1,6 @@
 # Strategies — Scorecards, Universes & Filters
 
-> **Operator sentiment (2026-05-26):** Numbers below are backtest-OOS, not realized live performance. Live execution drag is real (A4 ran +4.6% signal-only vs −7.3% live in its first 3 weeks). After ~one month of clean live data post-bug-fixes, the operator's read is that these strategies are **middle-of-the-road** — they work, they're disciplined, but they are not delivering what was hoped for. No active hunt for replacements. Treat the scorecard as factual record, not as a recommendation to add capital.
+> **Operator sentiment (2026-05-26):** Numbers below are backtest-OOS, not realized live performance. Live execution drag is real (A4 ran +4.6% signal-only vs −7.3% live in its first 3 weeks). After ~one month of clean live data post-bug-fixes, the operator's read is that these strategies are **middle-of-the-road** — they work, they're disciplined, but they are not delivering what George was hoping for. **The response is to actively hunt for additive strategies, not coast.** Treat the scorecard as factual record of what's running today, not as a final book composition.
 
 ## OOS scorecard (live accounts)
 
