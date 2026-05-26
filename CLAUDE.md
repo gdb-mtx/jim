@@ -15,6 +15,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `SDD.md` — Software Design Decisions — architectural patterns and lessons learned (polling, memoization, caching, startup)
 - `BOOK_SHAPE.md` — what the book IS, what it ISN'T, and what functional components are missing (crisis alpha, non-price edge, regime adaptivity). The pivot from "hunt for A5" to "complete the book's architecture." Read before proposing new strategies.
 - `docs/research/` — open research scoping. Active tracks:
+  - `BREAKTHROUGH_VECTORS_MAY2026.md` — 2026-05-26 diagnostic on SPY-underperformance + concrete non-academic vectors to push (cap-weight tilt, crypto on-chain microstructure, VIX term-structure carry, CEF discount reversion, insider buying clusters, spinoff drift). The "where do we actually go from middle-of-the-road" doc.
   - `HighYield_Strategy_STRC_NVDY_AMZY.md` — yield-harvesting flywheel (bridge-income strategy, different objective function than Mode 1 — see "Research Tracks" below)
   - `ML_REGIME_OVERLAY.md` — LSTM/XGBoost as standalone strategy (A5 candidate or A4 replacement) OR book-level regime overlay (Gap 3). Dual-role — kill gates determine which.
   - `RATE_VOL_SCOPE.md` — A5 candidate, MOVE-conditional TLT reversal (shelved: MOVE at multi-year lows)
