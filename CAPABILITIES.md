@@ -2,7 +2,9 @@
 
 *A standing overview of the system's design, validation discipline, and honest limits. Intended for a sophisticated reader (LP, operator, future-self) who wants to understand what was built, what it does, what makes it credible, and what it deliberately isn't.*
 
-**Last updated:** 2026-05-07
+> **Operator sentiment (2026-05-26):** The infrastructure described below is real and serviceable. The *strategies running on top of it* are middle-of-the-road — paper performance is roughly what backtests promised in most months (A4 live execution drag is the notable exception), but the book is not what George was hoping for. After two months elapsed and ~one month of clean post-bug-fix data, there is no active strategy hunt. A1+A2+A4 keep running. Read this doc as "what the system can do" — not as "what the system is currently delivering."
+
+**Last updated:** 2026-05-07 (body); 2026-05-26 (operator-sentiment header).
 **Status:** Paper-first operational since 2026-03-10 across 3 active Alpaca accounts (A3 retired 2026-04-20).
 **Live-money graduation gated on:** (a) resolution of C3 (point-in-time S&P 500 constituents, pre-real-money), (b) Phase 1 Fly.io deploy per [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) (Phase 0 refactor complete 2026-04-23), (c) ≥6 months of signal-trading-day evidence from live paper.
 
@@ -307,4 +309,8 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 
 ## Closing frame
 
-FIRE is a legitimate small-quant-shop-tier systematic trading system built solo on a bridge-to-retirement horizon. Its strongest edge is not any particular strategy — it's the discipline layer: pre-committed thresholds, enforced validation gates, sim/live parity verification, and willingness to kill hypotheses honestly. That discipline built the system; it's what will make the eventual real-money graduation honest; and it's what will catch the next load-bearing bug before it matters.
+FIRE's strongest edge is the **discipline layer**: pre-committed thresholds, enforced validation gates, sim/live parity verification, willingness to kill hypotheses honestly. The mechanics are solid; the audit trail is real; the infrastructure works.
+
+What it has *not* delivered (as of 2026-05-26): a strategy book that meaningfully exceeds passive baselines on a risk-adjusted basis once you account for live execution drag, regime sensitivity, and the gap between OOS backtest and forward live performance. The April 2026 A5 hunt exhausted 12 vectors without finding a transformative add; subsequent research vectors (yield, ML regime, mid-cap drift) remain scoped but unowned. The book runs; it does not currently grow.
+
+That's not a failure verdict — it's an honest mid-stream read. The discipline that produced this honest read is itself the most durable artifact of the project.

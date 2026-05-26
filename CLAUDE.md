@@ -133,6 +133,8 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 ### Current Phase & Next Steps
 
+**Status (2026-05-26 — operator sentiment):** Mechanics are solid. Strategies are middle-of-the-road — paper performance is broadly what backtests promised (with A4 live execution drag the notable exception), but the book is not what George was hoping for. Two months in, only ~one month of clean data post-bug-fixes. **No active strategy hunt; no active sprint on research-folder vectors.** A1+A2+A4 keep running on their existing cadences. The writing is on the wall unless a specific new hypothesis emerges — until then, expectations dialed back, the system maintains itself but doesn't get expanded.
+
 **Mode 1 (Structural Alpha):** 3-account live book (A1+A2+A4) at 1/3 each; pre-Fly hardening mode.
 - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.2%
 - Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 11.0% MARGINAL
@@ -154,14 +156,12 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 **Next steps:**
 - **4.7-era audit pass** (done 2026-05-08). Cold-read of AUDIT_MONTH2.md against the current code came back clean: every closed claim that affects behavior matches code. Audit docs archived to `docs/archive/`; HISTORY.md is now the canonical digest. `DEPLOYMENT_PLAN.md`, `AUTOMATION.md`, `execution/rebalance.py`, `execution/alpaca_broker.py` are still on the watch list for residual narrative drift; spot-check as you touch them.
 - **Mode 1**: stay alive in pre-Fly hardening mode; fix bugs as they surface; don't optimize. Open R-items (R6-R8, R10, R13-R15) are non-blocking cleanup; see `HISTORY.md`.
-- **Open strategy research** (no active sprint): The April 2026 A5 hunt exhausted 12 vectors of *uncorrelated factor strategies* specifically — that search space has diminishing returns. But fundamentally different approaches (yield/carry, ML signals, non-price edges) are open vectors with active research docs. See `docs/research/` for current tracks. Shelved factor-strategy vectors: rate vol (`RATE_VOL_SCOPE.md`, MOVE at lows), commodity vol, narrative-aware crypto.
+- **Open strategy research** (no active sprint, unowned as of 2026-05-26): The April 2026 A5 hunt exhausted 12 vectors of *uncorrelated factor strategies* — diminishing returns. Fundamentally different approaches (yield/carry, ML signals, non-price edges) have scoping docs in `docs/research/` but none are being actively prosecuted. Don't pitch them unsolicited; revisit only if George brings a specific hypothesis. Shelved factor-strategy vectors: rate vol (`RATE_VOL_SCOPE.md`, MOVE at lows), commodity vol, narrative-aware crypto.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: Track C recommendation for 40 days (check price by 2026-05-25).
 
 ### Research Tracks (outside Mode 1/Mode 2 framework)
 
-**Yield / Bridge-Income Strategy (active research, 2026-05):**
-George is researching a yield-harvesting "Diversified Flywheel" strategy (STRC/NVDY/AMZY) as a potential Account 5 candidate, iterated with Gemini over multiple sessions. This serves a DIFFERENT objective than Mode 1 — it targets reliable monthly income that exceeds a sustainable withdrawal rate during the bridge years, with principal preservation. The strategy spec is at `docs/research/HighYield_Strategy_STRC_NVDY_AMZY.md`; deeper context (funding sources, SEPP 72(t) deployment, Gemini audit) is in FIREMaster (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`).
-
-**Key framing:** This is NOT competing with A1/A2/A4 on CAGR/Calmar. It's a carry/yield factor play targeting income floor + principal preservation. Evaluate by: total return with DRIP, yield sustainability, drawdown behavior in stress, withdrawal coverage ratio. The Mode 1 validation gates (OOS CAGR ≥ 15%, etc.) do not apply here.
+**Yield / Bridge-Income Strategy (DORMANT, archived 2026-05-26):**
+George researched a yield-harvesting "Diversified Flywheel" strategy (STRC/NVDY/AMZY) with Gemini in early-mid May. The strategy spec remains at `docs/research/HighYield_Strategy_STRC_NVDY_AMZY.md`; the deeper bridge-plan-context docs in FIREMaster moved to `FIREMaster/docs/archive/` when the FIREMaster productize pivot became primary (2026-05-13). Track is **not being actively prosecuted**. Different objective than Mode 1 (income floor + principal preservation, not CAGR/Calmar) — kept on file but unowned. Don't pitch unsolicited; revisit only if George brings it up.

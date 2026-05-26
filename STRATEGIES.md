@@ -1,5 +1,7 @@
 # Strategies — Scorecards, Universes & Filters
 
+> **Operator sentiment (2026-05-26):** Numbers below are backtest-OOS, not realized live performance. Live execution drag is real (A4 ran +4.6% signal-only vs −7.3% live in its first 3 weeks). After ~one month of clean live data post-bug-fixes, the operator's read is that these strategies are **middle-of-the-road** — they work, they're disciplined, but they are not delivering what was hoped for. No active hunt for replacements. Treat the scorecard as factual record, not as a recommendation to add capital.
+
 ## OOS scorecard (live accounts)
 
 Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.
