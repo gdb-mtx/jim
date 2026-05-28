@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
+logging.Formatter.converter = time.gmtime
 log = logging.getLogger("fire.liquidate")
 
 

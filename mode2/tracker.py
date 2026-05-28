@@ -9,7 +9,7 @@ This is the evidence base for deciding whether to scale or stop.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 TRACKER_PATH = Path("data/mode2/recommendations.jsonl")
@@ -26,8 +26,8 @@ def log_recommendation(rec: dict) -> None:
         position_size_pct, thesis, key_risks
     """
     entry = {
-        "id": f"{rec['symbol']}_Q{rec['quarter']}_{rec['year']}_{datetime.now().strftime('%Y%m%d')}",
-        "logged_at": datetime.now().isoformat(),
+        "id": f"{rec['symbol']}_Q{rec['quarter']}_{rec['year']}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+        "logged_at": datetime.now(timezone.utc).isoformat(),
         "status": "open",
         **rec,
         # Outcome fields — filled in later

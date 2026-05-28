@@ -18,7 +18,7 @@ Usage:
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mode2.earnings import (
@@ -186,7 +186,7 @@ def cmd_status():
     if open_recs:
         print(f"\nOpen positions:")
         for r in open_recs:
-            days = (datetime.now() - datetime.fromisoformat(r["logged_at"])).days
+            days = (datetime.now(timezone.utc) - datetime.fromisoformat(r["logged_at"])).days
             print(f"  {r['symbol']:5s} | {r.get('direction','?'):5s} | "
                   f"Conv: {r.get('conviction','?')}/5 | "
                   f"Day {days}/{r.get('hold_days', '?')} | "

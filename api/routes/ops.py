@@ -73,18 +73,19 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
     - interval_seconds(s): last_run_local + s. None if we have no last_run
       yet (interval-based plists fire on first load, then every s seconds).
     """
+    from datetime import timedelta
+
     kind = schedule[0]
-    now_local = datetime.now()
     if kind == "daily_local":
         _, hour, minute = schedule
+        # Plist fires at laptop-local wall-clock time.
+        now_local = datetime.now().astimezone()  # aware, local tz
         candidate = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if candidate <= now_local:
-            from datetime import timedelta
             candidate = candidate + timedelta(days=1)
         return candidate.astimezone(timezone.utc).isoformat()
     if kind == "daily_utc":
         _, hour, minute = schedule
-        from datetime import timedelta
         now_utc = datetime.now(timezone.utc)
         candidate = now_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if candidate <= now_utc:
@@ -93,7 +94,7 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
     if kind == "interval_seconds":
         if last_run_local is None:
             return None
-        from datetime import timedelta
+        # last_run_local is UTC-aware (from filter_check_log parser).
         candidate = last_run_local + timedelta(seconds=schedule[1])
         return candidate.astimezone(timezone.utc).isoformat()
     return None
