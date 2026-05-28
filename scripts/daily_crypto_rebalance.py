@@ -53,6 +53,7 @@ logging.basicConfig(
         logging.FileHandler(LOG_FILE),
     ],
 )
+logging.Formatter.converter = time.gmtime
 log = logging.getLogger("fire.daily_crypto_rebalance")
 
 

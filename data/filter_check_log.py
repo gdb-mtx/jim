@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -87,11 +87,8 @@ def _read_tail(path: Path, tail_bytes: int) -> str:
 
 
 def _parse_timestamp(ts: str) -> datetime:
-    # filter_check.py formats as `YYYY-MM-DD HH:MM:SS,mmm` (no tz).
-    # Times are laptop-local. Treat as naive for ordering; callers who need
-    # UTC should project accordingly. For the Ops endpoint, ordering + ISO
-    # display is sufficient.
-    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S,%f")
+    # filter_check.py always logs in UTC (Formatter.converter = time.gmtime).
+    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S,%f").replace(tzinfo=timezone.utc)
 
 
 def _parse_block(lines: list[str]) -> Optional[FilterCheckRun]:

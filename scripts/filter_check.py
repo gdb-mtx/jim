@@ -4,6 +4,7 @@
 import argparse
 import fcntl
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -88,6 +89,7 @@ logging.basicConfig(
         logging.FileHandler(LOG_FILE),
     ],
 )
+logging.Formatter.converter = time.gmtime
 log = logging.getLogger("fire.filter_check")
 
 
