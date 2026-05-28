@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,61 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 router = APIRouter()
+
+ALL_FIRE_LABELS = [
+    "com.fire.daily-crypto-rebalance",
+    "com.fire.filter-check-equity",
+    "com.fire.filter-check-crypto",
+]
+
+
+def _check_launchd_health() -> dict:
+    """Check launchctl exit codes for all com.fire.* jobs.
+
+    Returns {"ok": True} when all jobs show exit code 0, or
+    {"ok": False, "blocked": [...]} with details for non-zero jobs.
+    Exit code 78 (EX_CONFIG) means macOS BTM has disabled the agent.
+    """
+    try:
+        out = subprocess.run(
+            ["launchctl", "list"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode != 0:
+            return {"ok": False, "error": "launchctl list failed"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    blocked = []
+    found_labels = set()
+    for line in out.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        label = parts[2]
+        if label not in ALL_FIRE_LABELS:
+            continue
+        found_labels.add(label)
+        try:
+            exit_code = int(parts[1])
+        except ValueError:
+            continue
+        if exit_code != 0:
+            blocked.append({
+                "label": label,
+                "exit_code": exit_code,
+                "reason": "macOS disabled this agent (BTM)" if exit_code == 78 else f"exit code {exit_code}",
+            })
+
+    missing = [l for l in ALL_FIRE_LABELS if l not in found_labels]
+    for label in missing:
+        blocked.append({
+            "label": label,
+            "exit_code": None,
+            "reason": "not registered with launchd",
+        })
+
+    return {"ok": len(blocked) == 0, "blocked": blocked}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VALIDATION_STATE_PATH = PROJECT_ROOT / "data" / "risk_state" / "validation_state.json"
@@ -215,9 +271,13 @@ async def get_scheduler():
                     "next_run": _next_run_iso(schedule, run.started_at),
                 })
 
+        # --- launchd health check (BTM / exit codes) ---
+        launchd_health = _check_launchd_health()
+
         result: dict = {
             "scheduled_rebalance": scheduled_rebalance,
             "launchd": launchd,
+            "launchd_health": launchd_health,
         }
         if launchd_error:
             result["launchd_error"] = launchd_error

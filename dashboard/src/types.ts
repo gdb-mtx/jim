@@ -329,6 +329,18 @@ export interface OpsLaunchdEntry {
   accounts: OpsLaunchdAccount[];
 }
 
+export interface LaunchdHealthBlocked {
+  label: string;
+  exit_code: number | null;
+  reason: string;
+}
+
+export interface LaunchdHealth {
+  ok: boolean;
+  blocked?: LaunchdHealthBlocked[];
+  error?: string;
+}
+
 export interface OpsSchedulerResponse {
   // Daily rebalance jobs fired by launchd. Last-run derived from
   // rebalance_log.jsonl. Replaces the in-process APScheduler block,
@@ -338,6 +350,7 @@ export interface OpsSchedulerResponse {
   };
   launchd: OpsLaunchdEntry[];
   launchd_error?: string;
+  launchd_health?: LaunchdHealth;
 }
 
 export interface OpsFiltersResponse {
