@@ -26,23 +26,32 @@ class CryptoMomentum(BaseStrategy):
         self._btc = btc_prices
 
     def _get_btc_trend_scalar(self, dates: pd.DatetimeIndex) -> pd.Series:
-        """Binary BTC trend filter: 1.0 when above MA, 0.0 below."""
+        """Binary BTC trend filter: 1.0 when above MA, 0.0 below.
+
+        Computes on the full BTC series (including today's live-augmented
+        price from _live_augmented_btc) then reindexes to signal dates.
+        The C9 partial-bar drop removes today from the momentum signal,
+        but the filter must still see today's live price to catch
+        intraday MA crossovers that filter_check.py detects.
+        """
         if self._btc is None:
             return pd.Series(1.0, index=dates)
 
-        # Strict min_periods for warmup.
         btc_ma_full = self._btc.rolling(
             self.btc_ma_period, min_periods=self.btc_ma_period
         ).mean()
 
-        btc_aligned = self._btc.reindex(dates).ffill()
-        btc_ma = btc_ma_full.reindex(dates).ffill()
-
-        scalar = pd.Series(
-            np.where(btc_aligned > btc_ma, 1.0, 0.0),
-            index=dates,
+        full_scalar = pd.Series(
+            np.where(self._btc > btc_ma_full, 1.0, 0.0),
+            index=self._btc.index,
         )
-        return scalar
+        result = full_scalar.reindex(dates, method="ffill")
+        # Live path: C9 drops today's partial bar from signal dates, but
+        # BTC series still has today (via _live_augmented_btc). If the
+        # filter flipped today, apply that decision to the last signal row.
+        if len(full_scalar) > 0 and len(dates) > 0 and full_scalar.index[-1] > dates[-1]:
+            result.iloc[-1] = full_scalar.iloc[-1]
+        return result
 
     def generate_signals(self, prices: pd.DataFrame) -> pd.DataFrame:
         """Rank coins by trailing momentum, hold top N equal-weight, gate by BTC trend filter."""
