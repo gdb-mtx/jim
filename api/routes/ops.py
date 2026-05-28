@@ -199,7 +199,7 @@ async def get_scheduler():
                 # `last_checked`, rebalance_log timestamps) and letting
                 # downstream string comparisons sort correctly.
                 utc_started = run.started_at.astimezone(timezone.utc)
-                age_s = (datetime.now() - run.started_at).total_seconds()
+                age_s = (datetime.now(timezone.utc) - utc_started).total_seconds()
                 launchd.append({
                     "label": label,
                     "source": source_tag,
