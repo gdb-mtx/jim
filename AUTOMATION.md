@@ -17,23 +17,41 @@ America/New_York, so the schedules are written in ET:
 
 ```
 # Daily crypto rebalance (A4): 8:05 PM ET = 00:05 UTC in EDT
-5 20 * * *             scripts/cron_crypto_rebalance.sh
+5 20 * * *             ~/.fire-cron/cron_crypto_rebalance.sh
 
 # Filter check — SPY (A1/A2): every 4h on the hour
-0 0,4,8,12,16,20 * * * scripts/cron_filter_check.sh spy
+0 0,4,8,12,16,20 * * * ~/.fire-cron/cron_filter_check.sh spy
 
 # Filter check — BTC (A4): every 4h, offset 5 min
-5 1,5,9,13,17,21 * * * scripts/cron_filter_check.sh btc
+5 1,5,9,13,17,21 * * * ~/.fire-cron/cron_filter_check.sh btc
 ```
 
-Each entry runs a thin bash wrapper (`scripts/cron_*.sh`) because cron gives a
-process almost no environment. The wrappers set `HOME`, `cd` into the project,
-invoke `uv` by absolute path (`/Users/george/.local/bin/uv`), and redirect
-output to `data/*_stdout.log` / `data/*_stderr.log`. The filter wrapper also
-sets `FIRE_FILTER_CHECK_SOURCE=cron-spy` / `cron-btc` so the log distinguishes
+Each entry runs a thin bash wrapper because cron gives a process almost no
+environment. The wrappers set `HOME`, `cd` into the project, invoke `uv` by
+absolute path (`/Users/george/.local/bin/uv`), and redirect output to
+`data/*_stdout.log` / `data/*_stderr.log`. The filter wrapper also sets
+`FIRE_FILTER_CHECK_SOURCE=cron-spy` / `cron-btc` so the log distinguishes
 scheduled runs from manual ones (a terminal run with no env var logs
 `source=manual`). **The server does not need to be running** — the wrappers
 call the scripts directly.
+
+**Why the wrappers live in `~/.fire-cron/`, not in `scripts/` (TCC, diagnosed
+2026-05-29).** The repo is the canonical source of the wrappers
+(`scripts/cron_*.sh`, version-controlled), but cron runs *deployed copies* from
+`~/.fire-cron/`. Reason: the project lives under `~/Desktop`, a TCC-protected
+location. With Full Disk Access granted to `/usr/sbin/cron`, cron can read and
+launch a wrapper from `~/Desktop` — but the spawned process is then tainted by
+its `~/Desktop` provenance, and `uv`'s `getcwd()` on the `~/Desktop` working
+directory is denied with the bare error `Current directory does not exist`
+(before Python even starts — no traceback, no log). The *identical* wrapper run
+from outside `~/Desktop` works perfectly. FDA is necessary (pre-FDA cron can't
+read the wrapper at all) but **not sufficient** — the wrapper's own location
+must be outside the protected tree. Confirmed by running byte-identical wrappers
+from `~/Desktop` (fails every fire) and `/tmp` (succeeds every fire) in the same
+minutes. **Redeploy after editing a wrapper:**
+`cp scripts/cron_*.sh ~/.fire-cron/`. (The wrappers are static, so this is
+rare.) The durable fix remains getting the project out of `~/Desktop` entirely
+(Fly.io — see `DEPLOYMENT_PLAN.md`).
 
 When the laptop is in EDT (UTC-4), 8:05 PM ET = 00:05 UTC, so the daily fire
 lands at the start of a new UTC trading day. Cron reads the *current* system
