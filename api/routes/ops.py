@@ -69,17 +69,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VALIDATION_STATE_PATH = PROJECT_ROOT / "data" / "risk_state" / "validation_state.json"
 VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
 
-# launchd plists. `schedule` mirrors the plist so the UI can render "next run" without launchctl.
+# Cron-fired filter monitors. `schedule` used for "next run" estimation.
 # Schedule shapes: ("daily_local", h, m) | ("daily_utc", h, m) | ("interval_seconds", n)
-LAUNCHD_JOBS: list[tuple[str, str, str, tuple]] = [
-    # (plist_label, source_tag, expected_scope, schedule)
-    ("com.fire.filter-check-equity", "launchd-equity", "spy", ("interval_seconds", 14400)),
-    ("com.fire.filter-check-crypto", "launchd-crypto", "btc", ("interval_seconds", 14400)),
+FILTER_MONITOR_JOBS: list[tuple[str, str, str, tuple]] = [
+    # (display_label, source_tag, expected_scope, schedule)
+    ("SPY filter monitor", "cron-spy", "spy", ("interval_seconds", 14400)),
+    ("BTC filter monitor", "cron-btc", "btc", ("interval_seconds", 14400)),
 ]
 
 # launchd-fired rebalance jobs. Last-run state comes from rebalance_log.jsonl
 # (filtered by source tag) rather than filter_check.log. Schedule shape
-# matches LAUNCHD_JOBS for the `_next_run_iso` helper.
+# matches FILTER_MONITOR_JOBS for the `_next_run_iso` helper.
 LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
     # (plist_label, job_id, name, journal_source_tag, schedule)
     (
@@ -212,9 +212,11 @@ async def get_scheduler():
             launchd_error = None
 
         latest = filter_check_log.latest_per_source(runs)
+        # Legacy source tags from the launchd era — fall back for history.
+        _SOURCE_FALLBACKS = {"cron-spy": "launchd-equity", "cron-btc": "launchd-crypto"}
         launchd: list[dict] = []
-        for label, source_tag, expected_scope, schedule in LAUNCHD_JOBS:
-            run = latest.get(source_tag)
+        for label, source_tag, expected_scope, schedule in FILTER_MONITOR_JOBS:
+            run = latest.get(source_tag) or latest.get(_SOURCE_FALLBACKS.get(source_tag, ""))
             if run is None:
                 launchd.append({
                     "label": label,

@@ -3,6 +3,7 @@
 # Usage: cron_filter_check.sh <spy|btc>
 # Cron provides minimal env — set what the scripts need.
 export HOME=/Users/george
+export FIRE_FILTER_CHECK_SOURCE="cron-$1"
 cd /Users/george/Desktop/Projects/FIRE
 exec /Users/george/.local/bin/uv run python3 scripts/filter_check.py --filter "$1" \
   >> data/filter_check_stdout.log 2>> data/filter_check_stderr.log
