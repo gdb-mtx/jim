@@ -335,9 +335,18 @@ export interface LaunchdHealthBlocked {
   reason: string;
 }
 
+// A scheduled job whose cron entry is present but hasn't fired within its
+// cadence + grace (e.g. BTM silently killed it, laptop asleep, wrapper crash).
+export interface LaunchdHealthStale {
+  label: string;
+  last_run: string;   // ISO UTC of the last real fire
+  reason: string;     // e.g. "last fired 2d ago — expected daily"
+}
+
 export interface LaunchdHealth {
   ok: boolean;
   blocked?: LaunchdHealthBlocked[];
+  stale?: LaunchdHealthStale[];
   error?: string;
 }
 

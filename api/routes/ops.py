@@ -68,6 +68,40 @@ def _check_launchd_health() -> dict:
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VALIDATION_STATE_PATH = PROJECT_ROOT / "data" / "risk_state" / "validation_state.json"
 VALIDATION_REPORTS_DIR = PROJECT_ROOT / "data" / "validation_reports"
+DAILY_REBALANCE_LOG = PROJECT_ROOT / "data" / "daily_rebalance.log"
+
+# A scheduled job is flagged stale when its last real fire is older than its
+# nominal cadence plus this grace. 2h absorbs cron skew / a single retry without
+# masking a genuinely missed cycle (BTM kill, laptop asleep, wrapper crash).
+# This is the gap that bit on 2026-05-28: cron entries were *present* (so the
+# crontab-marker check stayed green) but the jobs silently stopped firing.
+STALENESS_GRACE_SECONDS = 7200
+
+
+def _last_log_fire(log_path: Path, marker: str) -> Optional[datetime]:
+    """UTC datetime of the most recent log line containing `marker`, else None.
+
+    Parses the run log's leading 'YYYY-MM-DD HH:MM:SS' stamp. Logs are written
+    UTC (Formatter.converter = time.gmtime, fixed 2026-05-28), so the stamp is
+    read as UTC. This is the authoritative "did the scheduler fire" signal:
+    unlike the journal (rebalance_log.jsonl, written only when trades execute),
+    the 'starting' line is logged on every fire including cash / no-trade days —
+    so a cash streak doesn't read as a dead scheduler.
+    """
+    try:
+        text = log_path.read_text()
+    except OSError:
+        return None
+    last: Optional[datetime] = None
+    for line in text.splitlines():
+        if marker not in line:
+            continue
+        try:
+            stamp = datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        last = stamp.replace(tzinfo=timezone.utc)
+    return last
 
 # Cron-fired filter monitors. `schedule` used for "next run" estimation.
 # Schedule shapes: ("daily_local", h, m) | ("daily_utc", h, m) | ("interval_seconds", n)
@@ -160,6 +194,7 @@ async def get_scheduler():
     from execution.rebalance_log import get_recent_rebalances
 
     def _compute():
+        now_utc = datetime.now(timezone.utc)
         # --- Scheduled rebalance block (launchd-fired) ---
         rebalance_runs = get_recent_rebalances(limit=200)
         scheduled_rebalance: dict = {"jobs": []}
@@ -237,7 +272,7 @@ async def get_scheduler():
                 # `last_checked`, rebalance_log timestamps) and letting
                 # downstream string comparisons sort correctly.
                 utc_started = run.started_at.astimezone(timezone.utc)
-                age_s = (datetime.now(timezone.utc) - utc_started).total_seconds()
+                age_s = (now_utc - utc_started).total_seconds()
                 launchd.append({
                     "label": label,
                     "source": source_tag,
@@ -252,8 +287,30 @@ async def get_scheduler():
                     "next_run": _next_run_iso(schedule, run.started_at),
                 })
 
-        # --- launchd health check (BTM / exit codes) ---
+        # --- scheduler health: crontab present AND actually firing ---
+        # _check_launchd_health answers "are the cron entries installed?".
+        # Staleness answers "are they still firing?" — the gap from 2026-05-28
+        # where entries were present but BTM had silently killed the jobs.
+        # Scoped to the daily rebalance: its fire is logged every night (cash or
+        # not), so the signal is clean. The 4h filter monitors are deferred —
+        # right after the launchd→cron migration their cron-tagged history is
+        # empty (today's runs are source=manual), which would false-positive.
         launchd_health = _check_launchd_health()
+        stale: list[dict] = []
+        reb_fire = _last_log_fire(
+            DAILY_REBALANCE_LOG, "Daily crypto rebalance starting (dry_run=False)"
+        )
+        if reb_fire is not None:
+            reb_age = (now_utc - reb_fire).total_seconds()
+            if reb_age > 86400 + STALENESS_GRACE_SECONDS:  # daily + grace = 26h
+                stale.append({
+                    "label": "Daily crypto rebalance",
+                    "last_run": reb_fire.isoformat(),
+                    "reason": f"last fired {_relative_time(reb_age)} — expected daily",
+                })
+        if stale:
+            launchd_health["ok"] = False
+            launchd_health["stale"] = stale
 
         result: dict = {
             "scheduled_rebalance": scheduled_rebalance,

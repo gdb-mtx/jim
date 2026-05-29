@@ -98,17 +98,45 @@ export default memo(function SchedulerPanel() {
 
       {data?.launchd_health && !data.launchd_health.ok && (
         <div className="mb-3 rounded-lg border border-[#ff4d6a40] bg-[#ff4d6a10] px-3 py-2">
-          <div className="flex items-center gap-2 text-sm font-medium text-[#ff4d6a]">
-            <span>⚠ Scheduled jobs missing</span>
-          </div>
-          {data.launchd_health.blocked?.map((b) => (
-            <div key={b.label} className="mt-1 text-xs text-[#ff8899]">
-              {b.label}: {b.reason}
+          {data.launchd_health.blocked && data.launchd_health.blocked.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 text-sm font-medium text-[#ff4d6a]">
+                <span>⚠ Scheduled jobs missing</span>
+              </div>
+              {data.launchd_health.blocked.map((b) => (
+                <div key={b.label} className="mt-1 text-xs text-[#ff8899]">
+                  {b.label}: {b.reason}
+                </div>
+              ))}
+              <div className="mt-1.5 text-xs text-[#8888a0]">
+                Fix: check crontab -l for missing entries
+              </div>
+            </>
+          )}
+          {data.launchd_health.stale && data.launchd_health.stale.length > 0 && (
+            <>
+              <div
+                className={`flex items-center gap-2 text-sm font-medium text-[#ff4d6a] ${
+                  data.launchd_health.blocked?.length ? "mt-2" : ""
+                }`}
+              >
+                <span>⚠ Scheduler stopped firing</span>
+              </div>
+              {data.launchd_health.stale.map((s) => (
+                <div key={s.label} className="mt-1 text-xs text-[#ff8899]">
+                  {s.label}: {s.reason}
+                </div>
+              ))}
+              <div className="mt-1.5 text-xs text-[#8888a0]">
+                Fix: confirm cron is firing — check Console.app for the job, or run the wrapper manually
+              </div>
+            </>
+          )}
+          {data.launchd_health.error && (
+            <div className="mt-1 text-xs text-[#ff8899]">
+              {data.launchd_health.error}
             </div>
-          ))}
-          <div className="mt-1.5 text-xs text-[#8888a0]">
-            Fix: check crontab -l for missing entries
-          </div>
+          )}
         </div>
       )}
 
