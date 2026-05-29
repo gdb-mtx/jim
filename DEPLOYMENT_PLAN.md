@@ -1,27 +1,23 @@
 # DEPLOYMENT_PLAN.md — Live Module Cloud Deployment
 
 **Opened:** 2026-04-20
-**Status:** Working document. Actual Fly deployment is 3-4 weeks out, possibly months. Near-term work is the **Phase 0 refactor** (decouple live from backtest) done locally. But the overall schedule is tighter than it looks: the 3-month paper-trading clock was reset on 2026-04-20, and real money requires meaningful deployed-paper time (not just local-paper time) before the June/July real-money window. Planning deployment sooner — not because we need to ship fast, but because running paper on Fly is the only way to surface infrastructure bugs before they have real blast radius. See "Timeline — the 3-month paper clock" below.
-**Context:** FIRE currently runs on George's MacBook. launchd fires the filter monitor every 4h AND the daily crypto rebalance at 00:05 UTC; FastAPI runs when George is working. For paper it's fine; for real money it's not. Also: George is a digital nomad and his laptop is not always on/connected, so the live trading path shouldn't depend on it.
+**Status:** Working document. **Updated 2026-05-28.** Phase 0 (decouple live from backtest) is done; cloud deployment has **not** started yet — it slipped ~5 weeks past the original early-May target, pushing the earliest real-money window to **~September**. The laptop interim is stable (scheduler migrated launchd→cron 2026-05-28, plus a `pmset` wake and a >26h staleness banner on the Ops panel), so there's no fire-drill. But deployed-paper time is a hard prerequisite for real money — running paper on Fly is the only way to surface infrastructure bugs before they have real blast radius — so Phase 1 should begin ~mid-June to keep September realistic. See "Timeline" below.
+**Context:** FIRE currently runs on George's MacBook. cron fires the filter monitor every 4h AND the daily crypto rebalance at 8:05 PM ET (= 00:05 UTC in EDT); FastAPI runs when George is working. For paper it's fine; for real money it's not. Also: George is a digital nomad and his laptop is not always on/connected, so the live trading path shouldn't depend on it.
 
-> **⚠️ 2026-05-05 architectural update — APScheduler retired locally, cloud target shifts to Fly Cron Machines.**
+> **⚠️ 2026-05-28 architectural update — scheduler is Supercronic-in-the-app-machine, not Fly scheduled machines.**
 >
-> The original plan deployed FastAPI + an in-process `AsyncIOScheduler` to a long-running Fly Machine. After a long-uptime drift incident on 2026-05-05 (APScheduler silently missed a fire after 5 days of uptime — asyncio wakeup chain broke without raising; loop kept serving HTTP), APScheduler was removed from `api/main.py` and the daily crypto rebalance moved to a launchd-fired script (`scripts/daily_crypto_rebalance.py` + `com.fire.daily-crypto-rebalance.plist`). The asymmetry: we cannot ship in-process scheduling that can fail silently to production, and "restart every few days" is incompatible with a multi-month uptime target.
+> **Scheduler evolution:** in-process `AsyncIOScheduler` (retired 2026-05-05 after a 5-day-uptime silent-drift incident — asyncio wakeup chain broke without raising while the loop kept serving HTTP) → launchd (2026-05-05 → 2026-05-28, killed by macOS BTM silently disabling the agents) → **cron** (local, since 2026-05-28). The scripts (`scripts/daily_crypto_rebalance.py`, `scripts/filter_check.py`) are unchanged across all three eras — only the trigger changed. We cannot ship in-process scheduling that fails silently, and "restart every few days" is incompatible with a multi-month uptime target.
 >
-> **Cloud equivalent:** **Fly Cron Machines** — a separate Fly Machine that wakes on a `[machine_checks]` schedule, runs the script, exits. Native Fly primitive, scales to zero between fires, no long-running scheduler process to drift. References:
-> - https://fly.io/docs/machines/cron-machines/
-> - https://fly.io/docs/launch/scheduled-machines/
+> **Cloud target — corrected 2026-05-28 after checking the current Fly docs:** Fly's native *scheduled machines* only fire on coarse buckets (`hourly|daily|weekly|monthly`) and Fly picks the minute — they **cannot** pin 00:05 UTC or do "every 4h." (The two doc URLs the old plan linked are now 404; Fly reorganized.) So the cloud scheduler is **Supercronic running inside the always-on app machine** from Phase 1, driven by a crontab that mirrors the laptop's exactly (`CRON_TZ=America/New_York`). Precise timing, no separate machine, ~$0 marginal cost. Supercronic is a long-running process, but it's a battle-tested cron daemon that execs subprocesses (like system cron) — it does **not** carry the in-process-asyncio drift risk that retired APScheduler; the healthchecks.io heartbeat remains the backstop.
 >
-> **Implications for Phase 2 (was: "APScheduler on Fly"):** the script being deployed is identical to the local one (`scripts/daily_crypto_rebalance.py` — synchronous, idempotent under the file lock, journals to `rebalance_log.jsonl`). The Fly Machine just provides the cron trigger. Same architectural model as the filter monitor will use post-Phase-3. Net effect: Phase 2 *and* Phase 3 collapse into "deploy the same scripts as Fly Cron Machines." Less work, structurally more robust.
->
-> The detailed phase descriptions below still reference APScheduler in places — when actually executing the migration, treat any "deploy APScheduler" step as "deploy `daily_crypto_rebalance.py` as a Fly Cron Machine." Will be rewritten properly when Phase 2 starts.
+> **Net effect on Phases 2–3:** both become "add the script's line to the Supercronic crontab in the app machine, then remove the matching laptop crontab line." Less work than separate Cron Machines, precise timing, structurally simple. Phase descriptions below are rewritten to match.
 
 ---
 
 ## Guiding principles
 
-1. **ET is the system reference timezone.** Codified in CLAUDE.md. All scheduled times use `TZ=America/New_York` or `CRON_TZ=America/New_York`. A4's launchd job fires at 8:05 PM laptop-local (= 00:05 UTC in EDT); the cloud target (Fly Cron Machine) will fire at exact 00:05 UTC.
-2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. No in-process scheduler — all cron is launchd (local) or Fly Cron Machines (cloud).
+1. **ET is the system reference timezone.** Codified in CLAUDE.md. All scheduled times use `TZ=America/New_York` or `CRON_TZ=America/New_York`. A4's cron job fires at 8:05 PM laptop-local (= 00:05 UTC in EDT); the cloud target (Supercronic in the app machine) fires at exact 00:05 UTC via `CRON_TZ`.
+2. **Local dev keeps working unchanged.** Cloud deployment is additive, not a replacement. Vite still proxies `/api` to `localhost:8001` in dev; production serves both from the same Fly origin. No in-process scheduler — all scheduling is cron (local) or Supercronic in the app machine (cloud).
 3. **Boring tech.** Prefer documented, well-trodden tools over shiny. One CLI, one Dockerfile, one config file.
 4. **Every phase is reversible.** No one-way doors until Phase 5 pre-real-money split.
 5. **Paper-first — and paper *on the deployed infra* is itself a validation phase, not just a rehearsal.** The whole point of running paper on Fly before real money is that infrastructure bugs (cron fires at wrong time, volume unmounts, log drain silently breaks, auth middleware has a bypass, `fly scale count 2` slips through) only surface on production infra. We already found that our local backtest and local live didn't agree (HISTORY.md C4). The equivalent for deployment is: laptop-paper and Fly-paper won't agree in ways we can't predict until Fly-paper has been running for weeks. **Real money requires deployed-paper time, not just laptop-paper time.**
@@ -36,18 +32,18 @@ Dates are approximate. The goal is not to be fast; it's to be honest about the s
 | Anchor | Date | Meaning |
 |---|---|---|
 | Paper clock reset | **2026-04-20** | Post-audit, stale-data window invalidated. Fresh paper trading starts here. |
-| 3-month minimum paper window | **2026-07-20** | Earliest calendar date real money can be considered per CLAUDE.md policy. |
-| Phase 0 refactor complete | ~2026-04-27 | Split `strategies/portfolio.py`, audit imports, 1 week of laptop validation. |
-| Phase 1 target (deploy API to Fly) | ~2026-05-04 | 2 weeks from today. Aggressive but doable. |
-| Phase 2 target (Cron Machine on Fly) | ~2026-05-11 | |
-| Phase 3 target (filter cron on Fly) | ~2026-05-18 | Laptop launchd unloaded same day. |
-| Phase 4 target (observability wired) | ~2026-05-25 | |
-| **Deployed-paper window begins** | ~2026-05-25 | Fly runs paper with full observability. This is when infra bugs have a chance to surface. |
-| Minimum deployed-paper duration | **≥8 weeks** | Calibrated against 3-month total paper clock and the fact that monthly rebalance (A1/A2) gives only ~2 monthly cycles inside 8 weeks. Want at least 2 full rebalance months, 2 filter flips if possible, one Alpaca weekend gap, one Fly deploy during live hours that we then test rollback on. |
-| Phase 5 pre-real-money hardening | ~2026-07-20+ | Earliest start. Paper/live app split, runbook drilled, volume restore drilled. |
-| Real money | **2026-08-01+** | Not before. Gated on C4/C5/C6 fixed AND ≥8 weeks clean deployed-paper AND runbook drilled. |
+| Phase 0 refactor complete | **2026-04-23** ✅ | Done — `portfolio.py` split, imports audited, grep clean. |
+| 3-month minimum paper window | **2026-07-20** | Earliest *calendar* date real money can be considered per CLAUDE.md policy. |
+| Phase 1 (deploy API+dashboard to Fly) | **not started** — target ~2026-06-08 | Slipped ~5 weeks from the original ~05-04 target; deployment never began. |
+| Phase 2 (daily rebalance via Supercronic) | ~2026-06-12 | Add to the app machine's crontab; remove laptop line. |
+| Phase 3 (filter checks via Supercronic) | ~2026-06-15 | Same machine; remove laptop cron same day. |
+| Phase 4 (observability wired) | ~2026-06-19 | |
+| **Deployed-paper window begins** | ~2026-06-19 | Fly runs paper with full observability. This is when infra bugs have a chance to surface. |
+| Minimum deployed-paper duration | **≥8 weeks** | Calibrated against the 3-month total paper clock and the fact that the A1/A2 monthly rebalance gives only ~2 cycles inside 8 weeks. Want ≥2 full rebalance months, 2 filter flips if possible, one Alpaca weekend gap, one Fly deploy during live hours we then test rollback on. |
+| Phase 5 pre-real-money hardening | ~2026-08-15+ | Paper/live app split, runbook drilled, volume restore drilled. |
+| Real money | **~2026-09-15+** | Was 2026-08-01. Slipped to ~September because deployment didn't start in early May. Gated on C4/C5/C6 fixed AND ≥8 weeks clean deployed-paper AND runbook drilled. |
 
-**What this math means:** if Phase 1 slips past mid-May, deployed-paper time compresses and real money slips to September. That's fine — the timeline should bend to the evidence, not the other way. But it also means the current "3-4 weeks" estimate for *starting* deployment is load-bearing. The Phase 0 refactor should not balloon.
+**What this math means (updated 2026-05-28):** the slip the original plan warned about happened — Phase 1 never started in early May, so real money is now realistically **~September**. That's fine; the timeline bends to the evidence, not the other way. The laptop interim is holding (cron + `pmset` wake + the >26h staleness banner), so there's no fire-drill pressure to rush deployment. But deployed-paper remains a hard prerequisite, and ≥8 weeks of it means **Phase 1 needs to begin by roughly mid-June** to keep September realistic. If it slips again, real money slips with it — that's the honest trade.
 
 ---
 
@@ -55,7 +51,7 @@ Dates are approximate. The goal is not to be fast; it's to be honest about the s
 
 George's initial ask was "deploy to Vercel." Vercel is serverless functions + edge static hosting. It **cannot** host the live service. Specifics:
 
-- **No long-running daemon.** `api/main.py` used `AsyncIOScheduler` at the time of this evaluation (retired 2026-05-05; cron now handled by launchd/Fly Cron Machines). But the broader point stands: the API must stay resident for real-time portfolio queries and webhook responses. Vercel functions terminate after each request.
+- **No long-running daemon.** `api/main.py` used `AsyncIOScheduler` at the time of this evaluation (retired 2026-05-05; scheduling now handled by system cron locally, Supercronic on Fly). But the broader point stands: the API must stay resident for real-time portfolio queries and webhook responses. Vercel functions terminate after each request.
 - **Execution-time caps.** Hobby 10s, Pro 60s default / 300s fluid / 900s background. Crypto rebalance (yfinance pull → vol calc → Alpaca order submission → snapshot) routinely pushes past 60s, especially with retries. `/api/backtests` endpoints are much worse.
 - **Ephemeral filesystem.** Everything in `data/risk_state/` and `data/raw/` vanishes between invocations. **Circuit-breaker state silently resetting is a real-money-graduation disqualifier** — we explicitly chose file-persistence for this in S3.
 - **`fcntl.flock` is meaningless in serverless.** `api/locks.py` relies on flock to serialize FastAPI + cron scripts across processes. Serverless spawns parallel isolated instances with independent tmpfs — the lock protects nothing.
@@ -69,10 +65,10 @@ George's initial ask was "deploy to Vercel." Vercel is serverless functions + ed
 **Recommendation:** Fly.io, single app, single machine, 1GB persistent volume mounted at `/data`.
 
 Why:
-- Linux container → `fcntl.flock` works as-is on ext4 volume; Fly Cron Machines run the daily rebalance and filter checks; Python 3.12 via standard Dockerfile or uv-friendly buildpack.
+- Linux container → `fcntl.flock` works as-is on ext4 volume; Supercronic inside the always-on app machine runs the daily rebalance and filter checks on a precise crontab; Python 3.12 via standard Dockerfile or uv-friendly buildpack.
 - First-class persistent volumes (`fly volumes create`). Survives deploys.
-- Native secrets (`fly secrets set ALPACA_API_KEY=...`), native scheduled machines, native log drains.
-- Cost: `shared-cpu-1x` + 512MB RAM + 1GB volume ≈ **$5–8/month**. Well inside budget.
+- Native secrets (`fly secrets set ALPACA_API_KEY=...`), native log drains. (Cron is Supercronic, not Fly's native scheduled machines — the latter only fire on coarse hourly/daily buckets and can't pin 00:05 UTC.)
+- Cost: `shared-cpu-1x` + 256–512MB RAM + 1GB volume ≈ **$2–5/month** (a 256MB always-on machine is ~$2/mo; Supercronic cron adds nothing since the machine is already running). Well inside budget.
 - Ops simplicity: one CLI (`flyctl`), one `Dockerfile`, one `fly.toml`.
 
 **Data sizing (corrected from initial estimate):** parquet caches are **~14MB total**, not "hundreds of MB." The smallest Fly tier easily handles it.
@@ -83,6 +79,7 @@ Why:
 - **Render** — free tier sleeps; paid doesn't have usable volumes on cheapest plan. Rejected.
 - **Google Cloud Run + Cloud Scheduler** — same cold-start + scheduler issues as Vercel unless you pay for min-instances (erases cost advantage). Rejected.
 - **AWS Lightsail / EC2** — too much manual setup for a solo side-project at this stage. Rejected.
+- **Oracle Cloud Always Free (ARM Ampere, $0 forever)** — evaluated 2026-05-28. Genuinely free and powerful (4 OCPU / 24GB), but rejected for the *live* service. Oracle reclaims idle Always-Free instances (95th-pct CPU <20% over a 7-day window → reclaimed — a mostly-idle trading box is a target), ARM capacity is frequently "out of host capacity" at provision time, and there's a documented account-flag/suspension risk for automation workloads with *"no fast path to fix it."* That's the wrong failure mode for something that must reliably fire trades — "instance gone / account locked, no recourse" is categorically worse than Fly's "down a few hours, then back." The ~$2–5/mo Fly cost is a rounding error at this account size; reliability + ops simplicity decide it. Oracle remains a fine *free* box for **non-critical research/backtest compute**, where a reclaim just means rerun — just not for the live path.
 
 ---
 
@@ -296,18 +293,18 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 - **Success:** the Fly URL serves the dashboard; `/api/health` returns 200; portfolio panels render from the same origin; auth rejects unauthed requests.
 - **Reversible:** dashboard reverts to local-only by hitting `http://localhost:5174` instead of the Fly URL. Nothing destructive on the laptop.
 
-### Phase 2 — Cut over daily crypto rebalance to Fly Cron Machine
-- Deploy `scripts/daily_crypto_rebalance.py` as a Fly Cron Machine firing at 00:05 UTC.
-- Watch one scheduled firing. Compare `rebalance_log.jsonl` entry to local format.
-- Unload laptop launchd plist same day (`launchctl unload ~/Library/LaunchAgents/com.fire.daily-crypto-rebalance.plist`).
+### Phase 2 — Cut over daily crypto rebalance to Supercronic on Fly
+- Add Supercronic to the app machine (from Phase 1) and put the daily rebalance in its crontab: `CRON_TZ=America/New_York 5 20 * * * <wrapper>` (= 8:05 PM ET = 00:05 UTC in EDT). Runs *inside* the always-on machine — no separate Cron Machine. (Fly's native scheduled machines were rejected: coarse hourly/daily buckets only, can't pin 00:05 UTC.)
+- Watch one scheduled firing. Compare the `rebalance_log.jsonl` entry to local format.
+- Remove the laptop cron entry the same day (`crontab -e`, delete the `cron_crypto_rebalance.sh` line).
 - **Success:** one successful scheduled rebalance from Fly; `take_snapshot(4)` ran; heartbeat pinged healthchecks.io.
-- **Reversible:** re-load the laptop plist, disable Fly cron.
+- **Reversible:** re-add the laptop crontab line, comment out the Supercronic entry.
 
-### Phase 3 — Move `filter_check.py` from launchd to Fly cron
-- Add Fly scheduled machine OR `supercronic` inside container with `CRON_TZ=America/New_York 30 16 * * *` (= 16:30 ET, DST-aware).
-- **Risk: dual-run during cutover.** If both laptop launchd and Fly cron fire, `file_rebalance_lock` only protects within one machine — both could execute. Mitigation: unload launchd plist the same day Fly cron goes live. Don't run both in parallel for "safety."
+### Phase 3 — Move `filter_check.py` to Supercronic on Fly
+- Add the two filter checks to the same Supercronic crontab — mirrors the current laptop crontab exactly: `CRON_TZ=America/New_York 0 0,4,8,12,16,20 * * * <wrapper> spy` and `5 1,5,9,13,17,21 * * * <wrapper> btc` (every 4h).
+- **Risk: dual-run during cutover.** If both the laptop cron and the Fly Supercronic fire, `file_rebalance_lock` only protects within one machine — both could execute. Mitigation: remove the laptop crontab lines the same day Fly cron goes live. Don't run both in parallel for "safety."
 - **Success:** two consecutive daily runs on Fly, `filter_state.json` updated, no duplicate orders visible in Alpaca.
-- **Reversible:** re-`launchctl load` the plist, disable Fly cron.
+- **Reversible:** re-add the laptop crontab lines, comment out the Supercronic entries.
 
 ### Phase 4 — Observability hardening
 - Wire Fly log drain → Better Stack.
@@ -348,7 +345,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 1. **API authentication mechanism.** Same-origin session cookie for Phase 1 (15 min of work, no token-in-browser anti-pattern thanks to co-located deploy), or jump straight to Cloudflare Access? Cloudflare Access is free for one user and is the right long-term answer; the session cookie is the simpler bridge.
 2. **Alerting channel.** Pushover ($5 one-time, reliable push notifications to phone) or Telegram bot (free, but requires installed Telegram app)? Need to pick one to implement in Phase 4.
 3. **CI/CD for deploys.** Manual `flyctl deploy` from laptop, or GitHub Actions on push to `main`? Manual is fine for Phase 1–2; automation is a Phase 4/5 polish item.
-4. **Budget ceiling.** Estimated $5-8/mo Fly + free tiers for everything else. Any hard cap?
+4. **Budget ceiling.** Estimated **~$2–5/mo** Fly + free tiers for everything else. Any hard cap? (Oracle free tier was evaluated as the $0 alternative and rejected for the live service — see "Alternatives considered.")
 5. **When to split paper/live.** Phase 5 = pre-real-money. Is that driven by a calendar date, by the Tier 1 C4/C5/C6 fixes landing (HISTORY.md), or by a separate gate?
 
 **New concerns raised in discussion — folded in:**
@@ -360,7 +357,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 
 **Sharp edges flagged:**
 - **Single-machine constraint** (fcntl limitation). Must never `fly scale count 2`. Documented in runbook; ideally enforced in `fly.toml`.
-- **Dual-run window during Phase 3.** Laptop launchd + Fly cron overlap = potential double-rebalance. Cut over in a single session, don't run in parallel.
+- **Dual-run window during Phase 3.** Laptop cron + Fly Supercronic overlap = potential double-rebalance. Cut over in a single session, don't run in parallel.
 - **Timezone at the container layer.** Must install `tzdata` in the Dockerfile and either use `CRON_TZ=America/New_York` with supercronic, or set `TZ=America/New_York` in `fly.toml` env. Missing either = cron fires at wrong UTC time.
 - **Clock drift.** Fly Machines sync via NTP — fine. Worth a startup assertion (`assert abs(datetime.utcnow() - ntp_time) < 1s`) to catch misconfigured containers.
 - **Alpaca latency / region.** Fly region default `iad` (Virginia) is ~ms from Alpaca us-east. Don't pick EU/APAC.
@@ -373,7 +370,7 @@ grep -rn "from strategies.portfolio_backtest\|import strategies.portfolio_backte
 
 - `CLAUDE.md` — system overview, ET time convention, current schedule
 - `HISTORY.md` — C4/C5/C6 sim-live parity findings gating the Phase 5 real-money graduation
-- `api/main.py` — FastAPI lifespan (post-2026-05-05 the daily crypto rebalance is launchd-fired, not in-process)
-- `scripts/filter_check.py` + `scripts/com.fire.filter-check.plist` — launchd cron to be migrated in Phase 3
+- `api/main.py` — FastAPI lifespan (no in-process scheduler; the daily crypto rebalance is cron-fired locally as of 2026-05-28, Supercronic on Fly post-Phase-2)
+- `scripts/filter_check.py` + `scripts/cron_filter_check.sh` — cron filter monitor to be migrated to Supercronic in Phase 3
 - `api/locks.py` — fcntl lock implementation, single-machine constraint source
 - `data/trading_dates.py` — ET-stable date helpers (already in place from Tier 3 D1/D2 fixes)
