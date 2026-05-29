@@ -22,7 +22,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
   - `PLAN_MODE2.md` — Mode 1+2 strategic plan, Phase A live
 - **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`) — the full financial picture, bridge-plan projections. Yield strategy deep research docs (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`, `SCOUT_REVIEW_MAY2026.md`) moved to `docs/archive/` here in FIRE as of 2026-05-13.
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
-- `AUTOMATION.md` — reference for the A4 daily rebalance automation: APScheduler job, launchd filter monitors (equity + crypto), sleep behavior, install/uninstall commands.
+- `AUTOMATION.md` — reference for the A4 daily rebalance automation: cron job, cron filter monitors (equity + crypto), sleep behavior, install commands. (Scheduler migrated launchd→cron 2026-05-28 after macOS BTM kept silently disabling the agents; APScheduler before that, retired 2026-05-05.)
 - `DATA_SOURCES.md` — standing observation that yfinance is the root cause of nearly every cache-corruption incident, with an incident log and candidate replacements (Alpaca/Polygon/hybrid). Becomes load-bearing at Phase 5 (real money).
 - `docs/archive/` — superseded design docs and time-capsule research (PLAN, HUNT_APR2026, AUDIT, AUDIT_MONTH2, AUDIT_MONTH2_REVIEW, AUDIT_47, DECISIONS_RESOLVED, OPS_DASHBOARD_PLAN, HANDOFF_ALPACA_BARS). Read for historical context only.
 - `References/` — Original 2020 proposal and Ernie Chan books
@@ -49,11 +49,11 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Every-21-trading-days rebalance (manual).
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via launchd at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for launchd details.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via cron at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for cron details.
 
 Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +38.6%, Calmar 3.05** in backtest (8-coin live universe, post C11 BNB removal).
 
-Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (launchd), A1/A2 every 21 trading days anchored to 2026-04-21 (manual, ~3:00 PM ET), filter monitor every 4h (launchd). See `AUTOMATION.md` for full operational detail. Upcoming A1/A2 rebalance dates: **2026-05-20 (Wed)**, 2026-06-22 (Mon), 2026-07-22 (Wed), 2026-08-20 (Thu).
+Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `AlpacaBroker(account=1|2|3|4)` selects. Rebalance schedule: A4 daily (cron), A1/A2 every 21 trading days anchored to 2026-04-21 (manual, ~3:00 PM ET), filter monitor every 4h (cron). See `AUTOMATION.md` for full operational detail. Upcoming A1/A2 rebalance dates: **2026-05-20 (Wed)**, 2026-06-22 (Mon), 2026-07-22 (Wed), 2026-08-20 (Thu).
 
 ### Strategies
 
@@ -62,7 +62,7 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 ### Risk Controls (summary — see `AUTOMATION.md` for operational detail)
 
 - **Time convention:** ET (America/New_York) is the system reference timezone. Use `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`), never `date.today()` or `datetime.now()`.
-- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via launchd. Auto-rebalances on flip. Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
+- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via cron. Auto-rebalances on flip. Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
 - **Drawdown monitor:** Two tiers — **-10% dashboard alert** (amber banner, non-blocking) and **-35% catastrophe halt** (per-account kill-switch, manual reset required, 403 on rebalance). Neither threshold fires in 16y of backtest.
 - **Concurrency:** All rebalance entry points serialize via `dual_rebalance_lock` (async + file lock). Contention → 409 / `status="locked"`.
 - **Sub-broker-minimum rejections** on A4 (sub-$10 BTC dust orders) are expected and harmless — revisit only if recurring >30 days.
@@ -81,14 +81,14 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 **Mode 2:** `mode2/` — PEAD pipeline (Finnhub EPS + Insider Monkey transcripts + scoring prompts + tracker). CLI: `uv run python3 -m mode2.run_analysis {fetch|summary|analyze|status}`.
 
-**Scripts:** `scripts/start.sh` (both servers), `scripts/filter_check.py` (launchd 4h), `scripts/daily_crypto_rebalance.py` (launchd daily), `scripts/run_validation.py` (6-test runner), `scripts/signal_tracker.py` (A4 execution drag).
+**Scripts:** `scripts/start.sh` (both servers), `scripts/filter_check.py` + `scripts/cron_filter_check.sh` (cron 4h), `scripts/daily_crypto_rebalance.py` + `scripts/cron_crypto_rebalance.sh` (cron daily), `scripts/run_validation.py` (6-test runner), `scripts/signal_tracker.py` (A4 execution drag).
 
 ### Running the Project
 - **Both servers**: `./scripts/start.sh` (recommended). Backend on :8001, frontend on :5174. Port :8000 is FIREMaster.
 - **Backend only**: `uv run uvicorn api.main:app --reload --port 8001`
 - **Frontend only**: `cd dashboard && npm run dev`
 - **Validation**: `uv run python3 scripts/run_validation.py --account N` — runs Tests 1-6. See `VALIDATION.md` for the strategy-discovery workflow.
-- **Filter monitor**: Runs automatically via launchd every 4h. Manual: `uv run python3 scripts/filter_check.py` (or `--dry-run`). Install/uninstall commands in `AUTOMATION.md`.
+- **Filter monitor**: Runs automatically via cron every 4h. Manual: `uv run python3 scripts/filter_check.py` (or `--dry-run`). Install commands in `AUTOMATION.md`.
 - **Signal tracker**: `uv run python3 scripts/signal_tracker.py` — A4 signal-only vs live return decomposition. `--since YYYY-MM-DD` for recent window.
 
 ### Development Rules
