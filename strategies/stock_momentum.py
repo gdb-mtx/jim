@@ -46,6 +46,7 @@ class StockMomentum(BaseStrategy):
         vix_threshold_reduce: float = 35.0,
         vix_threshold_exit: float = 45.0,
         vix_reduce_factor: float = 0.5,
+        weighting_scheme: str = "equal_weight",
     ):
         """
         Args:
@@ -58,6 +59,9 @@ class StockMomentum(BaseStrategy):
             vix_threshold_reduce: VIX level to halve exposure
             vix_threshold_exit: VIX level to exit entirely (go to cash)
             vix_reduce_factor: Position scale when VIX is elevated
+            weighting_scheme: 'equal_weight' (default, live behavior),
+                'cap_weight', or 'sqrt_cap_weight'. Non-equal schemes require
+                set_market_caps() to be called first (research diagnostic only).
         """
         self.lookback_days = lookback_days
         self.skip_recent = skip_recent
@@ -68,7 +72,9 @@ class StockMomentum(BaseStrategy):
         self.vix_threshold_reduce = vix_threshold_reduce
         self.vix_threshold_exit = vix_threshold_exit
         self.vix_reduce_factor = vix_reduce_factor
+        self.weighting_scheme = weighting_scheme
         self._vix = None
+        self._market_caps = None
 
     def set_vix(self, vix: pd.Series):
         """Inject VIX data for regime filtering.
@@ -77,6 +83,54 @@ class StockMomentum(BaseStrategy):
             vix: Series of VIX closing values with DatetimeIndex
         """
         self._vix = vix
+
+    def set_market_caps(self, caps: pd.DataFrame):
+        """Inject per-date market caps (price x frozen shares) for cap-weighting.
+
+        Mirrors set_vix(). Only consulted when weighting_scheme is
+        'cap_weight' or 'sqrt_cap_weight'; aligned to the price panel at
+        weighting time. Research diagnostic only — live A1 never sets this.
+
+        Args:
+            caps: DataFrame of market caps, DatetimeIndex x ticker columns
+        """
+        self._market_caps = caps
+
+    def _assign_weights(
+        self, selected: pd.DataFrame, vol_scalar: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Turn the top-N selection into per-stock weights.
+
+        equal_weight (default) is the original behavior verbatim: each selected
+        stock gets vol_scalar_i / n_selected. cap_weight / sqrt_cap_weight
+        replace the uniform 1/n share with a (sqrt-)cap-proportional share,
+        keeping vol_scalar per-stock and leaving the downstream 1.5x exposure
+        cap + VIX filter untouched — so weighting is the only variable.
+        """
+        if self.weighting_scheme == "equal_weight":
+            n_selected = selected.sum(axis=1).replace(0, 1)
+            return (selected * vol_scalar).div(n_selected, axis=0)
+
+        if self._market_caps is None:
+            raise ValueError(
+                f"weighting_scheme={self.weighting_scheme!r} requires set_market_caps()"
+            )
+        caps = self._market_caps.reindex(
+            index=selected.index, columns=selected.columns
+        ).ffill()
+        if self.weighting_scheme == "cap_weight":
+            cap_basis = caps
+        elif self.weighting_scheme == "sqrt_cap_weight":
+            cap_basis = np.sqrt(caps)
+        else:
+            raise ValueError(f"Unknown weighting_scheme: {self.weighting_scheme!r}")
+
+        # fillna(0): a selected name with no cap data contributes 0 (dropped);
+        # non-selected names stay 0. Matches equal-weight's NaN→fillna handling.
+        masked = selected * cap_basis.fillna(0.0)
+        cap_sum = masked.sum(axis=1).replace(0, np.nan)
+        share = masked.div(cap_sum, axis=0)  # per-row share over selected, sums to 1
+        return vol_scalar * share
 
     def _get_regime_scalar(self, dates: pd.DatetimeIndex) -> pd.Series:
         """Compute regime-based position scalar from VIX.
@@ -126,9 +180,8 @@ class StockMomentum(BaseStrategy):
         vol_scalar = self.vol_target / rolling_vol.replace(0, np.nan)
         vol_scalar = vol_scalar.clip(upper=3.0)  # Cap at 3x leverage per stock
 
-        # Weight = selected * vol_scalar / n_selected
-        n_selected = selected.sum(axis=1).replace(0, 1)
-        weights = (selected * vol_scalar).div(n_selected, axis=0)
+        # Cross-sectional weighting (equal-weight default; cap/sqrt-cap research)
+        weights = self._assign_weights(selected, vol_scalar)
 
         # Cap total portfolio exposure at 1.5x (no extreme leverage)
         total_exposure = weights.sum(axis=1)

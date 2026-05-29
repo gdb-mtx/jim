@@ -33,6 +33,7 @@ def _generate_strategy_returns(
     crypto_prices: pd.DataFrame | None = None,
     btc_prices: pd.Series | None = None,
     apply_costs: bool = True,
+    strategy_params: dict | None = None,
 ) -> pd.Series:
     """Generate returns for a single strategy, net of transaction costs.
 
@@ -41,19 +42,29 @@ def _generate_strategy_returns(
     price-in per-rebalance slippage / bid-ask via `apply_transaction_costs`.
     Set `apply_costs=False` to recover the pre-C6 gross-return behavior
     (useful for calibration / stress tests).
+
+    `strategy_params` (research only): optional {strategy_id: {kwargs}} forwarded
+    to the strategy constructor. A "market_caps" entry is injected via
+    set_market_caps() rather than the constructor. Default None → unchanged
+    live behavior.
     """
+    params = dict((strategy_params or {}).get(strategy_id, {}))
+    market_caps = params.pop("market_caps", None)
+
     if strategy_id in CRYPTO_STRATEGIES:
-        strategy = CRYPTO_STRATEGIES[strategy_id]()
+        strategy = CRYPTO_STRATEGIES[strategy_id](**params)
         if btc_prices is not None:
             strategy.set_btc(btc_prices)
         prices_df = crypto_prices
     elif strategy_id in STOCK_STRATEGIES:
-        strategy = STOCK_STRATEGIES[strategy_id]()
+        strategy = STOCK_STRATEGIES[strategy_id](**params)
         if vix is not None:
             strategy.set_vix(vix)
+        if market_caps is not None and hasattr(strategy, "set_market_caps"):
+            strategy.set_market_caps(market_caps)
         prices_df = stock_prices
     else:
-        strategy = ETF_STRATEGIES[strategy_id]()
+        strategy = ETF_STRATEGIES[strategy_id](**params)
         prices_df = etf_prices
 
     signals = strategy.generate_signals(prices_df)
@@ -122,6 +133,7 @@ def run_portfolio(
     start: str = "2010-01-01",
     end: str | None = None,
     apply_costs: bool = True,
+    strategy_params: dict | None = None,
 ) -> tuple[str, pd.Series]:
     """Run a combined portfolio and return (name, returns Series).
 
@@ -132,6 +144,9 @@ def run_portfolio(
         apply_costs: Apply per-strategy transaction costs (C6 fix 2026-04-21).
             Default True — sim/live parity. Set False for gross-return
             calibration runs.
+        strategy_params: Research-only {strategy_id: {kwargs}} forwarded to the
+            component strategy (e.g. weighting_scheme, market_caps). Default
+            None → unchanged live behavior.
 
     Returns:
         Tuple of (portfolio_name, combined_returns_series)
@@ -164,7 +179,7 @@ def run_portfolio(
     for strategy_id in weights:
         strategy_returns[strategy_id] = _generate_strategy_returns(
             strategy_id, etf_prices, stock_prices, vix, crypto_prices, btc_prices,
-            apply_costs=apply_costs,
+            apply_costs=apply_costs, strategy_params=strategy_params,
         )
 
     # Align to common dates and compute weighted blend
