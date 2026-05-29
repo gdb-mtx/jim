@@ -85,7 +85,7 @@ LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
     (
         "com.fire.daily-crypto-rebalance",
         "daily_crypto_rebalance",
-        "Daily crypto rebalance (00:05 UTC, launchd)",
+        "Daily crypto rebalance (00:05 UTC, cron)",
         "scheduled",
         ("daily_utc", 0, 5),
     ),

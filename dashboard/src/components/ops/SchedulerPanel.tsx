@@ -99,7 +99,7 @@ export default memo(function SchedulerPanel() {
       {data?.launchd_health && !data.launchd_health.ok && (
         <div className="mb-3 rounded-lg border border-[#ff4d6a40] bg-[#ff4d6a10] px-3 py-2">
           <div className="flex items-center gap-2 text-sm font-medium text-[#ff4d6a]">
-            <span>⚠ macOS has disabled launchd agents</span>
+            <span>⚠ Scheduled jobs missing</span>
           </div>
           {data.launchd_health.blocked?.map((b) => (
             <div key={b.label} className="mt-1 text-xs text-[#ff8899]">
@@ -107,18 +107,18 @@ export default memo(function SchedulerPanel() {
             </div>
           ))}
           <div className="mt-1.5 text-xs text-[#8888a0]">
-            Fix: launchctl unload / load the plist, or re-enable in System Settings → Login Items
+            Fix: check crontab -l for missing entries
           </div>
         </div>
       )}
 
       {data && (
         <div className="flex flex-col gap-4">
-          {/* Daily rebalance — launchd-fired (replaced in-process APScheduler 2026-05-05) */}
+          {/* Daily rebalance — cron-fired (migrated from launchd 2026-05-28) */}
           <div>
             <div className="mb-2 flex items-center gap-2">
               <span className="text-sm font-medium text-[#e8e8f0]">
-                Scheduled rebalance (launchd)
+                Scheduled rebalance (cron)
               </span>
               <span className="text-xs text-[#8888a0]">
                 runs even when the server is off
@@ -193,11 +193,11 @@ export default memo(function SchedulerPanel() {
             </div>
           </div>
 
-          {/* launchd — filter monitors (SPY + BTC every 4h) */}
+          {/* cron — filter monitors (SPY + BTC every 4h) */}
           <div>
             <div className="mb-2 flex items-center gap-2">
               <span className="text-sm font-medium text-[#e8e8f0]">
-                Filter monitors (launchd)
+                Filter monitors (cron)
               </span>
               <span className="text-xs text-[#8888a0]">
                 runs even when the server is off
