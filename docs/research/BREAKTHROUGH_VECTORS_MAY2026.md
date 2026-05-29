@@ -8,6 +8,36 @@
 
 ---
 
+## ⚠ UPDATE 2026-05-29 — cap-weight test run; core premise partly overturned
+
+The #1 "quick info-rich test" below (cap-weight rebuild of A1) was built and run
+(`scripts/capweight_diagnostic.py`; results in `capweight_diagnostic_results.md`).
+**The result contradicts this doc's title premise for A1.**
+
+- **A1 is NOT underperforming SPY in backtest.** OOS (2023+): A1 equal-weight
+  **+27.9% CAGR / -9.8% MaxDD / Calmar 2.83** vs SPY **+23.9% / -18.8% / 1.27** —
+  beats SPY on raw return *and* crushes it risk-adjusted (half the drawdown). The
+  equal-weight arm cross-checks the documented A1 27.2% CAGR, so it's faithful.
+- **Cap-weight is NOT an improvement** — the hypothesis ("closes 30-50% of the SPY
+  gap") is refuted because *there was no gap to close*. Cap-weight nudges CAGR up
+  but worsens drawdown and Calmar. **Keep equal-weight; do not cap-tilt A1.**
+- **So the "underperforming SPY" framing was a measurement artifact for A1** — it
+  tracked the *live paper window* (1-2 months = noise, plus the infra/timezone/
+  execution bugs fixed late May 2026), not the strategy. This is Tier 3 #6 ("is
+  FIRE supposed to beat SPY?") answered with data: **A1 is a low-drawdown SPY-
+  *alternative*; the right benchmark is risk-adjusted, not raw CAGR.**
+- **Caveat + refocus:** survivorship inflates A1's *absolute* CAGR ~1-2pp (C3);
+  SPY's number is clean; the drawdown/Calmar edge is robust (it comes from the SPY
+  trend filter going defensive). This tested **A1 only** — the book's real soft
+  spots are **A2 (MARGINAL, ~11% CAGR)** and **A4 (live execution drag)**. Point
+  breakthrough energy there, not at a broad "beat SPY" goal A1 already meets.
+
+The ranked avenues below still stand for A2/A4 and for net-new sleeves — but read
+the "equal-weight gets crushed" diagnostic in the next section as *the hypothesis
+we tested and refuted for A1*, not a standing conclusion.
+
+---
+
 ## Diagnostic: Why we're underperforming SPY (specifically, in 2026)
 
 ### The single biggest unexamined assumption: equal-weight top-N
@@ -24,6 +54,13 @@ This is a 1990s-vintage academic convention. The literature standardized on equa
 - Rebuild A1's signal generation unchanged, but apply **cap-weight** OR **sqrt-cap-weight** within the top-15 selection.
 - Hypothesis: closes 30-50% of the SPY gap immediately.
 - Even cleaner: **concentration-adaptive weighting** — when top-5/total cap ratio > X, lean cap-weight; when dispersed, lean equal-weight. A real signal nobody publishes on because academics standardized on equal-weight.
+
+> **✅ RESULT (2026-05-29):** Done. A1 equal-weight *already beats* SPY OOS
+> (Calmar 2.83 vs 1.27, half the drawdown); cap-weight raised CAGR slightly but
+> worsened drawdown + Calmar → **not an improvement; hypothesis refuted (no gap to
+> close).** The "equal-weight gets crushed" claim above is false for A1's realized
+> return profile. Keep equal-weight. Concentration-adaptive weighting is now low
+> priority (no gap to adapt away). See top-of-doc update + `capweight_diagnostic_results.md`.
 
 ### Other contributing factors
 
@@ -154,7 +191,7 @@ This is a **philosophy shift**, not a strategy tweak. Worth considering whether 
 
 | Priority | Vector | Cost | Information value |
 |---|---|---|---|
-| **Quick info-rich test** | Cap-weight or sqrt-cap-weight rebuild of A1 | ~2 days | Tells you whether SPY gap is structural (weighting) or genuine (bad picks) |
+| **✅ DONE 2026-05-29** | Cap-weight rebuild of A1 | done | **Answered: A1 already beats SPY OOS (Calmar 2.83 vs 1.27); cap-weight not an improvement. The SPY "gap" was the live window, not the strategy. Keep equal-weight.** |
 | **One real new direction** | VIX term-structure carry as A5 | ~1 week | Cleanest path, well-scoped, FRED data, zero AI |
 | **Highest-EV long-term** | Crypto on-chain signals | 1-2 weeks | Only avenue with real edge outside public equity literature |
 
