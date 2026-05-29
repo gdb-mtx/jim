@@ -31,58 +31,37 @@ from fastapi import APIRouter, Query
 
 router = APIRouter()
 
-ALL_FIRE_LABELS = [
-    "com.fire.daily-crypto-rebalance",
-    "com.fire.filter-check-equity",
-    "com.fire.filter-check-crypto",
+EXPECTED_CRON_MARKERS = [
+    "cron_crypto_rebalance",
+    "cron_filter_check.sh spy",
+    "cron_filter_check.sh btc",
 ]
 
 
 def _check_launchd_health() -> dict:
-    """Check launchctl exit codes for all com.fire.* jobs.
+    """Check that FIRE cron jobs are installed.
 
-    Returns {"ok": True} when all jobs show exit code 0, or
-    {"ok": False, "blocked": [...]} with details for non-zero jobs.
-    Exit code 78 (EX_CONFIG) means macOS BTM has disabled the agent.
+    Parses `crontab -l` for expected script markers. Returns
+    {"ok": True} when all jobs are present, or {"ok": False, "blocked": [...]}
+    with details for missing entries.
     """
     try:
         out = subprocess.run(
-            ["launchctl", "list"],
+            ["crontab", "-l"],
             capture_output=True, text=True, timeout=5,
         )
-        if out.returncode != 0:
-            return {"ok": False, "error": "launchctl list failed"}
+        crontab_text = out.stdout if out.returncode == 0 else ""
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
     blocked = []
-    found_labels = set()
-    for line in out.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3:
-            continue
-        label = parts[2]
-        if label not in ALL_FIRE_LABELS:
-            continue
-        found_labels.add(label)
-        try:
-            exit_code = int(parts[1])
-        except ValueError:
-            continue
-        if exit_code != 0:
+    for marker in EXPECTED_CRON_MARKERS:
+        if marker not in crontab_text:
             blocked.append({
-                "label": label,
-                "exit_code": exit_code,
-                "reason": "macOS disabled this agent (BTM)" if exit_code == 78 else f"exit code {exit_code}",
+                "label": marker,
+                "exit_code": None,
+                "reason": "missing from crontab",
             })
-
-    missing = [l for l in ALL_FIRE_LABELS if l not in found_labels]
-    for label in missing:
-        blocked.append({
-            "label": label,
-            "exit_code": None,
-            "reason": "not registered with launchd",
-        })
 
     return {"ok": len(blocked) == 0, "blocked": blocked}
 
