@@ -45,7 +45,7 @@ Also concerning: A4's Test-2 walk-forward windows decay monotonically, 59% CAGR 
 
 ### Ops
 
-- **The A4 daily cron has silently stopped — last fire 2026-06-06 02:05 UTC, three consecutive missed days.** This is scheduler failure mode #5 (APScheduler → launchd/BTM → cron/FDA → cron/Desktop-provenance → now laptop sleep + apparent timezone shift to UTC-6 moving the effective fire time, since cron fires at laptop-local 20:05). Harmless *only* while A4 is in cash; the moment BTC re-crosses its SMA, rotation resumes with no scheduler. The 4h filter check is alive but also shows ~19h sleep gaps.
+- **The A4 daily cron has silently stopped — last fire 2026-06-06 02:05 UTC, three consecutive missed days.** This is scheduler failure mode #5 (APScheduler → launchd/BTM → cron/FDA → cron/Desktop-provenance → now laptop sleep + apparent timezone shift to UTC-6 moving the effective fire time, since cron fires at laptop-local 20:05). Harmless *only* while A4 is in cash; the moment BTC re-crosses its SMA, rotation resumes with no scheduler. The 4h filter check is alive but also shows ~19h sleep gaps. **[RESOLVED 2026-06-09:** system TZ confirmed America/Denver; replaced the fixed `5 20 * * *` entry with an hourly :10 trigger + `--if-due` UTC date-check in the script — runs once per UTC day at the first awake hour, TZ-immune, sleep-tolerant, retries failed runs hourly. Catch-up run executed same day (`no_trades`, A4 in cash). See AUTOMATION.md. Fly.io remains the durable fix.**]**
 - A1/A2 manual 21-day cadence honored; next due 06-22.
 - Validations current: A1 PASS, A2 MARGINAL, A4 PASS (expires 08-15). Cosmetic bug: "Win rate 0.0%" in all reports.
 - Filter state correct (SPY on, BTC off). No halts; A4's -23% breached the -10% banner tier only, as designed.

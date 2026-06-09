@@ -12,12 +12,15 @@ thing that fires them changed.
 
 ## What's automated
 
-Three cron entries (system crontab — `crontab -l`). The system timezone is
-America/New_York, so the schedules are written in ET:
+Three cron entries (system crontab — `crontab -l`). **Cron fires at
+laptop-local wall-clock time and the laptop travels** — so no time-of-day
+invariant lives in the crontab. The daily rebalance entry is an hourly *trigger*;
+the script itself decides (in UTC) whether today's run is due:
 
 ```
-# Daily crypto rebalance (A4): 8:05 PM ET = 00:05 UTC in EDT
-5 20 * * *             ~/.fire-cron/cron_crypto_rebalance.sh
+# Daily crypto rebalance (A4): hourly trigger; script runs at most once per
+# UTC day via --if-due (first awake hour after 00:00 UTC)
+10 * * * *             ~/.fire-cron/cron_crypto_rebalance.sh
 
 # Filter check — SPY (A1/A2): every 4h on the hour
 0 0,4,8,12,16,20 * * * ~/.fire-cron/cron_filter_check.sh spy
@@ -25,6 +28,23 @@ America/New_York, so the schedules are written in ET:
 # Filter check — BTC (A4): every 4h, offset 5 min
 5 1,5,9,13,17,21 * * * ~/.fire-cron/cron_filter_check.sh btc
 ```
+
+**Why hourly + `--if-due` instead of a fixed daily minute (failure mode #5,
+diagnosed 2026-06-09).** The original `5 20 * * *` entry encoded "00:05 UTC"
+as "8:05 PM ET" — correct only while the system TZ was EDT. When the laptop
+moved to MDT (UTC-6), the same entry silently fired at 02:05 UTC; worse, three
+consecutive days were skipped entirely because the laptop was asleep at the
+one daily fire minute (cron has no catch-up). The fix moves the invariant into
+the script: cron fires `cron_crypto_rebalance.sh` every hour at :10, the
+wrapper passes `--if-due`, and the script exits silently unless
+`data/risk_state/daily_rebalance_state.json` shows today's UTC date hasn't run
+yet. Net effect: the run lands on the **first awake hour after UTC midnight**,
+in any timezone, and a failed run is retried the next hour instead of giving up
+until tomorrow. Signal parity holds for late runs — the strategy reads settled
+daily bars, so the computed weights are identical at 00:10 or 14:10 UTC. The
+:10 minute avoids the rebalance-lock collision with the :05 BTC filter check.
+(macOS cron is Vixie 3.0 with no `CRON_TZ` support, so pinning the schedule to
+UTC wasn't an option — and wouldn't have fixed the sleep-skip anyway.)
 
 Each entry runs a thin bash wrapper because cron gives a process almost no
 environment. The wrappers set `HOME`, `cd` into the project, invoke `uv` by
@@ -53,12 +73,10 @@ minutes. **Redeploy after editing a wrapper:**
 rare.) The durable fix remains getting the project out of `~/Desktop` entirely
 (Fly.io — see `DEPLOYMENT_PLAN.md`).
 
-When the laptop is in EDT (UTC-4), 8:05 PM ET = 00:05 UTC, so the daily fire
-lands at the start of a new UTC trading day. Cron reads the *current* system
-timezone, so on travel the schedule just follows local wall-clock (8:05 PM
-wherever you are) and macOS updates the TZ on arrival — no reboot dance (that
-was a launchd-only gotcha; see History). The strategy uses 21d crypto momentum,
-so a few-hour offset is signal noise.
+The daily run lands shortly after 00:00 UTC (the crypto trading-day boundary)
+whenever the laptop is awake then, and otherwise on the first awake hour after.
+The strategy uses 21d crypto momentum on settled daily bars, so the exact hour
+within the UTC day doesn't change the computed weights.
 
 ### The daily rebalance pipeline
 
@@ -86,23 +104,22 @@ runs:
 
 ### ⚠ Cron does not catch up missed fires
 
-This is the one material behavioral difference from launchd, and it's the live
-reliability trade-off. launchd's `StartCalendarInterval` queued a missed fire
-during darkwake and ran it on the next FullWake. **Cron does neither** — if the
-laptop is asleep, off, or offline at the scheduled minute, that fire is simply
-skipped. There is no deferred catch-up.
+launchd's `StartCalendarInterval` queued a missed fire during darkwake and ran
+it on the next FullWake. **Cron does neither** — if the laptop is asleep, off,
+or offline at the scheduled minute, that fire is simply skipped. There is no
+deferred catch-up.
 
-Consequences:
-- **Laptop asleep at 8:05 PM ET** → the daily A4 rebalance is skipped that day.
-  21d momentum tolerates a one-day gap (noise), so a skipped *rotation* is
-  low-cost.
-- **Laptop asleep across a filter flip** → more serious. While asleep, the 4h
-  filter checks don't run either, so a BTC cross-down isn't acted on until the
-  laptop is awake at the *next* scheduled cron minute (the next slot — not a
-  catch-up of the missed ones).
+How each job absorbs this:
+- **Daily A4 rebalance** → self-healing since 2026-06-09: the hourly
+  `--if-due` trigger means a sleep gap delays the run to the first awake hour
+  of the UTC day instead of skipping the day. A full laptop-dark *day* still
+  skips (21d momentum tolerates a one-day rotation gap — noise).
+- **Laptop asleep across a filter flip** → the real exposure. While asleep, the
+  4h filter checks don't run either, so a BTC cross-down isn't acted on until
+  the laptop is awake at the *next* scheduled cron minute (the next slot — not
+  a catch-up of the missed ones).
 
 Mitigations in place:
-- 8:05 PM ET is inside normal evening laptop use, when the machine is awake.
 - The 4h filter cadence means that *while the laptop is awake*, a flip is caught
   within ~4h.
 - The Ops panel flags the daily rebalance as **stale if it hasn't fired in
@@ -110,8 +127,6 @@ Mitigations in place:
   of being discovered by accident.
 - The travel watcher (below) pushes a phone alert on a flip when the laptop is
   fully off.
-- Optional hardening (not currently installed): `pmset repeat wakeorpoweron` to
-  wake the laptop a few minutes before 8:05 PM ET so cron reliably fires.
 
 ## What to expect day-to-day
 
@@ -139,7 +154,7 @@ Two scopes, both on the 4h cadence:
   harmless, since SPY only moves on trading days and off-hours checks are no-ops.)
 - **`cron_filter_check.sh btc`** — BTC 125d SMA filter; rebalances A4 on flip.
   The 4h cadence matches crypto's 24/7 nature — a cross is caught within ~4h
-  instead of waiting for the 8:05 PM daily fire.
+  instead of waiting for the next daily fire.
 
 Both pass `force_refresh=True` to the data layer — filter decisions are never
 made against a stale cached price.
@@ -148,7 +163,7 @@ made against a stale cached price.
 
 | Layer | Trigger | Work when triggered | Needs server? | Needs laptop awake? |
 |---|---|---|---|---|
-| Daily rebalance (cron) | 8:05 PM ET daily (= 00:05 UTC in EDT). **Skipped, not deferred, if asleep.** | Full A4 rebalance: signal + filter + vol-scaling | No | Yes |
+| Daily rebalance (cron) | Hourly at :10; runs at most once per UTC day (`--if-due`). Sleep delays to first awake hour, doesn't skip. | Full A4 rebalance: signal + filter + vol-scaling | No | Yes (any hour that UTC day) |
 | Filter monitor — SPY (cron) | Every 4h; rebalance only if SPY scalar changed | Full A1/A2 rebalance (same `compute_rebalance`) | No | Yes |
 | Filter monitor — BTC (cron) | Every 4h; rebalance only if BTC scalar changed | Full A4 rebalance (same `compute_rebalance`) | No | Yes |
 | Travel watcher (GitHub Actions) | Every ~30 min at `:07/:37` UTC | **Notifies phone only** (ntfy on cross + daily heartbeat) — does not trade | No | No |
@@ -243,9 +258,10 @@ Heartbeat de-dup: `last_heartbeat_date` in the state cache.
 5. **User opens laptop within ~2h**, opens the dashboard, clicks Preview →
    Execute on the affected account. The `filter_state` sync keeps everything
    consistent so post-travel cron runs don't misdetect.
-6. **Daily A4 rotation**: open the laptop whenever convenient each travel day and
-   manually trigger the A4 rebalance. 21d momentum barely shifts intraday — a
-   ~20h offset vs the 00:05 UTC fire is well inside the noise.
+6. **Daily A4 rotation**: just open the laptop at some point each travel day —
+   the hourly `--if-due` trigger runs the day's rebalance at the next :10 with
+   no manual step. 21d momentum barely shifts intraday — a late-in-the-day run
+   vs 00:10 UTC is well inside the noise.
 
 ### What it doesn't cover
 
@@ -281,9 +297,12 @@ gh run view <run-id> --log | grep "crossings\|Sent"
 Or the GitHub Actions tab in VS Code → `filter_watch` workflow.
 
 > **Travel + TZ:** cron follows the system timezone, which macOS updates on
-> arrival, so the daily fire just tracks local 8:05 PM. (The old launchd
-> TZ-cache-requires-reboot gotcha no longer applies — it was specific to PID-1
-> launchd caching the boot-time zone.)
+> arrival. This is exactly why the daily entry is an hourly trigger with the
+> UTC due-check in the script — a fixed local fire minute silently drifts off
+> 00:05 UTC on travel (the 2026-06-09 incident). The 4h filter cadence is
+> phase-shifted by a TZ change but its frequency is unchanged, so it needs no
+> special handling. (The old launchd TZ-cache-requires-reboot gotcha no longer
+> applies — it was specific to PID-1 launchd caching the boot-time zone.)
 
 ## Monitoring health (Ops dashboard)
 
@@ -300,10 +319,11 @@ The **Ops** tab → Scheduler panel surfaces two health signals:
 
 ## What you have to do
 
-**Nothing, as long as the laptop is awake at 8:05 PM ET.** Cron fires the
-scripts independently of the server. If you've stepped away or the laptop is
-asleep, that day's fire is skipped — not deferred. The strategy tolerates a
-one-day gap, and the Ops staleness banner flags a longer outage.
+**Nothing, as long as the laptop is awake at some point each UTC day.** Cron
+fires the scripts independently of the server, and the hourly `--if-due`
+trigger runs the daily rebalance on the first awake hour after 00:00 UTC. Only
+a full laptop-dark UTC day skips a rotation; the strategy tolerates a one-day
+gap, and the Ops staleness banner flags a longer outage.
 
 ### Verify the daily job fired (next morning)
 
@@ -328,8 +348,8 @@ one-day gap, and the Ops staleness banner flags a longer outage.
 
 ## Practical overnight checklist
 
-1. Laptop awake past 8:05 PM ET (= 00:05 UTC during EDT). Server up or down —
-   cron doesn't care.
+1. Laptop awake at some point each UTC day (the run lands at the first awake
+   :10 after 00:00 UTC). Server up or down — cron doesn't care.
 2. Next morning: check `data/rebalance_log.jsonl` or the Ops tab.
 3. Expect small drift trades (not a full swap) on days the top 2 are unchanged.
 
@@ -339,24 +359,28 @@ Edit the crontab:
 ```
 crontab -e
 ```
-and ensure these three lines are present (system TZ is ET):
+and ensure these three lines are present (pointing at the **deployed** wrappers
+in `~/.fire-cron/`, never at `scripts/` under `~/Desktop` — see the TCC note
+above):
 ```
-5 20 * * * /Users/george/Desktop/Projects/FIRE/scripts/cron_crypto_rebalance.sh
-0 0,4,8,12,16,20 * * * /Users/george/Desktop/Projects/FIRE/scripts/cron_filter_check.sh spy
-5 1,5,9,13,17,21 * * * /Users/george/Desktop/Projects/FIRE/scripts/cron_filter_check.sh btc
+10 * * * * /Users/george/.fire-cron/cron_crypto_rebalance.sh
+0 0,4,8,12,16,20 * * * /Users/george/.fire-cron/cron_filter_check.sh spy
+5 1,5,9,13,17,21 * * * /Users/george/.fire-cron/cron_filter_check.sh btc
 ```
-The wrappers must be executable (`chmod +x scripts/cron_*.sh`). Verify with
-`crontab -l`, then confirm via the Ops panel (entries-present + staleness) or by
-tailing the logs after the next fire.
+Deploy the wrappers (`cp scripts/cron_*.sh ~/.fire-cron/`) and keep them
+executable (`chmod +x`). Verify with `crontab -l`, then confirm via the Ops
+panel (entries-present + staleness) or by tailing the logs after the next fire.
 
 To remove: `crontab -e` and delete the lines (or `crontab -r` to clear all).
 
 ## Manual invocation
 
 ```
-# Daily rebalance — one fire, same code path as the cron job
-uv run python3 scripts/daily_crypto_rebalance.py            # real
-uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # dry, no orders
+# Daily rebalance — one fire, same code path as the cron job. A manual real
+# run marks today's UTC date done, so the hourly cron won't re-run it.
+uv run python3 scripts/daily_crypto_rebalance.py            # real, unconditional
+uv run python3 scripts/daily_crypto_rebalance.py --if-due   # real, but skip if today already ran (cron mode)
+uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # dry, no orders, doesn't mark the day done
 
 # Filter monitor — any scope
 uv run python3 scripts/filter_check.py --filter all --dry-run   # check all, no trades
@@ -418,6 +442,14 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
   `~/Library/LaunchAgents/` on 2026-05-28.
 - **cron** — since **2026-05-28**. Not gated by BTM, indifferent to code
   signing, survives reboots and macOS updates. Trade-off: **no catch-up on
-  missed fires** (see above). The durable end-state remains the Fly.io migration
-  in `DEPLOYMENT_PLAN.md` — a 24/7 host removes the laptop-awake dependency that
-  every laptop-bound scheduler (cron included) shares.
+  missed fires** (see above).
+- **cron sleep + TZ drift (failure mode #5)** — diagnosed **2026-06-09** after
+  three consecutive missed daily fires. The once-daily `5 20 * * *` entry fired
+  at laptop-local 20:05; a move to MDT shifted the fire to 02:05 UTC, and the
+  laptop being asleep at that minute skipped the day entirely. Fixed by the
+  hourly `--if-due` trigger (UTC due-check inside the script, see top of this
+  doc). Cumulative laptop-scheduler failure tally: APScheduler uptime drift →
+  launchd/BTM disable → cron FDA sandbox-denial → cron Desktop-provenance TCC
+  denial → cron sleep+TZ. The durable end-state remains the Fly.io migration in
+  `DEPLOYMENT_PLAN.md` — a 24/7 UTC host removes both the laptop-awake and the
+  local-timezone dependency that every laptop-bound scheduler shares.

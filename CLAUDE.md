@@ -49,7 +49,7 @@ Uncorrelated factor diversification across 3 Alpaca paper accounts, 1/3 each of 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Every-21-trading-days rebalance (manual).
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
-- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via cron at 8:05 PM laptop-local (= 00:05 UTC in EDT). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for cron details.
+- **Account 4 (FIRE 0.4 — Crypto)**: Crypto Momentum Rotation — top 2 of 9 coins by 21-day momentum, BTC 125d SMA trend filter + vol-scaling. **Daily rebalance** via hourly cron trigger + `--if-due` UTC date-check — runs once per UTC day at the first awake :10 after 00:00 UTC, timezone-immune and sleep-tolerant (2026-06-09 fix). A4 weight **33%**, pre-committed **40% upgrade** once ≥6 months of signal-trading days confirm live Calmar ≥ 2.0. See `AUTOMATION.md` for cron details.
 
 Combined OOS (2023-01-03 → 2026-04-20, net of costs + vol-scaling): **CAGR +26.5%, MaxDD -6.2%, Calmar 4.28**. Realistic live estimate: **Calmar 2.5-3.5** (correlations spike in crises, A4 live is -7% in 3 weeks vs +5% signal). A4 standalone: **CAGR +38.6%, Calmar 3.05** in backtest (8-coin live universe, post C11 BNB removal).
 

@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Daily crypto rebalance for Account 4 — fires from launchd at 00:05 UTC.
+"""Daily crypto rebalance for Account 4 — one run per UTC day, shortly after
+00:00 UTC.
 
-Replaces the in-process APScheduler job that lived in `api/main.py` until
-2026-05-05. APScheduler's AsyncIOScheduler exhibited long-uptime drift
-(silent missed fires after several days of uptime); launchd fires
-independently of the API server and is the same primitive the filter
-monitor already uses reliably.
+Fired by cron HOURLY with `--if-due` (since 2026-06-09): each fire exits
+silently unless today's UTC-date run hasn't happened yet (tracked in
+`data/risk_state/daily_rebalance_state.json`). The "00:05 UTC daily" invariant
+lives here, in UTC, not in the cron schedule — because cron fires at
+laptop-local wall-clock time, a fixed `5 20 * * *` entry silently drifted off
+00:05 UTC when the laptop changed timezones, and a laptop asleep at the single
+daily fire minute skipped the whole day (cron has no catch-up). Hourly +
+due-check is immune to both: the run lands on the first awake hour after UTC
+midnight. Signal parity holds for late runs — the strategy reads settled daily
+bars, and the last settled bar is the same whether the run happens at 00:10 or
+14:10 UTC.
+
+History: in-process APScheduler (retired 2026-05-05, long-uptime drift) →
+launchd (retired 2026-05-28, BTM kept disabling the agents) → cron.
 
 Synchronous mirror of the original `_daily_crypto_rebalance()` coroutine:
 validation gate → file lock (cross-process, non-blocking) → compute →
@@ -16,14 +26,17 @@ Source tag in the journal stays `scheduled` for continuity with historical
 entries — downstream queries (Ops dashboard, audit) don't need to change.
 
 Usage:
-    uv run python3 scripts/daily_crypto_rebalance.py            # normal
+    uv run python3 scripts/daily_crypto_rebalance.py            # one fire, unconditional
+    uv run python3 scripts/daily_crypto_rebalance.py --if-due   # cron mode: skip if today's UTC run already happened
     uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # no orders
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -44,6 +57,28 @@ from execution.validation_gate import ValidationGateError, require_validated
 from strategies.portfolio_config import compute_btc_trend_filter
 
 LOG_FILE = PROJECT_ROOT / "data" / "daily_rebalance.log"
+STATE_FILE = PROJECT_ROOT / "data" / "risk_state" / "daily_rebalance_state.json"
+
+# Outcomes that count as "today's run happened" for the --if-due check.
+# dry_run/locked/price_error/error are excluded so the next hourly fire retries.
+_DONE_STATUSES = ("executed", "no_trades", "skipped", "halted", "position_mismatch")
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _last_run_utc_date() -> str | None:
+    try:
+        return json.loads(STATE_FILE.read_text()).get("last_run_utc_date")
+    except (OSError, ValueError):
+        return None
+
+
+def _mark_run_today() -> None:
+    STATE_FILE.write_text(
+        json.dumps({"last_run_utc_date": _today_utc()}) + "\n"
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -215,7 +250,17 @@ def _sync_btc_filter_state(broker: AlpacaBroker) -> None:
 def main():
     parser = argparse.ArgumentParser(description="FIRE daily crypto rebalance")
     parser.add_argument("--dry-run", action="store_true", help="Compute orders, skip execution")
+    parser.add_argument(
+        "--if-due",
+        action="store_true",
+        help="Exit silently if today's UTC-date run already happened (hourly cron mode)",
+    )
     args = parser.parse_args()
+
+    if args.if_due and _last_run_utc_date() == _today_utc():
+        # Quiet exit — no log banner, so the Ops staleness check (which greps
+        # the "starting" line) still sees exactly one entry per UTC day.
+        sys.exit(0)
 
     log.info("=" * 60)
     log.info(f"Daily crypto rebalance starting (dry_run={args.dry_run})")
@@ -251,8 +296,10 @@ def main():
                 time.sleep(wait)
 
     log.info(f"Final outcome: {final_result}")
-    # launchd doesn't act on exit codes for Calendar-triggered jobs, but
-    # nonzero on hard failure makes the stderr log easier to scan.
+    if not args.dry_run and final_result.get("status") in _DONE_STATUSES:
+        _mark_run_today()
+    # cron doesn't act on exit codes, but nonzero on hard failure makes the
+    # stderr log easier to scan.
     sys.exit(0 if final_result.get("status") in (
         "executed", "no_trades", "dry_run", "skipped", "halted", "locked"
     ) else 1)

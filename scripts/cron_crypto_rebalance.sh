@@ -8,5 +8,10 @@
 # Cron provides minimal env — set what the scripts need.
 export HOME=/Users/george
 cd /Users/george/Desktop/Projects/FIRE
-exec /Users/george/.local/bin/uv run python3 scripts/daily_crypto_rebalance.py \
+# --if-due: cron fires this HOURLY (at :10); the script itself decides whether
+# today's UTC-date run has happened yet and exits silently otherwise. This is
+# what makes the schedule timezone-immune and sleep-tolerant (2026-06-09 fix —
+# the old once-daily `5 20 * * *` entry drifted off 00:05 UTC on travel and
+# skipped entirely when the laptop slept through the fire minute).
+exec /Users/george/.local/bin/uv run python3 scripts/daily_crypto_rebalance.py --if-due \
   >> data/daily_rebalance_stdout.log 2>> data/daily_rebalance_stderr.log
