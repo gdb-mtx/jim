@@ -127,4 +127,42 @@ The audit's recommendation is the second path, with the leveraged-trend test run
 
 ---
 
+## Appendix A — §5 in plain language
+
+The shorthand above, restated for re-reading after a gap.
+
+### Phase 1 — the four new builds
+
+**1. The "events" strategy (the new A5, going in the empty Account 3 slot).**
+Certain corporate *events* are reliably followed by the stock drifting up for weeks or months afterward — documented effects that don't depend on price momentum at all:
+
+- **Insiders buying.** When 3+ executives of the same company buy their own stock with their own money in the same month, the stock tends to beat the market by ~6–9% over the next six months. Executives know things; a cluster of them buying is the strongest version of that signal.
+- **Buyback announcements.** When a mid-size company announces it will buy back its own shares, the stock drifts up for the next ~3 months. (The one idea from the April hunt that got a clear GO and was shelved only for fatigue — a one-day confirm-or-kill test is already designed.)
+- **Index deletions.** When a stock gets kicked out of the S&P 500 or Russell, every index fund is *forced* to sell it that day regardless of price. That artificial pressure makes deleted stocks bounce afterward. (Buying *additions* is the dead side — everyone does it now.)
+- **Spinoffs.** When a company splits off a division as a new stock, index funds again dump the new shares mechanically, and the spinoffs outperform for months.
+
+Each alone gives maybe 10–30 trades a year — too few to run an account on. The trick is to **pool all four into one account** so there are always positions on. They all read from the same free data (SEC filings + index press releases), so the filing-reader gets built once and each new event type costs a few extra days. Big funds can't bother — the positions are too small to matter to them; a $50K account is exactly the right size. Realistic expectation: 12–20%/yr that makes money for *different reasons* than the momentum accounts, so it shouldn't fall when they fall.
+
+**2. The volatility strategy.**
+There's a market for "stock-market insurance" (VIX futures). Most of the time people overpay for that insurance, so *selling* it earns a steady premium — but naked insurance-selling blows up in a crash. The fix: a simple gauge (short-term vs longer-term VIX) says which mode the market is in. Calm → hold the ETF that profits from selling insurance (SVXY). Stressed → flip to the ETF that profits from *owning* insurance (VIXY), which goes **up** in a crash. That flip side is the thing the book completely lacks today: something that profits while everything else bleeds. We assumed this needed a new broker; both ETFs are verified tradeable on Alpaca now (§4). ~1 week of work. Iron rule: the sleeve stays at 10–15% of the book, because the insurance-selling side can lose half its value overnight in a freak event.
+
+**3. The crypto "greed gauge" for Account 4.**
+Crypto gamblers trade with leverage on perpetual futures and pay an interest rate ("funding") to hold those bets. When that rate gets extreme, everyone is levered long — which is reliably when tops happen. Build: pull the rate from a free API and use it as a warning light that cuts A4's exposure when greed is maxed. ~3 days, aimed directly at the worst-performing account. If it works, the bigger version follows: own the coin on Alpaca, bet against it on Coinbase's regulated futures, and simply *collect* that interest from the gamblers — market-neutral, paid whether crypto rises or falls. That's a month of careful engineering, so it comes second.
+
+**4. The macro dashboard.**
+A simple, no-ML composite of indicators (Fed balance sheet, dollar, credit spreads, the VIX gauge from #2) that scales the *whole book's* exposure up or down. The current filters are slow — in 2022 the SPY 200-day triggered months after the top; this is meant to be the earlier warning. Shares data with #2, so build them together.
+
+### Phase 2 — decisions and chores, not builds
+
+- **Let winners run a little harder.** The risk system can currently only *reduce* position sizes in rough markets, never extend them in calm ones (capped at 1.0×). Raising the cap to 1.5× in calm regimes is ~3 days of already-scoped work, worth roughly +2pp of book CAGR.
+- **Leave A2 alone.** It's boring on purpose — it's the ballast. Replacing it was tested and made the book worse. Re-judge at year-end.
+- **Don't promote A4 — consider demoting it.** The 33%→40% upgrade plan is cancelled for now: live results are wrecked by unexplained execution problems, *and* the backtest edge is weakening in recent years (newest test window 9.6%/yr vs 59% in the oldest). Explain the bleeding before it goes back in the water at full size.
+- **Buy proper historical data (~$30/mo, Norgate) when any new equity research starts.** Current data only includes companies that survived, which inflates backtests (the C3 bug). Cheap fix, kills two birds.
+- **The STRC/NVDY income idea is fine but it's a different conversation** — living-expense income for the FIREMaster bridge plan, not a trading-book improvement. It doesn't get to cut in line.
+- **Mode 2 gets one narrow second life.** Claude-as-stock-picker failed twice and stays dead. But Claude as a *filing sorter* ("is this 8-K a buyback announcement or boilerplate?") is a much easier job and feeds strategy #1. One-week experiment, only after #1's filing-reader exists.
+
+**The through-line:** all three live accounts make money the same way — buying things whose price is already going up. Phase 1 adds three *different* ways to make money (corporate events, insurance premiums, gambler interest), and one of them finally pays off during crashes instead of bleeding through them.
+
+---
+
 *Sources for §4 external claims: [Alpaca options levels](https://docs.alpaca.markets/us/docs/options-trading-overview) ([support: tiers](https://alpaca.markets/support/what-option-levels-or-tiers-do-you-provide), [L3 announcement](https://alpaca.markets/blog/level-3-options-trading-now-available-with-alpacas-trading-api/)); [Coinbase CFTC perps launch](https://cryptobriefing.com/us-perpetual-futures-cftc-launch/) ([coverage](https://cryptonews.com/news/coinbase-launches-cftc-regulated-perpetual-futures-for-us-retail-traders/)). VIX ETP / DBMF / STRC tradability verified directly against the Alpaca paper API (`get_asset`), 2026-06-09.*
