@@ -143,9 +143,9 @@ class AlpacaBroker:
             "last_equity": float(acct.last_equity),
             "daily_pnl": float(acct.equity) - float(acct.last_equity),
             "is_paper": self.is_paper,
-            "pattern_day_trader": acct.pattern_day_trader,
-            "daytrade_count": int(acct.daytrade_count),
-            "daytrading_buying_power": float(acct.daytrading_buying_power),
+            "pattern_day_trader": getattr(acct, "pattern_day_trader", False),
+            "daytrade_count": int(getattr(acct, "daytrade_count", 0)),
+            "daytrading_buying_power": float(getattr(acct, "daytrading_buying_power", 0)),
         }
 
     def get_positions(self) -> list[dict]:
