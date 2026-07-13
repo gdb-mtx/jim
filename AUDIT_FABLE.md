@@ -1,5 +1,16 @@
 # AUDIT_FABLE — Full-System Review & Path Forward
 
+> **Status update 2026-07-13:** §2's fires are out (A4 retired — see
+> `HISTORY.md`; cron healthy since the 06-09 fix). §5 Phase 1 was
+> stress-tested against 2022–2026 data the same day: **all four
+> A5-Events streams KILLED or unfundable** (buybacks inverted; insider
+> clusters carry no drift, dose-response inverted; deletions/spinoffs
+> lottery-skew), switched VIX sleeve dead (a VIXY tail leg survives as
+> a priced decision), basis carry regime-gated (funding +2.2% ann. =
+> off), leveraged trend priced and passed on. §5 Phase 1 is therefore
+> superseded. Canonical record + re-ranked path:
+> `docs/research/EVENT_KILLTESTS_JUL2026.md`. §3–§4 remain accurate.
+
 **Date:** 2026-06-09
 **Scope:** All code, all docs, live paper performance (snapshots, rebalance logs, signal tracker, validation state), every research vector in `docs/research/` and the April 2026 hunt archive, plus a first-principles survey of out-of-distribution strategy space.
 **Method:** Four parallel research agents (live performance, book/code, research pipeline, OOD survey) + direct verification of every load-bearing external claim against the Alpaca API and current sources.
