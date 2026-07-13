@@ -271,6 +271,40 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-07-13 — A4 retired (Crypto Momentum Rotation)
+
+Marked `status="retired"` in `validation_state.json` (unconditional
+rebalance block, same mechanism as A3). Account was 100% cash since
+2026-06-01 (BTC below 125d SMA), so retirement executed zero trades.
+Cron entries left in place — the gate returns `skipped` once per UTC
+day, which marks the day done and keeps Ops staleness quiet.
+
+Three independent legs, any one of which would have blocked promotion;
+together they close the account:
+
+1. **Edge decay.** Test-2 walk-forward CAGR decays monotonically across
+   windows: +59.1% (2022-12→2023-12) → +35.2% → +23.3% → +24.6% →
+   **+9.6%, Calmar 0.87** (2024-12→2025-12) — the newest window is below
+   the Calmar 1.0 funding gate. The strategy monetized the 2020-2023
+   alt-trend regime; 2024-2025 crypto is BTC-dominated chop.
+2. **Execution never live-validated.** Live -23.1% vs signal-only -5.2%
+   (+17.9pp drag). Rebalance-log forensics (05-05..05-09) show the drag
+   was bug-era full-notional churn — XRP→LINK→ADA→BTC+DOT→BTC→ADA on
+   consecutive days, including three fires in 6h on 05-06 (stale-data
+   rank flip-flop + multi-fire cron) and a liquidate→rebuy whipsaw
+   within 2 minutes on 05-08. Root causes fixed (C10 Alpaca bars,
+   2026-06-09 `--if-due` single-fire), but zero clean signal-trading
+   days accrued afterward to prove the fix (in cash from 06-01 on).
+3. **Upgrade clock unreachable.** 33%→40% pre-commitment required ≥6
+   months of signal-trading days with live Calmar ≥ 2.0; ~28 such days
+   accrued in 12 weeks. On regime base rates the clock doesn't complete
+   inside a year.
+
+Slot preserved for a successor (candidates as of retirement: A5-Events
+pooled sleeve, VIX tail leg, delta-neutral basis carry). Live-performance
+detail in `AUDIT_FABLE.md` §2; decomposition method in
+`scripts/signal_tracker.py`.
+
 ## 2026-04-22 — A4 first-entry cascading bugs (all resolved same session)
 
 When BTC first crossed its 125d MA on 2026-04-22 and A4 entered positions
