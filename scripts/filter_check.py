@@ -34,17 +34,19 @@ from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_fil
 
 LOG_FILE = PROJECT_ROOT / "data" / "filter_check.log"
 
-# A3 retired — validation gate also blocks it independently of this map.
+# A3 + A4 retired (validation gate blocks them independently of this map;
+# removed here so a BTC flip doesn't even attempt an A4 rebalance). The btc
+# scope still computes/persists filter state for monitoring.
 ACCOUNT_FILTERS = {
     1: "spy",
     2: "spy",
-    4: "btc",
 }
 
 VALID_SCOPES = ("all", "spy", "btc")
 
 # VIX9D/VIX3M at or above this = deep backwardation — the tail-leg entry
-# signal (alert-only; the VIXY tail leg is a manual capital decision).
+# signal. Alerts + drives the A3 paper pilot (execution/tail_leg.py);
+# real-money tail adoption stays a manual decision on the pilot's record.
 # Threshold from the 2026-07-13 sweep: docs/research/EVENT_KILLTESTS_JUL2026.md.
 TAIL_BACKWD_RATIO = 1.10
 

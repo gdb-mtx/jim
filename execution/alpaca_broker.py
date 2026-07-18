@@ -61,8 +61,8 @@ def _is_position_non_tradeable(position) -> bool:
 ACCOUNT_INFO = {
     1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum", "status": "active"},
     2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol", "status": "active"},
-    3: {"name": "FIRE 0.3", "strategy": None, "label": "Retired (slot open)", "status": "retired", "retired_at": "2026-04-20"},
-    4: {"name": "FIRE 0.4", "strategy": "crypto_momentum_filtered", "label": "Crypto", "status": "active"},
+    3: {"name": "FIRE 0.3", "strategy": None, "label": "Retired — tail-leg pilot host", "status": "retired", "retired_at": "2026-04-20"},
+    4: {"name": "FIRE 0.4", "strategy": None, "label": "Retired (was Crypto)", "status": "retired", "retired_at": "2026-07-13"},
 }
 
 

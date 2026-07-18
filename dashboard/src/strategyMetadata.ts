@@ -12,7 +12,7 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
   // ── Live Accounts ──────────────────────────────────────────────────
   combined_3account: {
     category: "live",
-    description: "Equal-weight blend of A1 (SM) + A2 (Trend+LowVol) + A4 (Crypto), 33% each — the live book after A3 retirement",
+    description: "A1 (SM) + A2 (Trend+LowVol) — the live book after A3/A4 retirements (2026-07)",
     sortOrder: 0,
   },
   sm_filtered: {
@@ -31,10 +31,10 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     sortOrder: 2,
   },
   crypto_momentum_filtered: {
-    category: "live",
-    description: "Top 2 cryptos by 21-day momentum, BTC 125d SMA filter + vol-scaling, daily rebalance",
+    category: "research",
+    description: "RETIRED 2026-07-13 — was: top 2 cryptos by 21d momentum, BTC 125d SMA filter + vol-scaling (edge decay + bug-era drag; HISTORY.md)",
     account: 4,
-    accountLabel: "FIRE 0.4",
+    accountLabel: "FIRE 0.4 (retired)",
     sortOrder: 3,
   },
 
