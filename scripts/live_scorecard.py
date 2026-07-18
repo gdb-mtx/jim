@@ -1,0 +1,86 @@
+"""Live scorecard — the evidence engine for the Q3 real-money checkpoint.
+
+Per account (A1, A2), per 21-trading-day rebalance cycle since the clean
+window began (2026-04-21):
+  live      account return from equity snapshots
+  signal    same-period return of the strategy's backtest path (current
+            configs, net of costs) — live minus signal = execution drag
+  SPY       benchmark return; live minus SPY = the alpha the Q3 gate needs
+
+Gate reminder (CLAUDE.md next steps): real money wants A1 clean-window
+alpha >= 0 over 2-3 cycles. This script is the single source for that
+number — no more ad-hoc sessions math.
+
+Usage: uv run python3 scripts/live_scorecard.py
+"""
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+import yfinance as yf
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from strategies.portfolio_backtest import run_portfolio
+
+CLEAN_START = pd.Timestamp("2026-04-21")
+CYCLE_DAYS = 21
+ACCOUNTS = {1: "sm_filtered", 2: "trend_lowvol"}
+
+
+def load_live(account: int) -> pd.Series:
+    df = pd.read_parquet(f"data/processed/snapshots_acct{account}.parquet")
+    if "date" in df.columns:
+        df = df.set_index("date")
+    df.index = pd.to_datetime(df.index)
+    return df["equity"].sort_index()
+
+
+def window_return(series: pd.Series, t0: pd.Timestamp, t1: pd.Timestamp) -> float | None:
+    s = series.loc[t0:t1].dropna()
+    if len(s) < 2:
+        return None
+    return float(s.iloc[-1] / s.iloc[0] - 1)
+
+
+def main():
+    spy = yf.download("SPY", start="2026-04-10", progress=False, auto_adjust=True)["Close"].squeeze()
+    spy.index = pd.to_datetime(spy.index)
+
+    # cycle boundaries: every 21 trading days from the anchor, on SPY's calendar
+    cal = spy.index[spy.index >= CLEAN_START]
+    bounds = list(cal[::CYCLE_DAYS])
+    if bounds[-1] < cal[-1]:
+        bounds.append(cal[-1])
+
+    for acct, strat in ACCOUNTS.items():
+        live = load_live(acct)
+        _, sig_r = run_portfolio(strat, start="2023-01-01")
+        signal = (1 + sig_r.fillna(0)).cumprod()
+
+        print(f"\n=== A{acct} ({strat}) — cycles since {CLEAN_START.date()} ===")
+        print(f"{'cycle':22s} {'live':>8s} {'signal':>8s} {'drag':>7s} {'SPY':>8s} {'alpha':>7s}")
+        tot = {"live": 1.0, "sig": 1.0, "spy": 1.0}
+        for a, b in zip(bounds, bounds[1:]):
+            lv = window_return(live, a, b)
+            sg = window_return(signal, a, b)
+            sp = window_return(spy, a, b)
+            if lv is None or sp is None:
+                continue
+            tag = f"{a.date()} → {b.date()}"
+            drag = f"{lv - sg:+7.2%}" if sg is not None else "      —"
+            print(f"{tag:22s} {lv:+8.2%} {(f'{sg:+8.2%}' if sg is not None else '       —')} "
+                  f"{drag} {sp:+8.2%} {lv - sp:+7.2%}")
+            tot["live"] *= 1 + lv
+            tot["spy"] *= 1 + sp
+            if sg is not None:
+                tot["sig"] *= 1 + sg
+        lv, sg, sp = tot["live"] - 1, tot["sig"] - 1, tot["spy"] - 1
+        print(f"{'CUMULATIVE':22s} {lv:+8.2%} {sg:+8.2%} {lv - sg:+7.2%} {sp:+8.2%} {lv - sp:+7.2%}")
+        print(f"Q3 gate (alpha >= 0 over trailing cycles): "
+              f"{'MET' if lv - sp >= 0 else 'NOT MET'} at {lv - sp:+.2%} cumulative")
+
+
+if __name__ == "__main__":
+    main()
