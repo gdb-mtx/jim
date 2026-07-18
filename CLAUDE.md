@@ -17,11 +17,11 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 - `docs/research/` — open research scoping. Active tracks:
   - `EVENT_KILLTESTS_JUL2026.md` — **2026-07-13 canonical record**: all four event streams (buybacks, deletions, spinoffs, insider clusters) KILLED/unfundable on 2022-26 data; A5-Events refuted as a concept; VIX tail leg priced; carry funding-trigger documented. Supersedes the event vectors in BREAKTHROUGH_VECTORS.
   - `MACRO_COMPOSITE_EVAL.md` — 2026-07-18 pre-registered eval: composite ships alert-only (34-56 day crisis leads); exposure-scaling rejected. Gap 3 closed.
-  - `BREAKTHROUGH_VECTORS_MAY2026.md` — 2026-05-26 diagnostic. Partially superseded: insider clusters / spinoff drift / VIX carry killed or repriced by the two docs above. Still-open vectors: crypto on-chain microstructure, CEF discount reversion.
+  - `BREAKTHROUGH_VECTORS_MAY2026.md` — 2026-05-26 diagnostic, now a verdict ledger (07-18 banner). **The only never-tested cheap vector: CEF discount reversion** (1-day kill test on the poc harness; data lift = CEFConnect harvest). Also open: on-chain slices (exchange netflows, stablecoin supply, MSTR/IBIT NAV-premium basis) — funding-rate slice is the parked carry track.
   - `HighYield_Strategy_STRC_NVDY_AMZY.md` — yield-harvesting flywheel (bridge-income strategy, different objective function than Mode 1 — see "Research Tracks" below)
-  - `ML_REGIME_OVERLAY.md` — LSTM/XGBoost as standalone strategy (A5 candidate or A4 replacement) OR book-level regime overlay (Gap 3). Dual-role — kill gates determine which.
-  - `RATE_VOL_SCOPE.md` — A5 candidate, MOVE-conditional TLT reversal (shelved: MOVE at multi-year lows)
-  - `PLAN_MODE2.md` — Mode 1+2 strategic plan, Phase A live
+  - `ML_REGIME_OVERLAY.md` — DORMANT (07-18): overlay role dead for any method (composite eval showed exposure-scaling hurts this book); standalone crypto-ML awaits an on-chain data pipeline + kill-test.
+  - `RATE_VOL_SCOPE.md` — SHELVED (regime): MOVE 69.6 as of 07-18, still at lows. Revisit trigger: MOVE > 120 sustained.
+  - `PLAN_MODE2.md` — time capsule (4-account era); two-mode framing still stands, current state lives here in CLAUDE.md
 - **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`) — the full financial picture, bridge-plan projections. Yield strategy deep research docs (`STRATEGY_CAPSULE.md`, `BRIDGE_STRATEGY_REVIEW.md`, `SCOUT_REVIEW_MAY2026.md`) moved to `docs/archive/` here in FIRE as of 2026-05-13.
 - `DEPLOYMENT_PLAN.md` — 24/7 cloud deployment research for the live trading module (Fly.io primary, 5-phase migration plan). Paper-first; pre-real-money hardening in Phase 5.
 - `AUTOMATION.md` — reference for the A4 daily rebalance automation: cron job, cron filter monitors (equity + crypto), sleep behavior, install commands. (Scheduler migrated launchd→cron 2026-05-28 after macOS BTM kept silently disabling the agents; APScheduler before that, retired 2026-05-05.)
@@ -161,7 +161,7 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 - **Standing George decisions:** VIXY tail leg REAL-money adoption (paper pilot auto-executes in A3 since 07-18; judge on its live record at Q4). Basis carry stays parked until Deribit 30d funding > ~8-10% annualized (monthly one-command probe in `EVENT_KILLTESTS_JUL2026.md`; also worth checking when BTC re-crosses its 125d SMA).
 - **Fly.io deployment** (`DEPLOYMENT_PLAN.md`): the durable fix for laptop scheduling and the real-money gate. A weekend of work; next infra priority.
 - **Hygiene:** tests/ has 12 pre-existing failures (predate 07-18, verified by stash-diff) — clean up on a slow day. C3 survivorship: Norgate declined 2026-07-18 (George: not worth $30/mo while edges are the constraint); handle pre-real-money by haircutting A1 expectations ~1-2pp or a free sensitivity test.
-- **Open research vectors (thin but alive):** crypto on-chain microstructure, CEF discount reversion (BREAKTHROUGH_VECTORS), data-walled small-cap quality-momentum (needs point-in-time data). Kill-test-first discipline applies — one cheap falsification before any build (the 07-13 session pattern).
+- **Open research vectors (thin but alive):** CEF discount reversion (the one untested cheap vector — kill-test first), on-chain slices (netflows / stablecoin supply / MSTR-IBIT NAV basis), data-walled small-cap quality-momentum (needs point-in-time data). All research docs now carry STATUS banners (2026-07-18 pass) — check the banner before reviving anything.
 - Mode 2: Analyze BAC/MS/PNC transcripts (pending Insider Monkey), continue weekly PEAD analysis through Q1 earnings season.
 - Mode 2: Build weekly report generator (markdown output stored in `data/mode2/reports/`).
 - Mode 2: C recommendation CLOSED 2026-07-13 retro-review — stopped -5.1% on 05-04, then thesis played out fully (high $147.96 on 06-18, past target). Lesson logged in tracker: PEAD holds need time-exits, not tight stops.

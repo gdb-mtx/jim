@@ -1,5 +1,19 @@
 # Breakthrough Vectors — Why We're Underperforming SPY, and Where to Look (2026-05-26)
 
+> **STATUS 2026-07-18 — CONSIDERED; MOSTLY EXHAUSTED.** Verdict ledger:
+> cap-weight tilt KILLED (05-29, below); VIX term-structure carry DONE
+> (sleeve dead, VIXY tail-leg pilot live in A3 — `EVENT_KILLTESTS_JUL2026.md`);
+> insider clusters KILLED; spinoff drift KILLED; buybacks KILLED (all
+> 07-13, same doc). **Still open, never tested:** (1) **CEF
+> discount-to-NAV reversion** (Tier 1 #3) — the one cheap vector without
+> a verdict; deserves a 1-day kill test on the `*_poc.py` harness pattern
+> (data lift: CEFConnect harvest). Prior: likely shares the killed event
+> streams' mean-arbed fate, but that's a prior, not a measurement.
+> (2) **Crypto on-chain microstructure** (Tier 1 #1), partially covered —
+> funding-rate slice is the parked basis-carry track (regime trigger in
+> EVENT_KILLTESTS); exchange netflows, stablecoin supply, and the
+> MSTR/IBIT premium-to-NAV basis remain untested slices.
+
 **Origin:** Session 2026-05-26 between George and Claude (Opus 4.7). Sparked by George's read that strategies are middle-of-the-road, the book is underperforming SPY dramatically, and the academic factor space feels exhausted. This doc captures concrete avenues to push on — non-academic, structurally different from existing A1/A2/A4.
 
 **Posture:** Active breakthrough hunt. Not maintenance. See README + CLAUDE.md operator-sentiment headers (2026-05-26 updates).

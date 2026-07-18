@@ -1,5 +1,10 @@
 # Rate-Vol Account — Scoping Doc (2026-04-18)
 
+> **STATUS 2026-07-18 — CONSIDERED; SHELVED (regime).** Rechecked: MOVE
+> at 69.6 (3-month range 65-86) — still multi-year lows, the shelf
+> rationale below holds. Revisit trigger: MOVE > 120 sustained (Fed
+> shock / policy vol regime). No build until then.
+
 **Goal:** Build a new Account 5 candidate that exploits rate volatility dislocations using the Nagel liquidity-provision mechanism. Target: OOS CAGR + Calmar that would materially improve the combined portfolio beyond the current 3-account + crypto blend.
 
 **Why this asset class:** high natural vol, no "going to zero" terminal risk, genuinely less crowded than equity vol. Treasury ETFs have clear mean-reversion on the 5-10 day horizon when rate vol is elevated, especially during Fed pivots and policy surprises.

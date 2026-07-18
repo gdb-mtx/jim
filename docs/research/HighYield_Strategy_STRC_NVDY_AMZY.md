@@ -1,5 +1,11 @@
 # Yield-Harvesting Flywheel — Scoping Doc (2026-05-13)
 
+> **STATUS 2026-07-18 — CONSIDERED; AWAITING GEORGE (bridge-income
+> track, not Mode 1).** Unchanged since May: evaluate by income floor /
+> principal preservation / DRIP total return, not CAGR/Calmar. STRC/NVDY/
+> AMZY confirmed Alpaca-tradeable (AUDIT_FABLE §4). Prosecution is a
+> FIREMaster bridge-plan decision, not a trading-book build.
+
 **Goal:** Build a yield-harvesting strategy for Account 5 that generates income exceeding a target withdrawal rate during the bridge-to-59.5 years, with principal preservation. Paper-trade first; real capital only after 6+ months of live evidence.
 
 **Why this approach:** The existing Mode 1 book (A1+A2+A4) targets capital appreciation via factor timing — momentum, trend, mean-reversion. All three accounts depend on perfect execution of daily/monthly signal rotation. A4's first 3 weeks of live trading show +4.61% signal-only but **-7.29% live** (12pp execution drag). Beautiful backtests do not guarantee live results. A yield strategy that generates distributions mechanically — hold positions, collect income, reinvest — has structural execution simplicity that factor-timing strategies lack. The edge is in instrument selection and allocation, not in execution speed.

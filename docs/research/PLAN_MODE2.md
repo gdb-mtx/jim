@@ -1,5 +1,11 @@
 # FIRE Trading System: Two-Mode Architecture
 
+> **STATUS 2026-07-18 — PARTIALLY SUPERSEDED (time capsule).** Written in
+> the 4-account era. Current live architecture, validation state, and
+> next steps live in CLAUDE.md; Mode 2's honest record (PEAD 1-3% on
+> large-caps, C trade lesson: time-exits not stops) is in CLAUDE.md Mode 2
+> section. Kept for the two-mode strategic framing, which still stands.
+
 ---
 
 ## The Two Modes

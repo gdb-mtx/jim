@@ -1,5 +1,9 @@
 # Cap-Weight Diagnostic — Account 1 (SM + SPY Filter)
 
+> **STATUS 2026-07-18 — CLOSED (test complete, 2026-05-29).** Verdict
+> stands: keep equal-weight; A1 beats SPY risk-adjusted OOS; no cap
+> tilt. Referenced by BREAKTHROUGH_VECTORS update header.
+
 Does A1's SPY underperformance come from **equal-weighting** (in a mega-cap concentration regime) or from **genuine bad picks**? Same top-15 momentum selection, three weighting schemes, each compared to SPY.
 
 ## Verdict (OOS — the regime in question)

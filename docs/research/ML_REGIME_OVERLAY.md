@@ -1,5 +1,17 @@
 # ML Signal Research — Scoping Doc (2026-05-13)
 
+> **STATUS 2026-07-18 — CONSIDERED; DORMANT.** The pre-committed
+> prerequisite (price-based macro composite) was built 07-18 and its
+> pre-registered eval settled the *overlay* role for ANY method, ML or
+> thresholds: exposure-scaling overlays hurt this book (OOS Calmar
+> 2.77→2.55) because three de-risk layers already exist — the alert
+> layer won (`MACRO_COMPOSITE_EVAL.md`). Role B (regime overlay) is
+> therefore dead on the current book architecture. Role A (standalone
+> crypto ML) stays dormant: two prior AI-alpha kills + A4's momentum
+> retirement + it would need the untested on-chain data family anyway.
+> Revival condition: on-chain pipeline exists AND a candidate clears the
+> standard kill-test-first path.
+
 **Goal:** Evaluate whether a neural network (LSTM/XGBoost) trained on multi-asset features can generate a tradeable signal — either as a **standalone strategy** (Account 5 candidate, or A4 replacement if it outperforms momentum on walk-forward) or as a **book-level regime overlay** that coordinates de-risking across accounts. The data and the kill gates decide which role it plays, not architectural bias.
 
 **Origin:** @RohOnChain article on X (2026-05-06, ~1M views) describing an LSTM-based directional prediction framework. George flagged it as a research vector. The article's framework is technically sound on the hard parts (stationarity, walk-forward validation, early stopping) but aspirational on results (no actual backtest numbers reported).
