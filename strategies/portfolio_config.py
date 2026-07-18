@@ -63,7 +63,11 @@ PORTFOLIOS = {
             "vol_target": 0.15,
             "vol_halflife": 21,
             "scalar_floor": 0.5,
-            "scalar_cap": 1.0,
+            # 1.5 restores the strategy's original validated design (calm-regime
+            # extension into Reg-T margin, equity accounts only — cap=1.0
+            # alignment 2026-04 dropped OOS CAGR to 11%; see HISTORY.md
+            # 2026-07-18). Live path clamps crypto books to 1.0.
+            "scalar_cap": 1.5,
         },
     },
     "multi_asset_trend": {

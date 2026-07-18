@@ -271,6 +271,37 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-07-18 — A2 cap=1.5 restored; validation MARGINAL → PASS
+
+The vol-scaling cap on A2 (`trend_lowvol`) returned to its original
+validated design: `scalar_cap` 1.0 → 1.5 in `portfolio_config.py`
+(single source — backtest, validation, and live all read it). The 2026-04
+cap=1.0 "alignment" existed because `execution/rebalance.py` hardcoded
+the cap on the claim "Alpaca paper is spot-only" — true only for crypto.
+A2's equity paper account has Reg-T margin (multiplier 4 reported,
+2× overnight is what matters; 1.5× gross needs $151K on $100K equity —
+fits). Live path now takes the cap from config, clamps crypto books to
+1.0 unconditionally, allows weight sums up to the configured cap (loud
+failure above), and refuses levered targets on non-margin accounts with
+a buying-power log line.
+
+Validation (full 6-test, 2026-07-18): **PASS — OOS CAGR 16.8%
+(was 11.0%), MaxDD -10.8%, Calmar 1.56, OOS/IS ratio 99%, bootstrap p5
++11.5%.** Matches the April sweep's shelved projection (16.6%/1.54).
+~+2pp book CAGR at A2's ⅓ weight. First levered rebalance: 2026-07-22
+(A2's live realized vol ~7-12% vs 15% target → scalar pins at cap).
+
+Caveat logged for real money: backtest models no margin interest. At
+~8% broker rates, fully-extended 0.5× borrow costs ~4% of equity/yr;
+vol-scaling is only extended in calm regimes, so realistic net drag is
+~1-2pp of the +5.8pp gross lift. Paper pays no interest — revisit at
+the Fly/real-money gate.
+
+Same session: VIX9D/VIX3M tail signal added to the 4h SPY filter cron
+(`scripts/filter_check.py`, alert-only via macOS notification + state
+fields `vix_ratio`/`vix_backwardation`, threshold 1.10, never triggers
+a rebalance). Tail-leg context: `docs/research/EVENT_KILLTESTS_JUL2026.md`.
+
 ## 2026-07-13 — A4 retired (Crypto Momentum Rotation)
 
 Marked `status="retired"` in `validation_state.json` (unconditional

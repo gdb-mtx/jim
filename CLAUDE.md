@@ -47,7 +47,7 @@ We're optimized for a builder with an AI partner. Different constraints, differe
 Factor diversification across Alpaca paper accounts. A3 (2026-04-21) and A4 (2026-07-13) are retired; both slots are preserved for successor strategies (candidates: A5-Events pooled event sleeve, VIX tail leg, basis carry — see `AUDIT_FABLE.md` §5).
 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter — profits when trends persist. Every-21-trading-days rebalance (manual).
-- **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
+- **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling (cap 1.5, restored 2026-07-18) — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
 - **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
 - **Account 4 (FIRE 0.4 — RETIRED 2026-07-13)**: Was Crypto Momentum Rotation (top 2 of 9 coins, BTC 125d SMA filter + vol-scaling, daily cron). Retired on three legs: walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87 < 1.0 gate), +17.9pp live drag traced to bug-era churn and never re-validated live, unreachable 40%-upgrade clock. The 33%→40% pre-commitment is void. Canonical narrative: `HISTORY.md` 2026-07-13. Hourly cron left in place — validation gate blocks it cleanly (`skipped`, once/day).
 
@@ -57,12 +57,12 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 ### Strategies
 
-**See `STRATEGIES.md`** for full OOS scorecards, research/building-block tables, universe definitions, filters & overlays, and strategy source files. Quick status (revalidated 2026-07-13, expires 10-11): A1 PASS (CAGR 27.1%), A2 MARGINAL (CAGR 11.0%), A3 RETIRED, A4 RETIRED. Open caveat: C3 (S&P 500 survivorship bias, ~1-2pp on A1).
+**See `STRATEGIES.md`** for full OOS scorecards, research/building-block tables, universe definitions, filters & overlays, and strategy source files. Quick status: A1 PASS (CAGR 27.1%, revalidated 07-13), A2 PASS (CAGR 16.8% at cap=1.5, revalidated 07-18), A3 RETIRED, A4 RETIRED. Open caveat: C3 (S&P 500 survivorship bias, ~1-2pp on A1).
 
 ### Risk Controls (summary — see `AUTOMATION.md` for operational detail)
 
 - **Time convention:** ET (America/New_York) is the system reference timezone. Use `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`), never `date.today()` or `datetime.now()`.
-- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via cron. Auto-rebalances on flip. Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
+- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via cron. Auto-rebalances on flip. Also computes VIX9D/VIX3M each SPY run — alert-only tail signal at ≥1.10 (macOS notification, no rebalance). Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
 - **Drawdown monitor:** Two tiers — **-10% dashboard alert** (amber banner, non-blocking) and **-35% catastrophe halt** (per-account kill-switch, manual reset required, 403 on rebalance). Neither threshold fires in 16y of backtest.
 - **Concurrency:** All rebalance entry points serialize via `dual_rebalance_lock` (async + file lock). Contention → 409 / `status="locked"`.
 - **Sub-broker-minimum rejections** on A4 (sub-$10 BTC dust orders) are expected and harmless — revisit only if recurring >30 days.
@@ -138,11 +138,11 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 **Mode 1 (Structural Alpha):** 2-account live book (A1+A2); build-out of successor sleeves in progress (2026-07-13 session: A4 retired, buyback-drift kill test run, VIX sleeve quantified).
 - Account 1: 15 stocks (SM + SPY Filter) — live since 2026-03-10, OOS CAGR 27.1%. Live +7.5% through 07-09 (~+23% annualized), tracking backtest.
-- Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10, OOS CAGR 11.0% MARGINAL. Live ~flat; it's the ballast, judged at 2026-Q4 review.
+- Account 2: 34 positions (Trend + Low-Vol) — live since 2026-03-10. cap=1.5 restored 2026-07-18: OOS CAGR 16.8% PASS (was 11.0% MARGINAL). Live ~flat pre-restore; levered from the 07-22 rebalance.
 - Account 4: RETIRED 2026-07-13 at -23.1% live (see `HISTORY.md`).
 - Live-tracking clock reset to 2026-04-21 (the Mar 10 → Apr 17 window was compromised by stale-data bug). April 21 is the anchor for the 21-trading-day rebalance cycle.
 
-**Validation status:** A1 PASS, A2 MARGINAL (revalidated 2026-07-13, expire 2026-10-11). Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 + A4 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
+**Validation status:** A1 PASS (07-13), A2 PASS (07-18, cap=1.5); expire 2026-10-11/10-16. Results in `data/validation_reports/`, state in `data/risk_state/validation_state.json`. A3 + A4 status="retired" — retired accounts are an unconditional block, no override can bypass. `execution/validation_gate.py` blocks FAIL/unvalidated; MARGINAL allowed for paper. Overrides for FAIL/unvalidated/expired only: `FIRE_VALIDATION_OVERRIDE=1` (global) or `FIRE_VALIDATION_OVERRIDE_ACCT{N}=1` (scoped). Both surface a WARNING log.
 
 **Open bugs:** Tier 1 closed except C3 (S&P 500 survivorship, ~1-2pp on A1 CAGR — only matters pre-real-money). C10 closed 2026-05-06 by migrating live crypto signal computation to Alpaca's bars endpoint (broker-native, no third-party publishing delay) — see `HISTORY.md` C10/C11 for the authoritative narrative. Tiers 2+3 fully closed. Tier 4 R6/R7/R8/R10/R13/R14/R15 are reporting hygiene, non-blocking. See `HISTORY.md` for per-item detail.
 

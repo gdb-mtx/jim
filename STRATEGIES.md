@@ -15,7 +15,7 @@ Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA
 | **Trend + Low-Vol (Acct 2)** | MARGINAL | **+11.0%** | **-7.3%** | **1.51** | 1.51 | — | *1.37* |
 | *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — |
 
-A1 PASSes the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates (revalidated 2026-07-13). **A4 RETIRED 2026-07-13** — walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87) + bug-era live drag never re-validated; canonical narrative in `HISTORY.md`. **A2 is MARGINAL** — backtest used to leverage the low-vol leg up to 1.5× in calm regimes that live could never realize; cap=1.0 alignment brings it to 11%. MARGINAL is allowed for paper per `execution/validation_gate.py`.
+A1 PASSes the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates (revalidated 2026-07-13). **A4 RETIRED 2026-07-13** — walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87) + bug-era live drag never re-validated; canonical narrative in `HISTORY.md`. **A2 PASSes as of 2026-07-18** — cap=1.5 vol-scaling restored (OOS CAGR 16.8%, MaxDD -10.8%, Calmar 1.56, ratio 99%). The 2026-04 cap=1.0 alignment that dropped it to 11% MARGINAL is reverted; live now realizes the levered design via Reg-T margin (equity accounts only). See HISTORY.md 2026-07-18.
 
 A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
 

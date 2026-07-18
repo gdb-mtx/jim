@@ -349,13 +349,23 @@ def compute_rebalance(
     raw_signal_weights = stages.get("raw", dict(target_weights))
     post_filter_weights = stages.get("post_filter", dict(target_weights))
 
-    # Vol-scaling overlay. Cap forced to 1.0 — Alpaca paper is spot-only.
+    # Vol-scaling overlay. scalar_cap comes from the portfolio config (single
+    # source with the backtest); >1.0 extends into Reg-T margin on equity
+    # accounts. Crypto books are clamped to 1.0 regardless of config —
+    # Alpaca crypto is non-marginable.
     vol_scalar = 1.0
     vol_scalar_diagnostics: dict | None = None
+    max_gross = 1.0
     portfolio_cfg = PORTFOLIOS.get(strategy_id, {})
     if portfolio_cfg.get("vol_scaling"):
         from execution.vol_scaling import compute_live_vol_scalar
-        params = {**portfolio_cfg.get("vol_scaling_params", {}), "scalar_cap": 1.0}
+        params = dict(portfolio_cfg.get("vol_scaling_params", {}))
+        is_crypto_book = any(
+            k in CRYPTO_STRATEGIES for k in portfolio_cfg.get("weights", {})
+        )
+        if is_crypto_book:
+            params["scalar_cap"] = min(1.0, params.get("scalar_cap", 1.0))
+        max_gross = max(1.0, params.get("scalar_cap", 1.0))
         vol_scalar, vol_scalar_diagnostics = compute_live_vol_scalar(
             broker.account, **params
         )
@@ -368,18 +378,31 @@ def compute_rebalance(
 
     # Invariant check — strategies should produce sane weight distributions.
     # Guards against a strategy bug producing extreme/pathological output.
-    # Loud failure beats silent clamping.
+    # Loud failure beats silent clamping. Gross may exceed 1.0 only via the
+    # vol-scaling cap, and levered targets require a margin account.
     _weight_sum = sum(target_weights.values())
-    if _weight_sum > 1.0 + 1e-6:
+    if _weight_sum > max_gross + 1e-6:
         raise ValueError(
-            f"Strategy {strategy_id} produced weights summing to {_weight_sum:.4f} > 1.0. "
-            f"Refusing to trade. Investigate signal generation before retrying."
+            f"Strategy {strategy_id} produced weights summing to {_weight_sum:.4f} "
+            f"> max gross {max_gross:.2f}. Refusing to trade. "
+            f"Investigate signal generation before retrying."
+        )
+    if _weight_sum > 1.0 + 1e-6:
+        _acct = broker.api.get_account()
+        if float(getattr(_acct, "multiplier", 1) or 1) < 2:
+            raise ValueError(
+                f"Gross target {_weight_sum:.2f}x requires margin but account "
+                f"{broker.account} has multiplier={_acct.multiplier}. Refusing to trade."
+            )
+        log.info(
+            f"levered rebalance account={broker.account}: gross={_weight_sum:.3f}x equity, "
+            f"regt_buying_power=${float(_acct.regt_buying_power):,.0f}"
         )
     for sym, w in target_weights.items():
-        if w < 0 or w > 1.0 + 1e-6:
+        if w < 0 or w > max_gross + 1e-6:
             raise ValueError(
                 f"Strategy {strategy_id} produced out-of-range weight for {sym}: {w:.4f}. "
-                f"Expected [0, 1]. Refusing to trade."
+                f"Expected [0, {max_gross:.2f}]. Refusing to trade."
             )
 
     # 3b. Check tradeability for NEW target symbols (not currently held)

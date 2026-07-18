@@ -43,6 +43,11 @@ ACCOUNT_FILTERS = {
 
 VALID_SCOPES = ("all", "spy", "btc")
 
+# VIX9D/VIX3M at or above this = deep backwardation — the tail-leg entry
+# signal (alert-only; the VIXY tail leg is a manual capital decision).
+# Threshold from the 2026-07-13 sweep: docs/research/EVENT_KILLTESTS_JUL2026.md.
+TAIL_BACKWD_RATIO = 1.10
+
 # Cross-process lock: equity + crypto LaunchAgents can fire concurrently and interleave log writes.
 _FILTER_CHECK_LOCK_PATH = PROJECT_ROOT / "data" / "risk_state" / "filter_check.lock"
 _FILTER_CHECK_LOCK_TIMEOUT_S = 120.0
@@ -127,6 +132,22 @@ def compute_filters(scope: str = "all") -> dict:
             "spy_price": round(float(spy_close.iloc[-1]), 2),
             "spy_ma200": round(float(spy_ma.iloc[-1]), 2),
         })
+
+        # VIX term-structure ratio — tail-signal input. Alert-only downstream;
+        # never triggers a rebalance. Failure must never block the SPY filter.
+        try:
+            import yfinance as yf
+            vixes = yf.download(
+                ["^VIX9D", "^VIX3M"], period="10d", progress=False, auto_adjust=True
+            )["Close"].dropna()
+            if not vixes.empty:
+                ratio = float(vixes["^VIX9D"].iloc[-1] / vixes["^VIX3M"].iloc[-1])
+                result.update({
+                    "vix_ratio": round(ratio, 4),
+                    "vix_backwardation": 1.0 if ratio >= TAIL_BACKWD_RATIO else 0.0,
+                })
+        except Exception as e:
+            log.warning(f"VIX ratio fetch failed (non-fatal): {e}")
 
     if scope in ("all", "btc"):
         # BTC filter pulls bars from Alpaca (broker-native, no publishing
@@ -304,6 +325,8 @@ def _run_check(args, source: str):
         parts.append(
             f"BTC={current['btc_scalar']} (${current['btc_price']} vs MA ${current['btc_ma125']})"
         )
+    if "vix_ratio" in current:
+        parts.append(f"VIX9D/3M={current['vix_ratio']}")
     log.info(f"Filters computed in {time.time() - t0:.1f}s: " + ", ".join(parts))
 
     # Load previous state (uses shared module with file lock; also writes
@@ -335,6 +358,26 @@ def _run_check(args, source: str):
             })
         notify("FIRE Filter Monitor", f"Initialized ({args.filter}). {', '.join(parts)}")
         return
+
+    # VIX tail signal — alert-only, independent of the rebalance-triggering
+    # filters above. Fires on the backwardation threshold crossing in either
+    # direction; state fields persist via the update_fields calls below.
+    if "vix_backwardation" in current:
+        prev_bw = prev.get("vix_backwardation")
+        cur_bw = current["vix_backwardation"]
+        if prev_bw is not None and cur_bw != prev_bw:
+            if cur_bw == 1.0:
+                msg = (
+                    f"VIX9D/VIX3M = {current['vix_ratio']} ≥ {TAIL_BACKWD_RATIO} — deep "
+                    f"backwardation. Tail-leg (VIXY) entry signal; crash-regime risk elevated."
+                )
+            else:
+                msg = (
+                    f"VIX9D/VIX3M = {current['vix_ratio']} back below {TAIL_BACKWD_RATIO} — "
+                    f"backwardation over. Tail-leg exit signal."
+                )
+            log.warning(f"TAIL SIGNAL: {msg}")
+            notify("FIRE Tail Signal", msg)
 
     if not spy_changed and not btc_changed:
         log.info("No filter changes detected")

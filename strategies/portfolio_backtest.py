@@ -108,8 +108,10 @@ def apply_vol_scaling(
         vol_target: Target annualized vol (0.15 = 15%)
         vol_halflife: EWMA half-life in days for vol estimation
         scalar_floor: Minimum exposure (0.5 = never below 50%)
-        scalar_cap: Maximum exposure (1.0 = no leverage; Alpaca paper is
-                    spot-only, so cap=1.0 keeps sim and live apples-to-apples).
+        scalar_cap: Maximum exposure. 1.0 = no leverage; >1.0 extends into
+                    Reg-T margin in calm regimes (equity accounts only —
+                    Alpaca crypto is non-marginable and stays capped at 1.0
+                    in the live path).
 
     Returns:
         Vol-scaled daily returns
