@@ -271,6 +271,30 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-07-18 (later) — A1 book-level vol scaling added (George-approved)
+
+Investigation trigger: A1's clean-window lag vs SPY (dashboard impression
+confirmed: +1.34% vs +4.78%, 04-22→07-17). Diagnosis chain: execution
+parity CLEAN (live +1.34% vs signal-path +1.46% — no A4-style drag);
+controls ruled out sizing scheme (RSP +5.8%) and factor (MTUM +9.6%);
+root cause is **design** — StockMomentum vol-targets each name at 20%
+((0.20/vol_i)/15) and never re-levers the diversified aggregate, so the
+book ran 22% gross (6th percentile since 2019; 16-year average 40-70%)
+with the 2026 all-AI-semi momentum cohort at 60%+ name vol. The
+diversification benefit was computed and discarded.
+
+Fix: the same book-level vol-scaling overlay as trend_lowvol
+(0.15 target / halflife 21 / floor 0.5 / cap 1.5) on `sm_filtered`,
+riding the config-driven cap infrastructure from the morning's A2 work.
+Backtest: OOS CAGR 25.3% → **31.2%**, MaxDD -9.9% → -11.0%, Calmar 2.56
+→ **2.84**. Full 6-test validation PASS (Test 2 median CAGR 18.8% over
+26 windows; bootstrap p5 **+15.3%** — above the CAGR gate itself;
+Test 6 PASS). Alpaca margin confirmed on A1 (multiplier 4, Reg-T BP
+$191K; 1.5× gross $157K fits 2× overnight; all names marginable).
+Live scalar at deploy ≈ 1.08 (realized vol 13.9% vs 15% target) —
+extensions grow when the momentum cohort rotates calmer. Live from the
+2026-07-22 rebalance.
+
 ## 2026-07-18 — A2 cap=1.5 restored; validation MARGINAL → PASS
 
 The vol-scaling cap on A2 (`trend_lowvol`) returned to its original

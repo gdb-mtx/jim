@@ -29,6 +29,18 @@ PORTFOLIOS = {
         "name": "Stock Momentum + SPY Filter",
         "weights": {"stock_momentum": 1.0},
         "spy_filter": True,
+        # Book-level vol scaling added 2026-07-18 (George-approved). The
+        # strategy's per-name 20% vol targeting leaves the diversified book
+        # at 22-70% gross and never re-levers the aggregate; this overlay
+        # recaptures the diversification benefit (OOS 25.3%→31.1% CAGR,
+        # Calmar 2.56→2.82). Same params/infra as trend_lowvol.
+        "vol_scaling": True,
+        "vol_scaling_params": {
+            "vol_target": 0.15,
+            "vol_halflife": 21,
+            "scalar_floor": 0.5,
+            "scalar_cap": 1.5,
+        },
     },
     "blend_filtered": {
         "name": "Blended Portfolio + SPY Filter",
