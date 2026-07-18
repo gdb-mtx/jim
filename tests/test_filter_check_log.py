@@ -5,7 +5,7 @@ Fixture strings mirror the real log format produced by
 account-summary indentation.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from data.filter_check_log import (
     FilterCheckRun,
@@ -58,7 +58,7 @@ def test_parses_no_change_block(tmp_path):
     assert r.outcome == "no_change"
     assert r.flips == []
     assert r.accounts == []
-    assert r.started_at == datetime(2026, 4, 22, 12, 28, 36, 966_000)
+    assert r.started_at == datetime(2026, 4, 22, 12, 28, 36, 966_000, tzinfo=timezone.utc)
 
 
 def test_parses_flip_block(tmp_path):
@@ -131,7 +131,7 @@ def test_parses_multi_block_log(tmp_path):
     assert runs[1].outcome == "flip"
     # Chronological order preserved (file order).
     assert runs[0].started_at < runs[1].started_at or \
-        runs[0].started_at == datetime(2026, 4, 22, 12, 28, 36, 966_000)
+        runs[0].started_at == datetime(2026, 4, 22, 12, 28, 36, 966_000, tzinfo=timezone.utc)
 
 
 def test_tolerates_old_format_without_source_scope(tmp_path):
@@ -182,7 +182,7 @@ def test_latest_per_source_picks_newest(tmp_path):
     runs = parse_filter_check_log(f)
     latest = latest_per_source(runs)
     assert "launchd-crypto" in latest
-    assert latest["launchd-crypto"].started_at == datetime(2026, 4, 22, 12, 0, 0, 0)
+    assert latest["launchd-crypto"].started_at == datetime(2026, 4, 22, 12, 0, 0, 0, tzinfo=timezone.utc)
 
 
 def test_stray_non_header_lines_ignored(tmp_path):
