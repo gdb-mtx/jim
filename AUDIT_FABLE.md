@@ -1,15 +1,43 @@
 # AUDIT_FABLE — Full-System Review & Path Forward
 
-> **Status update 2026-07-13:** §2's fires are out (A4 retired — see
-> `HISTORY.md`; cron healthy since the 06-09 fix). §5 Phase 1 was
-> stress-tested against 2022–2026 data the same day: **all four
-> A5-Events streams KILLED or unfundable** (buybacks inverted; insider
-> clusters carry no drift, dose-response inverted; deletions/spinoffs
-> lottery-skew), switched VIX sleeve dead (a VIXY tail leg survives as
-> a priced decision), basis carry regime-gated (funding +2.2% ann. =
-> off), leveraged trend priced and passed on. §5 Phase 1 is therefore
-> superseded. Canonical record + re-ranked path:
-> `docs/research/EVENT_KILLTESTS_JUL2026.md`. §3–§4 remain accurate.
+> **RECONCILIATION LEDGER 2026-07-18 — every item in this audit now has a
+> disposition.** (07-13 kill-test summary folded in; full-pass audit at
+> George's request 07-18.)
+>
+> **DONE:** Phase 0 fires all out (A4 cron fixed 06-09; drag forensics
+> 07-13 → bug-era churn; Mode 2 C closed 07-13; win-rate 0.0% report bug
+> fixed 07-18). Macro composite built 07-18 (alert-only —
+> `MACRO_COMPOSITE_EVAL.md`). cap=1.5 sprint done 07-18 and extended to
+> A1 (book: A1 31.2% + A2 16.8% validated). A4 retired 07-13 (upgrade
+> clock void). Leveraged trend priced and passed. Norgate declined by
+> George 07-18 (C3 handled by expectation haircut).
+>
+> **KILLED:** all four A5-Events streams on 2022-26 data (buybacks
+> inverted; insider clusters no drift, dose-response inverted;
+> deletions/spinoffs lottery-skew — `EVENT_KILLTESTS_JUL2026.md`);
+> switched VIX sleeve (VIXY tail leg survives — paper pilot LIVE in A3
+> since 07-18); LLM-as-event-classifier (Phase 2) — **dead with its
+> parent**: it existed to feed the event sleeve, and the sleeve is dead.
+>
+> **PARKED (with explicit triggers):**
+> - **Basis carry** — Deribit 30d funding > ~8-10% ann. (probe in
+>   EVENT_KILLTESTS; was +2.2% on 07-13).
+> - **DBMF crisis-conditional A2 swap** — A2 live Calmar < 1.0 at the
+>   2026-Q4 review (less likely now A2 validates at 16.8%).
+> - **SPY put-ladder tail hedge (uses the §4.2 options L3 unlock —
+>   never evaluated)** — the classic alternative to VIXY (defined payoff
+>   vs roll decay). Compare against the A3 pilot once it has ≥1 realized
+>   entry/exit; tail-leg v2 decision then.
+> - **IBKR bundle** (futures CTA + odd-lot tenders + SPAC redemptions +
+>   shorting + box-spread financing) — trigger: real money at $150K+
+>   scale. The tenders/redemptions micro-edges were never separately
+>   evaluated; they ride with the bundle.
+> - **Micro-cap quality-momentum** — behind point-in-time data
+>   (Norgate declined; revisit if that changes).
+>
+> §3–§4 remain accurate. Open cheap vectors live in
+> `docs/research/BREAKTHROUGH_VECTORS_MAY2026.md` (banner): CEF discount
+> reversion (untested), on-chain slices.
 
 **Date:** 2026-06-09
 **Scope:** All code, all docs, live paper performance (snapshots, rebalance logs, signal tracker, validation state), every research vector in `docs/research/` and the April 2026 hunt archive, plus a first-principles survey of out-of-distribution strategy space.

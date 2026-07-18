@@ -416,6 +416,10 @@ def full_scorecard(returns: pd.Series, periods_per_year: int = 252) -> dict:
         "total_periods": int(len(returns)),
         # Informational — not gated on
         "sharpe": sharpe_ratio(returns, periods_per_year=periods_per_year),
+        # Was only in full_report(); validation reports read this dict, so
+        # its absence rendered "Win rate 0.0%" in every report (R-item
+        # flagged 2026-06-09, fixed 2026-07-18).
+        "win_rate": win_rate(returns),
     }
 
 
