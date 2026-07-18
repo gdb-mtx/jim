@@ -56,3 +56,6 @@ References/*.pdf
 
 # Claude Code
 .claude/
+
+# Research caches — reproducible via scripts/*_poc.py --refresh (EDGAR/SEC/yfinance harvests)
+data/research_cache/
