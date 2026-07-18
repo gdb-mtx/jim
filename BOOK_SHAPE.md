@@ -1,5 +1,21 @@
 # Book Shape — What We Need to Find
 
+> **Update 2026-07-18 — gap status after the July build-out:**
+> **Gap 3 (regime adaptivity): CLOSED** — 5-sensor macro composite live as
+> the alert layer (led SPY-200d by 34-56 days in 2018/2020/2022; exposure
+> scaling tested and rejected — the book's existing de-risk stack makes it
+> pure bull-cost; `docs/research/MACRO_COMPOSITE_EVAL.md`). **Gap 1
+> (crisis alpha): priced, awaiting purchase** — VIXY deep-backwardation
+> tail leg (~5% of book, entry/exit signal live as the Tail alert);
+> George's standing buy/pass decision. **Gap 2 (non-price edge): the
+> free-public-data half is DEAD** — all four event streams (buybacks,
+> deletions, spinoffs, insider clusters) killed on 2022-26 data
+> (`docs/research/EVENT_KILLTESTS_JUL2026.md`); what remains is
+> regime-gated carry (funding trigger armed) and data-walled small-cap
+> work (needs point-in-time data). Meanwhile the July sizing upgrades
+> (A1 book vol-scaling, A2 cap=1.5) added ~+4pp validated book CAGR —
+> the "breakthrough" came from sizing engineering, not new signals.
+
 > **Update 2026-05-26 — operator sentiment:** The gaps named in this doc (crisis alpha, non-price edge, regime adaptivity) have not been filled in the month since this was written. None of the Tier 1 strategy/research items have been prosecuted. Mechanics are solid, strategies are middle-of-the-road, the book runs but is not what we hoped for. **George wants a breakthrough, not coast** — these gaps remain real and worth pushing on. Treat the body of this doc as still-current strategic prioritization. Pitching candidate work against any of the named gaps is welcomed; evaluate against each gap's own success criteria, not reflexive CAGR/Calmar gates.
 
 **Created:** 2026-04-23, after a long session that exhausted the "find another uncorrelated A5" search space.

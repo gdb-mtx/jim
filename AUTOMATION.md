@@ -304,6 +304,33 @@ Or the GitHub Actions tab in VS Code → `filter_watch` workflow.
 > special handling. (The old launchd TZ-cache-requires-reboot gotcha no longer
 > applies — it was specific to PID-1 launchd caching the boot-time zone.)
 
+## Alert signals — operator runbook (added 2026-07-18)
+
+The 4h SPY filter run computes two **alert-only** signals on top of the
+trade-triggering filters. They notify (macOS) and persist to
+`filter_state.json`; they never place trades. These are the only two
+automations that ask for a human decision.
+
+**"FIRE Tail Signal"** — VIX9D/VIX3M crosses 1.10 (deep backwardation =
+crash posture; historically long-vol pays ~+14%/day on SPY's worst days).
+*Your standing decision when it fires:* buy the insurance or not — ~5% of
+book into VIXY while the ratio stays ≥ 1.10, sell on exit signal. Costs
+premium in false alarms; pays multiples in real crashes. Numbers in
+`docs/research/EVENT_KILLTESTS_JUL2026.md`.
+
+**"FIRE Macro Composite"** — five price-based stress sensors (credit
+HYG/IEF, dollar UUP, VIX curve, S&P breadth, XLU/SPY rotation) vote every
+run; alert fires when the count crosses 2 in either direction. Led the
+SPY-200d filter by 34-56 days in 2018/2020/2022. *What to do:* storm
+warning, not fire alarm — the book de-risks itself; tighten attention,
+skip discretionary risk-adds. **3+ votes AND Tail Signal on = the
+strongest "buy VIXY now" configuration.** Deliberately not wired to trade
+(pre-registered eval rejected it: `docs/research/MACRO_COMPOSITE_EVAL.md`).
+
+Current state of both is always visible in `data/risk_state/filter_state.json`
+(`vix_ratio`, `vix_backwardation`, `macro_votes`, `macro_scalar`, per-sensor
+fields) and in the filter_check log lines.
+
 ## Monitoring health (Ops dashboard)
 
 The **Ops** tab → Scheduler panel surfaces two health signals:
