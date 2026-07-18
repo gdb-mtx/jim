@@ -373,6 +373,17 @@ export interface OpsFiltersResponse {
   last_checked_relative: string | null;
   last_spy_flip?: string | null;
   last_btc_flip?: string | null;
+  // Alert-only regime signals (2026-07-18) — absent until the first
+  // post-deploy SPY filter run writes them.
+  vix_ratio?: number;
+  vix_backwardation?: number; // 1.0 = tail signal on
+  macro_votes?: number; // 0-5 stress votes
+  macro_scalar?: number;
+  macro_credit?: number; // per-sensor: 1 stressed, 0 calm, -1 no data
+  macro_dollar?: number;
+  macro_vix_ts?: number;
+  macro_breadth?: number;
+  macro_defense?: number;
   plausibility: PlausibilityState;
 }
 

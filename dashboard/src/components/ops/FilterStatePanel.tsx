@@ -136,12 +136,98 @@ export default memo(function FilterStatePanel() {
               exposureAbove="strategy active (1.0×)"
               exposureBelow="strategy in cash (0.0×)"
             />
+            <VixTailCard ratio={data.vix_ratio} on={data.vix_backwardation === 1.0} />
+            <MacroCard data={data} />
           </div>
         </div>
       )}
     </div>
   );
 });
+
+function VixTailCard({ ratio, on }: { ratio: number | undefined; on: boolean }) {
+  const tone = ratio === undefined ? "gray" : on ? "red" : "green";
+  return (
+    <div className="rounded-lg border border-[#2a2a3e] bg-[#12121a] p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <StatusDot tone={tone as "green" | "red" | "gray"} size="md" />
+        <span className="text-sm font-medium text-[#e8e8f0]">
+          VIX 9D/3M — tail signal (alert-only)
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <span className="text-[#8888a0]">Ratio</span>
+        <span className="text-right tabular-nums text-[#e8e8f0]">
+          {ratio !== undefined ? ratio.toFixed(3) : "—"}
+        </span>
+        <span className="text-[#8888a0]">Trigger</span>
+        <span className="text-right tabular-nums text-[#e8e8f0]">≥ 1.100</span>
+      </div>
+      <p className="mt-2 text-xs text-[#8a8aa5]">
+        {ratio === undefined
+          ? "awaiting next filter run"
+          : on
+            ? "TAIL SIGNAL ON — deep backwardation; VIXY entry per AUTOMATION.md runbook"
+            : "calm — insurance not indicated"}
+      </p>
+    </div>
+  );
+}
+
+const MACRO_SENSORS: { key: keyof OpsFiltersResponse; label: string }[] = [
+  { key: "macro_credit", label: "credit" },
+  { key: "macro_dollar", label: "dollar" },
+  { key: "macro_vix_ts", label: "vix-ts" },
+  { key: "macro_breadth", label: "breadth" },
+  { key: "macro_defense", label: "defense" },
+];
+
+function MacroCard({ data }: { data: OpsFiltersResponse }) {
+  const votes = data.macro_votes;
+  const tone =
+    votes === undefined ? "gray" : votes >= 3 ? "red" : votes >= 2 ? "amber" : "green";
+  return (
+    <div className="rounded-lg border border-[#2a2a3e] bg-[#12121a] p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <StatusDot tone={tone as "green" | "amber" | "red" | "gray"} size="md" />
+        <span className="text-sm font-medium text-[#e8e8f0]">
+          Macro composite — early warning (alert-only)
+        </span>
+      </div>
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        <span className="text-[#8888a0]">Stress votes</span>
+        <span className="tabular-nums text-[#e8e8f0]">
+          {votes !== undefined ? `${votes.toFixed(0)} / 5` : "—"}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {MACRO_SENSORS.map(({ key, label }) => {
+          const v = data[key] as number | undefined;
+          const cls =
+            v === 1
+              ? "border-[#ff4d6a60] bg-[#ff4d6a15] text-[#ff8fa3]"
+              : v === 0
+                ? "border-[#2a2a3e] bg-[#1a1a2e] text-[#8888a0]"
+                : "border-[#2a2a3e] bg-[#1a1a2e] text-[#55556a]";
+          return (
+            <span key={label} className={`rounded border px-1.5 py-0.5 text-[10px] ${cls}`}>
+              {label}
+            </span>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-[#8a8aa5]">
+        {votes === undefined
+          ? "awaiting next filter run"
+          : votes >= 3
+            ? "RISK-OFF WARNING — historically led SPY-200d by 34-56 days; with tail signal on, strongest VIXY-entry configuration"
+            : votes >= 2
+              ? "watch — two sensors stressed; alert threshold reached"
+              : "calm — book runs normally"}
+      </p>
+    </div>
+  );
+}
 
 function FilterCard({
   label,
