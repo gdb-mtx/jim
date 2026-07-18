@@ -15,15 +15,17 @@ import DataFreshnessPill from "./DataFreshnessPill";
 import Tooltip from "./Tooltip";
 import { showToast } from "./Toast";
 
-type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3 retired, kept in type for history endpoints
+type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3+4 retired, kept in type for history endpoints
 
-// Only active accounts are shown in the live switcher. A3 retired 2026-04-20;
-// its historical equity curve remains accessible via Backtests → Building Blocks.
+// Only active accounts are shown in the live switcher. A3 retired 2026-04-20
+// (now hosts the tail-leg paper pilot — position visible via tail_leg_log +
+// notifications, tab returns if the pilot graduates). A4 retired 2026-07-13.
+// Retired strategies' backtests live in Backtests → Building Blocks; the
+// shadow-A4 tracker runs in scripts/live_scorecard.py.
 const ACCOUNTS: { id: AccountView; name: string; label: string }[] = [
   { id: 0, name: "Combined", label: "All Accounts" },
   { id: 1, name: "FIRE 0.1", label: "Momentum" },
   { id: 2, name: "FIRE 0.2", label: "Trend + Low-Vol" },
-  { id: 4, name: "FIRE 0.4", label: "Crypto" },
 ];
 
 interface CombinedData {
