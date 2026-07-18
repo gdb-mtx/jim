@@ -31,7 +31,7 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     sortOrder: 2,
   },
   crypto_momentum_filtered: {
-    category: "research",
+    category: "building_block",
     description: "RETIRED 2026-07-13 — was: top 2 cryptos by 21d momentum, BTC 125d SMA filter + vol-scaling (edge decay + bug-era drag; HISTORY.md)",
     account: 4,
     accountLabel: "FIRE 0.4 (retired)",

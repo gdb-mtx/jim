@@ -194,7 +194,9 @@ export default function StrategyPanel({
   for (const s of strategies) {
     const id = s.id ?? s.name;
     const meta = STRATEGY_METADATA[id];
-    const category = meta?.category ?? "building_block";
+    // Unknown/missing categories land in building_block instead of crashing
+    // the tab (a metadata typo took the whole Backtests tab down 2026-07-18).
+    const category = meta?.category && meta.category in grouped ? meta.category : "building_block";
     grouped[category].push(s);
   }
 
