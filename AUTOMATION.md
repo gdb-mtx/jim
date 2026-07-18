@@ -313,9 +313,14 @@ automations that ask for a human decision.
 
 **"FIRE Tail Signal"** — VIX9D/VIX3M crosses 1.10 (deep backwardation =
 crash posture; historically long-vol pays ~+14%/day on SPY's worst days).
-*Your standing decision when it fires:* buy the insurance or not — ~5% of
-book into VIXY while the ratio stays ≥ 1.10, sell on exit signal. Costs
-premium in false alarms; pays multiples in real crashes. Numbers in
+**Paper pilot is LIVE (2026-07-18, George-approved):** the runbook trade
+now executes automatically in the idle A3 paper account — entry buys VIXY
+at 5% of A1+A2 book equity, exit liquidates, both driven by the signal
+transition in the filter cron. Guards (A3-only, VIXY-only, 6% cap, no
+pyramiding) and state in `execution/tail_leg.py`; trade history in
+`data/tail_leg_log.jsonl`. Off-hours fires queue market orders to next
+open — correct for insurance. *Your remaining decision is real-money
+adoption,* judged on the pilot's live record (Q4 review). Numbers in
 `docs/research/EVENT_KILLTESTS_JUL2026.md`.
 
 **"FIRE Macro Composite"** — five price-based stress sensors (credit

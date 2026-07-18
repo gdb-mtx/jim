@@ -389,6 +389,22 @@ def _run_check(args, source: str):
             log.warning(f"TAIL SIGNAL: {msg}")
             notify("FIRE Tail Signal", msg)
 
+            # Paper pilot (A3, George-approved 2026-07-18): execute the
+            # runbook trade automatically so the insurance rule builds a
+            # live track record. Guards + state in execution/tail_leg.py;
+            # a pilot failure must never break the filter run.
+            try:
+                from execution.tail_leg import enter_tail_leg, exit_tail_leg
+                if cur_bw == 1.0:
+                    pilot = enter_tail_leg(current["vix_ratio"], dry_run=args.dry_run)
+                else:
+                    pilot = exit_tail_leg(current["vix_ratio"], dry_run=args.dry_run)
+                log.info(f"tail_leg pilot: {pilot}")
+                if pilot.get("status") in ("entered", "exited"):
+                    notify("FIRE Tail Pilot (A3 paper)", f"{pilot['status'].upper()} — {pilot}")
+            except Exception as e:
+                log.error(f"tail_leg pilot failed (filter run unaffected): {e}")
+
     # Macro composite alert — fires when the vote count changes and either
     # side of the transition is in actionable territory (>= 2 votes).
     if "macro_votes" in current:

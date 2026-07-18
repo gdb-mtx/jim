@@ -50,7 +50,7 @@ Factor diversification across Alpaca paper accounts. A3 (2026-04-21) and A4 (202
 
 - **Account 1 (FIRE 0.1 — Momentum)**: SM + SPY Filter + book-level vol-scaling (cap 1.5, added 2026-07-18) — profits when trends persist. Every-21-trading-days rebalance (manual).
 - **Account 2 (FIRE 0.2 — Trend + Low-Vol)**: 30% Multi-Asset Trend + 70% Low-Vol + vol-scaling (cap 1.5, restored 2026-07-18) — crisis alpha + defensive. Every-21-trading-days rebalance (manual).
-- **Account 3 (FIRE 0.3 — RETIRED)**: Slot preserved for future strategy. See `DECISIONS_RESOLVED.md`.
+- **Account 3 (FIRE 0.3 — RETIRED / tail-leg pilot host)**: Retired for rebalance machinery; since 2026-07-18 hosts the automated VIXY tail-leg **paper pilot** (5% of book on VIX9D/3M ≥ 1.10, guards in `execution/tail_leg.py`, runbook in `AUTOMATION.md`). Real-money tail adoption = separate Q4 decision on the pilot's record.
 - **Account 4 (FIRE 0.4 — RETIRED 2026-07-13)**: Was Crypto Momentum Rotation (top 2 of 9 coins, BTC 125d SMA filter + vol-scaling, daily cron). Retired on three legs: walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87 < 1.0 gate), +17.9pp live drag traced to bug-era churn and never re-validated live, unreachable 40%-upgrade clock. The 33%→40% pre-commitment is void. Canonical narrative: `HISTORY.md` 2026-07-13. Hourly cron left in place — validation gate blocks it cleanly (`skipped`, once/day).
 
 Combined OOS for the current 2-account book (A1+A2 50/50, 2026-07-18 configs, net of costs): **CAGR +24.1%, MaxDD -8.7%, Calmar 2.77**. Realistic live estimate: Calmar ~2 (correlations spike in crises; both accounts now extend to 1.5× in calm regimes, so losing days scale too). Historical pre-retirement combined numbers are in git history and `HISTORY.md`.
@@ -158,7 +158,7 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 
 **Next steps:**
 - **Watch the new sizing live (top priority):** 07-22 rebalance runs A1 ×~1.08 and A2 →~1.5× gross for the first time. Verify orders/margin behave per `HISTORY.md` 2026-07-18; then 2-3 clean cycles → Q3 real-money checkpoint (gate: A1 clean-window alpha ≥ 0 vs SPY).
-- **Standing George decisions:** VIXY tail leg buy/pass (alert armed; ~5% of book; see `AUTOMATION.md` runbook). Basis carry stays parked until Deribit 30d funding > ~8-10% annualized (monthly one-command probe in `EVENT_KILLTESTS_JUL2026.md`; also worth checking when BTC re-crosses its 125d SMA).
+- **Standing George decisions:** VIXY tail leg REAL-money adoption (paper pilot auto-executes in A3 since 07-18; judge on its live record at Q4). Basis carry stays parked until Deribit 30d funding > ~8-10% annualized (monthly one-command probe in `EVENT_KILLTESTS_JUL2026.md`; also worth checking when BTC re-crosses its 125d SMA).
 - **Fly.io deployment** (`DEPLOYMENT_PLAN.md`): the durable fix for laptop scheduling and the real-money gate. A weekend of work; next infra priority.
 - **Hygiene:** tests/ has 12 pre-existing failures (predate 07-18, verified by stash-diff) — clean up on a slow day. C3 survivorship: Norgate declined 2026-07-18 (George: not worth $30/mo while edges are the constraint); handle pre-real-money by haircutting A1 expectations ~1-2pp or a free sensitivity test.
 - **Open research vectors (thin but alive):** crypto on-chain microstructure, CEF discount reversion (BREAKTHROUGH_VECTORS), data-walled small-cap quality-momentum (needs point-in-time data). Kill-test-first discipline applies — one cheap falsification before any build (the 07-13 session pattern).
