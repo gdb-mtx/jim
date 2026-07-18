@@ -62,7 +62,7 @@ Multi-account credentials in `.env` (`ALPACA_API_KEY` + `_2`/`_3`/`_4`). `Alpaca
 ### Risk Controls (summary — see `AUTOMATION.md` for operational detail)
 
 - **Time convention:** ET (America/New_York) is the system reference timezone. Use `data/trading_dates.py` helpers (`today_et`, `utc_ts_to_et_date`), never `date.today()` or `datetime.now()`.
-- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via cron. Auto-rebalances on flip. Also computes VIX9D/VIX3M each SPY run — alert-only tail signal at ≥1.10 (macOS notification, no rebalance). Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
+- **Filter monitor:** SPY 200d + BTC 125d filters checked every 4h via cron. Auto-rebalances on flip. Each SPY run also computes two alert-only signals (macOS notification, never trade): VIX9D/VIX3M tail signal (≥1.10) and the 5-sensor macro composite (alerts on vote changes ≥2; led SPY-200d by 34-56 days in 2018/2020/2022 — see `docs/research/MACRO_COMPOSITE_EVAL.md`). Exposure management is decoupled from signal rotation — speed matters (daily filter = Sharpe 1.27 vs monthly = 0.79).
 - **Drawdown monitor:** Two tiers — **-10% dashboard alert** (amber banner, non-blocking) and **-35% catastrophe halt** (per-account kill-switch, manual reset required, 403 on rebalance). Neither threshold fires in 16y of backtest.
 - **Concurrency:** All rebalance entry points serialize via `dual_rebalance_lock` (async + file lock). Contention → 409 / `status="locked"`.
 - **Sub-broker-minimum rejections** on A4 (sub-$10 BTC dust orders) are expected and harmless — revisit only if recurring >30 days.

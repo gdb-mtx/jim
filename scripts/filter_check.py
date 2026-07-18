@@ -149,6 +149,14 @@ def compute_filters(scope: str = "all") -> dict:
         except Exception as e:
             log.warning(f"VIX ratio fetch failed (non-fatal): {e}")
 
+        # Macro composite votes — alert-only regime sensor (never scales
+        # weights; see strategies/macro_composite.py docstring).
+        try:
+            from strategies.macro_composite import compute_live_macro_state
+            result.update(compute_live_macro_state())
+        except Exception as e:
+            log.warning(f"macro composite fetch failed (non-fatal): {e}")
+
     if scope in ("all", "btc"):
         # BTC filter pulls bars from Alpaca (broker-native, no publishing
         # delay) — replaced yfinance 2026-05-06 per HANDOFF_ALPACA_BARS.md.
@@ -327,6 +335,8 @@ def _run_check(args, source: str):
         )
     if "vix_ratio" in current:
         parts.append(f"VIX9D/3M={current['vix_ratio']}")
+    if "macro_votes" in current:
+        parts.append(f"macro={current['macro_votes']:.0f}/5 votes")
     log.info(f"Filters computed in {time.time() - t0:.1f}s: " + ", ".join(parts))
 
     # Load previous state (uses shared module with file lock; also writes
@@ -378,6 +388,22 @@ def _run_check(args, source: str):
                 )
             log.warning(f"TAIL SIGNAL: {msg}")
             notify("FIRE Tail Signal", msg)
+
+    # Macro composite alert — fires when the vote count changes and either
+    # side of the transition is in actionable territory (>= 2 votes).
+    if "macro_votes" in current:
+        prev_votes = prev.get("macro_votes")
+        cur_votes = current["macro_votes"]
+        if prev_votes is not None and cur_votes != prev_votes and max(cur_votes, prev_votes) >= 2:
+            detail = ", ".join(
+                name for name in ("credit", "dollar", "vix_ts", "breadth", "defense")
+                if current.get(f"macro_{name}") == 1.0
+            ) or "none"
+            direction = "RISK-OFF building" if cur_votes > prev_votes else "easing"
+            msg = (f"Macro composite {prev_votes:.0f} → {cur_votes:.0f}/5 votes ({direction}). "
+                   f"Stressed sensors: {detail}. Historical lead over SPY-200d: 34-56 days.")
+            log.warning(f"MACRO ALERT: {msg}")
+            notify("FIRE Macro Composite", msg)
 
     if not spy_changed and not btc_changed:
         log.info("No filter changes detected")
