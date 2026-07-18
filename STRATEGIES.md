@@ -1,19 +1,21 @@
 # Strategies — Scorecards, Universes & Filters
 
-> **Operator sentiment (2026-05-26):** Numbers below are backtest-OOS, not realized live performance. Live execution drag is real (A4 ran +4.6% signal-only vs −7.3% live in its first 3 weeks). After ~one month of clean live data post-bug-fixes, the operator's read is that these strategies are **middle-of-the-road** — they work, they're disciplined, but they are not delivering what George was hoping for. **The response is to actively hunt for additive strategies, not coast.** Treat the scorecard as factual record of what's running today, not as a final book composition.
+> **Status (2026-07-18):** Post build-out week. A4 retired 07-13 (edge decay + bug-era drag). Both live accounts upgraded and revalidated 07-18: A1 gained book-level vol-scaling (+5.9pp OOS CAGR, Calmar improves), A2's original cap=1.5 design restored (MARGINAL→PASS). Live execution parity on A1 verified clean (+0.1pp over 60 days — `scripts/live_scorecard.py` is the ongoing evidence engine). Numbers below are backtest-OOS; the live test of the new sizing starts at the 2026-07-22 rebalance.
 
 ## OOS scorecard (live accounts)
 
-Fresh-data OOS per the CAGR-first framework (test window ends 2026-04-20). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.
+Fresh-data OOS per the CAGR-first framework (revalidated 2026-07-18, test window 2023-01-03 → present). Validation reports in `data/validation_reports/`; state in `data/risk_state/validation_state.json`. Full scorecard docs in `VALIDATION.md`.
 
 Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA warmup, live vol-scaling parity, transaction costs), C9 (crypto partial-bar signal contamination, 2026-05-06), C10 (Alpaca-bars migration for live crypto, 2026-05-06), and the 8-coin universe switch (2026-05-17, backtest now uses `LIVE_CRYPTO_UNIVERSE` matching Alpaca's tradeable set — see HISTORY.md C11). See `HISTORY.md` for what each fix changed. **C3 (S&P 500 survivorship bias)** is the one remaining open caveat — A1 standalone CAGR is ~1-2pp overstated; not fixed pre-real-money.
 
-| Strategy | Status | CAGR | MaxDD | Calmar | MAR | Sortino | *Sharpe (info)* |
-|---|---|---|---|---|---|---|---|
-| **Crypto Momentum (Acct 4)** | PASS | **+38.6%** | **-12.6%** | **3.05** | 3.05 | — | *1.76* |
-| **Stock Momentum + SPY (Acct 1)** ⚠ C3 | PASS | **+27.2%** | **-9.9%** | **2.76** | 2.76 | 2.10 | *2.04* |
-| **Trend + Low-Vol (Acct 2)** | MARGINAL | **+11.0%** | **-7.3%** | **1.51** | 1.51 | — | *1.37* |
-| *Reversal + Momentum (Acct 3)* — retired | RETIRED | *14.5%* | *-7.2%* | *2.03* | — | — | — |
+| Strategy | Status | CAGR | MaxDD | Calmar | Bootstrap p5 | Win rate |
+|---|---|---|---|---|---|---|
+| **Stock Momentum + SPY + book vol-scaling (Acct 1)** ⚠ C3 | PASS (07-18) | **+31.2%** | **-11.0%** | **2.84** | +15.3% | 57% |
+| **Trend + Low-Vol, cap=1.5 (Acct 2)** | PASS (07-18) | **+16.8%** | **-10.8%** | **1.56** | +11.5% | — |
+| *Crypto Momentum (Acct 4)* — RETIRED 2026-07-13 | RETIRED | *+38.6%* | *-12.6%* | *3.05* | — | — |
+| *Reversal + Momentum (Acct 3)* — retired; hosts tail pilot | RETIRED | *+14.5%* | *-7.2%* | *2.03* | — | — |
+
+Combined book (A1+A2 50/50, current configs, net of costs): **OOS CAGR +24.1%, MaxDD -8.7%, Calmar 2.77**. Shadow tracking of retired A4 runs in `scripts/live_scorecard.py` (reopen threshold: shadow > +10%).
 
 A1 PASSes the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates (revalidated 2026-07-18 with book-level vol-scaling: OOS CAGR 31.2%, MaxDD -11.0%, Calmar 2.84, bootstrap p5 +15.3% — see HISTORY.md 2026-07-18). **A4 RETIRED 2026-07-13** — walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87) + bug-era live drag never re-validated; canonical narrative in `HISTORY.md`. **A2 PASSes as of 2026-07-18** — cap=1.5 vol-scaling restored (OOS CAGR 16.8%, MaxDD -10.8%, Calmar 1.56, ratio 99%). The 2026-04 cap=1.0 alignment that dropped it to 11% MARGINAL is reverted; live now realizes the levered design via Reg-T margin (equity accounts only). See HISTORY.md 2026-07-18.
 
@@ -48,7 +50,9 @@ Never went to a live account, OOS not measured:
 - **VIX regime filter**: Reduce exposure at VIX > 35, exit at VIX > 45. Reversal strategy has inverted VIX filter (boost at moderate VIX).
 - **SPY 200-day MA trend filter**: Reduce exposure by 50% when SPY < 200-day MA (Faber 2007).
 - **BTC 125-day SMA trend filter**: Binary 100% cash when BTC < 125d SMA (sat out all of 2022). Robust-opt picked 125d from 200d/150d/125d/100d grid.
-- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA vol targeting on Account 2 (and Account 4 until its 2026-07-13 retirement).
+- **Vol-scaling overlay** (Moreira & Muir 2017): EWMA 15%-vol targeting, scalar [0.5, 1.5], on **both** live accounts since 2026-07-18 — A2 at the account level (original design restored) and A1 at the book level (recaptures the diversification benefit that per-name 20% vol targeting discarded; the strategy historically ran 40-70% gross, 22% in the 2026 all-semi cohort). >1.0 extends into Reg-T margin (equity only; crypto clamped 1.0). Parameter-sensitivity verified 07-18: Calmar flat 2.62-2.84 across an 18-config neighborhood — vol target is a risk dial, not a fitted peak.
+- **VIX tail signal + A3 paper pilot** (2026-07-18): VIX9D/VIX3M ≥ 1.10 auto-buys ~5%-of-book VIXY in A3 (paper), exits on signal clear. Guards in `execution/tail_leg.py`; history in `data/tail_leg_log.jsonl`.
+- **Macro composite** (2026-07-18): 5-sensor regime alert (credit/dollar/VIX-TS/breadth/defense), alert-only — led SPY-200d by 34-56 days in 2018/2020/2022; exposure-scaling tested and rejected (`docs/research/MACRO_COMPOSITE_EVAL.md`).
 - **Key insight**: Factor diversification (momentum + low-vol + reversal + multi-asset trend) provides far better risk-adjusted returns than diversifying within momentum alone.
 - **Warmup trimming**: Equity curves and metrics exclude the flat warmup period.
 
