@@ -81,6 +81,40 @@ def main():
         print(f"Q3 gate (alpha >= 0 over trailing cycles): "
               f"{'MET' if lv - sp >= 0 else 'NOT MET'} at {lv - sp:+.2%} cumulative")
 
+    shadow_a4()
+
+
+A4_RETIRED = pd.Timestamp("2026-07-13")
+
+
+def shadow_a4():
+    """What the retired A4 strategy would have done since retirement.
+
+    Honest re-litigation instrument: the account sits in cash, but the
+    signal path keeps being computable. If the shadow rips while the cash
+    sits, we want that fact surfaced on every scorecard run — retirement
+    was a decision, and decisions get scored too. (Retirement rationale:
+    HISTORY.md 2026-07-13 — walk-forward decay + unexplained-then-explained
+    drag. A sustained shadow rally would reopen the slot conversation,
+    starting with the basis-carry successor, not necessarily this strategy.)
+    """
+    _, r = run_portfolio("crypto_momentum_filtered", start="2025-01-01")
+    post = r.loc[A4_RETIRED:].fillna(0)
+    if len(post) < 2:
+        return
+    ret = float((1 + post).prod() - 1)
+    btc = yf.download("BTC-USD", start=str(A4_RETIRED.date()), progress=False,
+                      auto_adjust=True)["Close"].squeeze()
+    btc_ret = float(btc.iloc[-1] / btc.iloc[0] - 1) if len(btc) > 1 else float("nan")
+    in_market = float((post != 0).mean())
+    print(f"\n=== SHADOW A4 (retired {A4_RETIRED.date()} — signal-only, would-have-been) ===")
+    print(f"since retirement: strategy {ret:+.2%} | cash +0.00% | BTC {btc_ret:+.2%} "
+          f"| signal in-market {in_market:.0%} of days")
+    verdict = ("retirement cost nothing so far" if abs(ret) < 0.02
+               else "shadow DIVERGING — revisit the slot conversation" if ret > 0.10
+               else "retirement saving money" if ret < 0 else "shadow mildly positive — keep watching")
+    print(f"read: {verdict}")
+
 
 if __name__ == "__main__":
     main()
