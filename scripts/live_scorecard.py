@@ -11,9 +11,13 @@ Gate reminder (CLAUDE.md next steps): real money wants A1 clean-window
 alpha >= 0 over 2-3 cycles. This script is the single source for that
 number — no more ad-hoc sessions math.
 
-Usage: uv run python3 scripts/live_scorecard.py
+Usage:
+  uv run python3 scripts/live_scorecard.py            # full report
+  uv run python3 scripts/live_scorecard.py --notify   # + one-line macOS summary
+                                                      # (weekly cron, Monday 09:00 local)
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -44,7 +48,8 @@ def window_return(series: pd.Series, t0: pd.Timestamp, t1: pd.Timestamp) -> floa
     return float(s.iloc[-1] / s.iloc[0] - 1)
 
 
-def main():
+def main(notify: bool = False):
+    summaries = []
     spy = yf.download("SPY", start="2026-04-10", progress=False, auto_adjust=True)["Close"].squeeze()
     spy.index = pd.to_datetime(spy.index)
 
@@ -80,8 +85,12 @@ def main():
         print(f"{'CUMULATIVE':22s} {lv:+8.2%} {sg:+8.2%} {lv - sg:+7.2%} {sp:+8.2%} {lv - sp:+7.2%}")
         print(f"Q3 gate (alpha >= 0 over trailing cycles): "
               f"{'MET' if lv - sp >= 0 else 'NOT MET'} at {lv - sp:+.2%} cumulative")
+        summaries.append(f"A{acct} alpha {lv - sp:+.1%}")
 
-    shadow_a4()
+    summaries.append(shadow_a4())
+    if notify:
+        from execution.notifications import notify_macos
+        notify_macos("FIRE Weekly Scorecard", " | ".join(x for x in summaries if x))
 
 
 A4_RETIRED = pd.Timestamp("2026-07-13")
@@ -101,7 +110,7 @@ def shadow_a4():
     _, r = run_portfolio("crypto_momentum_filtered", start="2025-01-01")
     post = r.loc[A4_RETIRED:].fillna(0)
     if len(post) < 2:
-        return
+        return ""
     ret = float((1 + post).prod() - 1)
     btc = yf.download("BTC-USD", start=str(A4_RETIRED.date()), progress=False,
                       auto_adjust=True)["Close"].squeeze()
@@ -114,7 +123,10 @@ def shadow_a4():
                else "shadow DIVERGING — revisit the slot conversation" if ret > 0.10
                else "retirement saving money" if ret < 0 else "shadow mildly positive — keep watching")
     print(f"read: {verdict}")
+    return f"shadowA4 {ret:+.1%}"
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--notify", action="store_true", help="send macOS summary notification")
+    main(notify=ap.parse_args().notify)

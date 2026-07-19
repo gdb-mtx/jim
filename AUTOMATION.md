@@ -311,6 +311,15 @@ Or the GitHub Actions tab in VS Code → `filter_watch` workflow.
 > special handling. (The old launchd TZ-cache-requires-reboot gotcha no longer
 > applies — it was specific to PID-1 launchd caching the boot-time zone.)
 
+## Weekly scorecard (added 2026-07-18)
+
+`scripts/cron_scorecard.sh` runs Monday 09:00 laptop-local:
+`live_scorecard.py --notify` → full per-cycle report appended to
+`data/scorecard_cron.log` + a one-line macOS notification
+("A1 alpha … | A2 alpha … | shadowA4 …"). Report-only; a missed week
+(laptop asleep) is harmless. This is the Q3 real-money gate's evidence
+arriving on schedule instead of on request.
+
 ## Alert signals — operator runbook (added 2026-07-18)
 
 The 4h SPY filter run computes two **alert-only** signals on top of the

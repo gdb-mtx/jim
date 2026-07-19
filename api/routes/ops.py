@@ -38,6 +38,7 @@ router = APIRouter()
 EXPECTED_CRON_MARKERS = [
     "cron_filter_check.sh spy",
     "cron_filter_check.sh btc",
+    "cron_scorecard",
 ]
 
 
