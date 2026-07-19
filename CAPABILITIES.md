@@ -89,12 +89,12 @@ A1's bootstrap p5 (+15.3%) clears the 15% CAGR gate outright — the 5th-percent
   - Fractional crypto rounding (8 decimals; Alpaca minimum).
   - yfinance↔Alpaca ticker translation (hyphens → dots for share classes like BF.B, BRK.B).
   - Strategy-weight invariant checks (sums to ≤ the configured vol-scaling cap — 1.5 on the live equity accounts, 1.0 otherwise; no negative weights; loud failure above; margin-account guard on levered targets).
-- **Concurrency safety** ([api/locks.py](api/locks.py)) — `dual_rebalance_lock` combines in-process `asyncio.Lock` and cross-process fcntl file lock in one async context manager. All three rebalance entry points (API `/rebalance/execute`, launchd A4 job, launchd `filter_check.py`) serialize through it. Contention returns 409 from the API and `status="locked"` from the cron.
+- **Concurrency safety** ([api/locks.py](api/locks.py)) — `dual_rebalance_lock` combines in-process `asyncio.Lock` and cross-process fcntl file lock in one async context manager. All rebalance entry points (API `/rebalance/execute`, cron-fired `filter_check.py`) serialize through it. Contention returns 409 from the API and `status="locked"` from the cron.
 - **Atomic writes** ([data/pipeline.py:write_parquet_atomic](data/pipeline.py)) — tmp-file + `os.replace` across all 7 live-path parquet writes (ETF cache, SP500, crypto universe, BTC, VIX, snapshot save, snapshot backfill).
 - **Try/finally around execute** in all three call sites — the rebalance journal survives mid-flight raises; partial order results are captured alongside an `execute_error` field so no audit trail is silently lost.
 - **Drawdown monitor** ([execution/risk_manager.py](execution/risk_manager.py)) — two-tier:
   - **-10% alert** (dashboard banner, non-blocking). Derived live from the daily snapshot history + current Alpaca equity, so the "peak" is always accurate regardless of rebalance or dashboard cadence.
-  - **-35% catastrophe halt** (manual reset required, audit-journaled). Latches a single persisted boolean; the API endpoint and all launchd jobs refuse to trade while latched. Calibrated so it never fires on 16y of IS+OOS backtest across any live strategy — a "something every other layer missed" backstop, not a routine-DD gate.
+  - **-35% catastrophe halt** (manual reset required, audit-journaled). Latches a single persisted boolean; the API endpoint and all cron jobs refuse to trade while latched. Calibrated so it never fires on 16y of IS+OOS backtest across any live strategy — a "something every other layer missed" backstop, not a routine-DD gate.
 
 ### Automation + monitoring
 
@@ -240,7 +240,7 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 **Operational state + forward direction (read often):**
 - **[CLAUDE.md](CLAUDE.md)** — current operational state, architecture map, scorecard, running next-steps. Loaded every Claude session.
 - **[BOOK_SHAPE.md](BOOK_SHAPE.md)** — what the book is, what's missing, prioritized vectors. The forward-direction doc.
-- **[AUTOMATION.md](AUTOMATION.md)** — runbook for the launchd jobs (daily A4 + filter monitors), travel-watcher flow, install/uninstall.
+- **[AUTOMATION.md](AUTOMATION.md)** — runbook for the cron jobs (filter monitors + alert signals + tail pilot), travel-watcher flow, install/uninstall.
 - **[HISTORY.md](HISTORY.md)** — resolved fixes and decision deltas. Look here when a code path mentions "post-CN fix."
 
 **Strategic + design references:**

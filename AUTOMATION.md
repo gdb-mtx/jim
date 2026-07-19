@@ -1,8 +1,15 @@
-# FIRE Automation — A4 (Crypto) Daily Rebalance + Filter Monitors
+# FIRE Automation — Filter Monitors, Alert Signals & Tail Pilot
 
-This document describes how Account 4's daily rebalance and the SPY/BTC filter
-monitors are automated: what runs automatically, the fallback layers, and what
-manual actions (if any) you take day-to-day.
+This document describes what runs automatically (SPY/BTC filter monitors,
+the alert-only VIX tail + macro composite signals, the A3 VIXY tail pilot),
+the fallback layers, and what manual actions (if any) you take day-to-day.
+
+> **2026-07-18:** the A4 daily-rebalance cron entry and its deployed wrapper
+> were removed (A4 retired 2026-07-13; the hourly trigger had been pure
+> no-op churn against the validation gate). `scripts/daily_crypto_rebalance.py`
+> and `scripts/cron_crypto_rebalance.sh` remain in the repo for a future
+> daily-cadence successor — reinstall via the commands in this doc. Sections
+> below describing the daily rebalance are retained as successor reference.
 
 **Scheduler: cron.** Migrated from launchd on 2026-05-28 (see "History" at the
 bottom — macOS Background Task Management kept silently disabling the launchd

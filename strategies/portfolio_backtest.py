@@ -208,7 +208,9 @@ def run_portfolio(
 
 
 # Live book after A3 retirement (2026-04-21): A1 + A2 + A4 at 1/3 each.
-LIVE_ACCOUNT_STRATEGIES = ["sm_filtered", "trend_lowvol", "crypto_momentum_filtered"]
+# The live book. A4 ("crypto_momentum_filtered") removed 2026-07-13 at
+# retirement — its backtest remains runnable individually.
+LIVE_ACCOUNT_STRATEGIES = ["sm_filtered", "trend_lowvol"]
 
 # Equity-only core (A1 + A2) — base for A4's marginal portfolio contribution.
 EQUITY_CORE_STRATEGIES = ["sm_filtered", "trend_lowvol"]
@@ -239,12 +241,11 @@ def run_combined_portfolio(
     end: str | None = None,
     apply_costs: bool = True,
 ) -> tuple[str, pd.Series]:
-    """Run the full live book: A1 + A2 + A4 at 1/3 each on the equity calendar.
-
-    A4's crypto returns are compounded across weekends so Monday's A4 return
-    reflects the Fri→Mon cumulative BTC move. The series starts from the
-    latest strategy's first day (A4 inception = 2020-09-11). Callers
-    annualize with periods_per_year=252.
+    """Run the full live book: LIVE_ACCOUNT_STRATEGIES equal-weight on the
+    equity trading calendar (A1+A2 at 1/2 each since A4's 2026-07-13
+    retirement). Any crypto member would be compounded across weekends onto
+    the equity calendar (the C1 convention — retained for future successor
+    sleeves). Callers annualize with periods_per_year=252.
     """
     account_returns = {}
     for pid in LIVE_ACCOUNT_STRATEGIES:
@@ -268,4 +269,4 @@ def run_combined_portfolio(
     on_calendar = {k: _to_equity_calendar(v) for k, v in account_returns.items()}
     df = pd.DataFrame(on_calendar).dropna()
     combined = df.mean(axis=1)
-    return "Combined Live Portfolio (A1 + A2 + A4)", combined
+    return "Combined Live Portfolio (A1 + A2)", combined

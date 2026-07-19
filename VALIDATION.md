@@ -179,7 +179,7 @@ Override covers FAIL, unvalidated, and expired. **Retired accounts are an uncond
 Gate wired into:
 - `POST /api/orders/rebalance/execute` → 403
 - `scripts/filter_check.py` auto-rebalance → skip + log
-- launchd-fired `scripts/daily_crypto_rebalance.py` → skip + log
+- cron-fired `scripts/daily_crypto_rebalance.py` → skip + log (cron entry removed 2026-07-18 with A4's retirement; script retained for successors)
 
 Tests in `tests/test_validation_gate.py` (14 cases).
 

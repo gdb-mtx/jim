@@ -11,11 +11,12 @@ All handlers wrap blocking I/O in `asyncio.to_thread` per project rule
 (CLAUDE.md "Async endpoints must use asyncio.to_thread for blocking calls").
 
 The scheduler endpoint reports two launchd-driven groups:
-  - `scheduled_rebalance` — daily crypto rebalance (Account 4), last-run
-    derived from `rebalance_log.jsonl` filtered by `source="scheduled"`.
-    Replaces the old in-process APScheduler block (retired 2026-05-05).
-  - `launchd` — filter monitors (SPY + BTC), last-run derived from
-    `filter_check.log`.
+  - `scheduled_rebalance` — empty since 2026-07-18: the A4 daily job was
+    the only member and A4 is retired (its cron entry removed; job list
+    kept for future daily-cadence successors).
+  - filter monitors (SPY + BTC), last-run derived from `filter_check.log`.
+    (Names still say "launchd" in places — the trigger is cron since
+    2026-05-28; shape kept for the frontend contract.)
 """
 
 from __future__ import annotations
@@ -31,8 +32,10 @@ from fastapi import APIRouter, Query
 
 router = APIRouter()
 
+# cron_crypto_rebalance removed 2026-07-18 with A4's retirement — the hourly
+# trigger was pure no-op churn against the validation gate. Re-add when a
+# daily-cadence successor occupies the slot (install cmds in AUTOMATION.md).
 EXPECTED_CRON_MARKERS = [
-    "cron_crypto_rebalance",
     "cron_filter_check.sh spy",
     "cron_filter_check.sh btc",
 ]
@@ -116,13 +119,10 @@ FILTER_MONITOR_JOBS: list[tuple[str, str, str, tuple]] = [
 # matches FILTER_MONITOR_JOBS for the `_next_run_iso` helper.
 LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
     # (plist_label, job_id, name, journal_source_tag, schedule)
-    (
-        "com.fire.daily-crypto-rebalance",
-        "daily_crypto_rebalance",
-        "Daily crypto rebalance (00:05 UTC, cron)",
-        "scheduled",
-        ("daily_utc", 0, 5),
-    ),
+    # Empty since 2026-07-18: the A4 daily job was the sole member and A4 is
+    # retired. Its journal-staleness tracking had also been misleading since
+    # ~06-01 — gate-skipped/no-trade runs never journal, so "last scheduled
+    # rebalance" aged even while the cron fired hourly on schedule.
 ]
 
 
