@@ -288,30 +288,15 @@ async def get_scheduler():
                     "next_run": _next_run_iso(schedule, run.started_at),
                 })
 
-        # --- scheduler health: crontab present AND actually firing ---
-        # _check_launchd_health answers "are the cron entries installed?".
-        # Staleness answers "are they still firing?" — the gap from 2026-05-28
-        # where entries were present but BTM had silently killed the jobs.
-        # Scoped to the daily rebalance: its fire is logged every night (cash or
-        # not), so the signal is clean. The 4h filter monitors are deferred —
-        # right after the launchd→cron migration their cron-tagged history is
-        # empty (today's runs are source=manual), which would false-positive.
+        # --- scheduler health: crontab entries installed? ---
+        # The companion "is the daily rebalance still firing?" staleness check
+        # (added after the 2026-05-28 BTM incident) was removed 2026-07-19:
+        # the daily A4 job it watched is retired and its cron entry deleted,
+        # so the aging log is expected, not a failure. Re-add a log-staleness
+        # probe here if a daily-cadence successor ever occupies the slot
+        # (pattern: _last_log_fire(DAILY_REBALANCE_LOG, "...starting") vs
+        # 86400 + STALENESS_GRACE_SECONDS).
         launchd_health = _check_launchd_health()
-        stale: list[dict] = []
-        reb_fire = _last_log_fire(
-            DAILY_REBALANCE_LOG, "Daily crypto rebalance starting (dry_run=False)"
-        )
-        if reb_fire is not None:
-            reb_age = (now_utc - reb_fire).total_seconds()
-            if reb_age > 86400 + STALENESS_GRACE_SECONDS:  # daily + grace = 26h
-                stale.append({
-                    "label": "Daily crypto rebalance",
-                    "last_run": reb_fire.isoformat(),
-                    "reason": f"last fired {_relative_time(reb_age)} — expected daily",
-                })
-        if stale:
-            launchd_health["ok"] = False
-            launchd_health["stale"] = stale
 
         result: dict = {
             "scheduled_rebalance": scheduled_rebalance,
