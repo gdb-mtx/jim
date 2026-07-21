@@ -528,17 +528,31 @@ class AlpacaBroker:
         return float(trade.price)
 
     def get_latest_prices(self, symbols: list[str]) -> dict[str, float]:
-        """Get latest prices for multiple symbols.
+        """Get latest prices for multiple symbols in two batched calls.
 
-        Skips untradeable assets (delisted, acquired, inactive) so the
-        rebalance code won't generate orders for them.
+        Symbols Alpaca can't price (delisted, acquired, inactive) are
+        absent from the batch response and thus from the result — same
+        skip semantics as the old per-symbol loop, ~30x fewer API calls.
+        Falls back to per-symbol fetches if a batch call fails outright.
         """
-        prices = {}
-        for symbol in symbols:
-            try:
-                prices[symbol] = self.get_latest_price(symbol)
-            except Exception as e:
-                log.debug(f"Skipping {symbol} in price fetch: {e}")
+        equities = [s for s in symbols if "/" not in s]
+        cryptos = [s for s in symbols if "/" in s]
+        prices: dict[str, float] = {}
+        try:
+            if equities:
+                for sym, trade in self.api.get_latest_trades(equities).items():
+                    prices[sym] = float(trade.price)
+            if cryptos:
+                for sym, trade in self.api.get_latest_crypto_trades(cryptos).items():
+                    prices[sym] = float(trade.price)
+        except Exception as e:
+            log.warning(f"Batched price fetch failed ({e}) — falling back to per-symbol")
+            prices = {}
+            for symbol in symbols:
+                try:
+                    prices[symbol] = self.get_latest_price(symbol)
+                except Exception as e2:
+                    log.debug(f"Skipping {symbol} in price fetch: {e2}")
         return prices
 
     def check_tradeable(self, symbols: list[str]) -> set[str]:

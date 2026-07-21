@@ -71,6 +71,31 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FIRE Trading API", version="0.1.0", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def log_mutating_requests(request, call_next):
+    """Log start/end of non-GET requests so slow or client-aborted calls
+    leave a trace. Uvicorn's access log only records *completed* requests —
+    a preview aborted by the browser vanishes entirely (2026-07-21 incident:
+    a 20s frontend timeout presented as a silent hang for a whole morning).
+    """
+    if request.method == "GET":
+        return await call_next(request)
+    started = time.monotonic()
+    path = request.url.path
+    log.info(f"--> {request.method} {path} started")
+    try:
+        response = await call_next(request)
+    except asyncio.CancelledError:
+        log.warning(f"<-- {request.method} {path} ABORTED by client after {time.monotonic() - started:.1f}s")
+        raise
+    except Exception:
+        log.exception(f"<-- {request.method} {path} FAILED after {time.monotonic() - started:.1f}s")
+        raise
+    log.info(f"<-- {request.method} {path} {response.status_code} in {time.monotonic() - started:.1f}s")
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5174"],  # Vite dev server

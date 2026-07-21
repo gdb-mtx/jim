@@ -17,7 +17,7 @@ from strategies.portfolio import (
     STOCK_STRATEGIES,
     CRYPTO_STRATEGIES,
 )
-from data.pipeline import download_prices, EXPANDED_UNIVERSE
+from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
 from data.sp500 import download_sp500_prices, download_vix
 from data.crypto import to_alpaca_symbol
 from data.alpaca_crypto_bars import get_crypto_bars, get_btc_bars
@@ -102,7 +102,7 @@ def _get_etf_strategy_signals(
 ) -> dict[str, float]:
     """Get latest signals from an ETF-based strategy."""
     symbols = EXPANDED_UNIVERSE + ["SHY"]
-    prices = download_prices(symbols, start=lookback_start)
+    prices = download_and_cache(symbols, cache_name="etf_prices").loc[lookback_start:]
 
     strategy = ETF_STRATEGIES[strategy_id]()
     signals = strategy.generate_signals(prices)
@@ -176,9 +176,18 @@ def _get_portfolio_signals(
 
     use_btc_filter = config.get("btc_filter", False)
 
-    # Load data
-    symbols = EXPANDED_UNIVERSE + ["SHY"]
-    etf_prices = download_prices(symbols, start=lookback_start)
+    # Load data — only what the blend's components actually need. ETF prices
+    # come from the shared 16h-TTL cache (settled-bar staleness checked);
+    # the old unconditional live yfinance download here cost every preview
+    # ~20s, including for pure stock books like sm_filtered (2026-07-21).
+    etf_prices = None
+    if any(
+        sid not in STOCK_STRATEGIES and sid not in CRYPTO_STRATEGIES
+        for sid in weights
+    ):
+        etf_prices = download_and_cache(
+            EXPANDED_UNIVERSE + ["SHY"], cache_name="etf_prices"
+        ).loc[lookback_start:]
 
     stock_prices = None
     vix = None
