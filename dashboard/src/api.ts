@@ -8,6 +8,9 @@ const BACKTEST_TIMEOUT_MS = 360_000;
 // waits for the backend to finish, matching the backend file-lock guarantee
 // that only one execute runs per account at a time.
 const REBALANCE_EXECUTE_TIMEOUT_MS = 180_000;
+// Preview computes signals + fetches live prices serially (~1 Alpaca call
+// per symbol); a 30+ symbol book needs 25-40s. The 20s default aborts it.
+const REBALANCE_PREVIEW_TIMEOUT_MS = 120_000;
 
 async function fetchWithTimeout(
   url: string,
@@ -136,7 +139,8 @@ export async function fetchRebalancePreview(
 ) {
   return fetchJSON<import("./types").RebalancePreview>(
     `${BASE_URL}/orders/rebalance/preview?strategy_id=${strategyId}&account=${account}`,
-    { method: "POST" }
+    { method: "POST" },
+    REBALANCE_PREVIEW_TIMEOUT_MS,
   );
 }
 
