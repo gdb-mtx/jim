@@ -311,6 +311,26 @@ def main():
     # contiguous so the parser can attribute it correctly.
     with _filter_check_lock():
         _run_check(args, source)
+        # Daily equity snapshots piggyback on the SPY cron (6x/day, idempotent
+        # per day). Until 2026-08-08 snapshots only ran at API-server startup
+        # or rebalance execute, so the dashboard equity charts silently froze
+        # whenever the server stayed up between rebalances (18-day gap).
+        if args.filter in ("all", "spy") and not args.dry_run:
+            _daily_snapshot()
+
+
+def _daily_snapshot():
+    """Backfill + record equity snapshots. Must never break the filter run."""
+    try:
+        from execution.alpaca_broker import active_accounts
+        from data.snapshots import backfill_from_alpaca, take_snapshot
+
+        for acct in active_accounts():
+            backfill_from_alpaca(acct)
+            take_snapshot(acct)
+        log.info("Daily equity snapshots recorded")
+    except Exception as e:
+        log.error(f"snapshot step failed (filter run unaffected): {e}")
 
 
 def _run_check(args, source: str):

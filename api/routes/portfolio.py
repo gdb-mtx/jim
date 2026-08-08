@@ -538,9 +538,25 @@ async def data_freshness():
     return {"any_stale": any_stale, "caches": caches}
 
 
+_refresh_in_flight = False
+
+
 @router.post("/refresh-cache")
 async def refresh_cache():
-    """Force-refresh all data caches including S&P 500 (~30-40s total)."""
+    """Refresh all data caches. Fast legs (ETF/VIX/BTC/crypto) force-refresh;
+    the S&P 500 leg goes through the normal staleness check because a forced
+    503-ticker re-download costs ~15min under yfinance rate-limits — and the
+    sp500 refresh lock's double-check lets this call piggyback on any refresh
+    that's already running instead of repeating it (2026-08-08 incident:
+    a second click doubled a 15-minute download).
+    """
+    global _refresh_in_flight
+    if _refresh_in_flight:
+        raise HTTPException(
+            status_code=409,
+            detail="A cache refresh is already running — wait for it to finish.",
+        )
+
     def _refresh():
         from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
         from data.sp500 import download_sp500_prices, download_vix
@@ -556,7 +572,7 @@ async def refresh_cache():
             ("VIX", lambda: download_vix(force_refresh=True)),
             ("BTC", lambda: download_btc_prices(force_refresh=True)),
             ("Crypto universe", lambda: download_crypto_prices(force_refresh=True)),
-            ("S&P 500", lambda: download_sp500_prices(force_refresh=True)),
+            ("S&P 500", lambda: download_sp500_prices()),
         ]:
             try:
                 fn()
@@ -566,7 +582,11 @@ async def refresh_cache():
 
         return {"refreshed": refreshed, "errors": errors, "ok": len(errors) == 0}
 
-    return await asyncio.to_thread(_refresh)
+    _refresh_in_flight = True
+    try:
+        return await asyncio.to_thread(_refresh)
+    finally:
+        _refresh_in_flight = False
 
 
 @router.get("/filter-state")
