@@ -194,8 +194,23 @@ def download_and_cache(
                     print(f"Loaded {len(cached)} rows from cache: {cache_path}")
                     return cached[symbols]
 
-    print(f"Downloading {len(symbols)} symbols from {start}...")
-    prices = download_prices(symbols, start=start, end=end)
+    # end-bounded requests bypass the cache write — a right-truncated frame
+    # must never become the shared cache.
+    if end is not None:
+        print(f"Downloading {len(symbols)} symbols from {start} to {end} (no cache write)...")
+        return download_prices(symbols, start=start, end=end)
+
+    # Download from the floor of (caller start, 2005) so a short-lookback
+    # caller can never truncate the shared cache for everyone else.
+    # 2026-08-10: the Monday scorecard cron's run_portfolio(start≈2023) hit
+    # a TTL-expired etf_prices and rewrote it as 903 rows (was 5420 from
+    # 2005); every 2010-start backtest then silently ran on 2023+ data.
+    # ISO date strings compare correctly as strings. Callers already receive
+    # the full frame on cache hits (the `start` param was never a slice), so
+    # returning full history on the download path matches existing behavior.
+    dl_start = min(start, "2005-01-01")
+    print(f"Downloading {len(symbols)} symbols from {dl_start}...")
+    prices = download_prices(symbols, start=dl_start, end=None)
 
     from data.plausibility import assert_plausible_df
     assert_plausible_df(prices)

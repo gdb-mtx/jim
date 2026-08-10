@@ -120,11 +120,27 @@ def download_crypto_prices(
         else:
             print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
-    print(f"Downloading prices for {len(symbols)} cryptos from {start}...")
+    if end is not None:
+        # end-bounded requests bypass the cache write — a right-truncated
+        # frame must never become the shared cache.
+        print(f"Downloading prices for {len(symbols)} cryptos from {start} to {end} (no cache write)...")
+        from data.pipeline import download_with_retry
+        return download_with_retry(
+            symbols, start=start, end=end, min_coverage_ratio=0.8
+        ).ffill(limit=3)
+
+    # Download the FULL universe from the 2020 floor regardless of the
+    # caller's start/symbols — a short-lookback or subset caller must never
+    # shrink the shared cache. 2026-08-10: the Monday scorecard cron rewrote
+    # this cache as 8 coins from 2025 (was 9 from 2020); twin fix for
+    # etf_prices lives in data/pipeline.py download_and_cache.
+    print(f"Downloading prices for {len(CRYPTO_UNIVERSE)} cryptos from 2020-01-01...")
     from data.pipeline import download_with_retry, write_parquet_atomic
     # Require >=80% of the 9-coin universe returned; anything less points to
     # a yfinance hiccup, not delisted coins.
-    prices = download_with_retry(symbols, start=start, end=end, min_coverage_ratio=0.8)
+    prices = download_with_retry(
+        CRYPTO_UNIVERSE, start="2020-01-01", end=None, min_coverage_ratio=0.8
+    )
 
     # Drop coins with too many missing values (< 50% historical coverage)
     coverage = prices.notna().sum() / len(prices)
@@ -145,7 +161,9 @@ def download_crypto_prices(
     write_parquet_atomic(prices, cache_path)
     print(f"Cached to {cache_path}")
 
-    return prices
+    # Same subset contract as the cache-hit path.
+    present = [s for s in symbols if s in prices.columns]
+    return prices[present]
 
 
 def download_btc_prices(
