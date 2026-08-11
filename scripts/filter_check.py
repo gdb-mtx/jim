@@ -332,6 +332,17 @@ def _daily_snapshot():
     except Exception as e:
         log.error(f"snapshot step failed (filter run unaffected): {e}")
 
+    # Keep the S&P 500 cache warm from cron so its 24h TTL never expires
+    # into a user-facing request. Non-forced: no-op while fresh, so this
+    # downloads at most once a day — here, instead of inside the first
+    # rebalance preview after expiry (the 2026-08-08 refresh pile-up).
+    try:
+        from data.sp500 import download_sp500_prices
+
+        download_sp500_prices()
+    except Exception as e:
+        log.error(f"S&P cache warm failed (filter run unaffected): {e}")
+
 
 def _run_check(args, source: str):
     log.info("=" * 60)
