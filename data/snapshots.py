@@ -214,9 +214,16 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
         return []
 
     try:
-        from data.pipeline import download_prices
+        # Cached read (spy_filter is force-refreshed every 4h by the filter
+        # cron). This runs on every Combined-tab poll (~30s), so it must
+        # never hit yfinance live: the uncached download here rate-limited
+        # the server's session into indefinite hangs (2026-08-11) and the
+        # Combined chart showed its empty state.
+        from data.pipeline import download_and_cache
 
-        spy = download_prices(["SPY"], start="2025-01-01").squeeze()
+        spy = download_and_cache(
+            ["SPY"], start="2008-01-01", cache_name="spy_filter"
+        ).squeeze()
         # Align to snapshot dates
         snap_dates = pd.DatetimeIndex([pd.Timestamp(d) for d in dates])
         spy = spy.reindex(snap_dates).ffill().dropna()
@@ -260,14 +267,17 @@ def get_performance_summary(
     # rendering a misleading "0.00% SPY, +X% alpha" on the dashboard.
     spy_available = True
     try:
-        if live_equity:
-            from data.pipeline import download_prices
-            spy = download_prices(["SPY"], start="2025-01-01").squeeze()
-        else:
-            from data.pipeline import download_and_cache
-            spy = download_and_cache(
-                ["SPY"], start="2025-01-01", cache_name="spy_filter"
-            ).squeeze()
+        # Always the cached read — the live_equity branch used to download
+        # SPY fresh from yfinance for tick-level parity, but this runs on
+        # every Combined-tab poll and the uncached download rate-limited the
+        # server into hangs (2026-08-11). The cache is at most 4h behind
+        # (filter cron force-refreshes it), which is fine for a benchmark
+        # row; the D4 concern (misleading zeros when SPY is unavailable) is
+        # still handled by the except path below.
+        from data.pipeline import download_and_cache
+        spy = download_and_cache(
+            ["SPY"], start="2008-01-01", cache_name="spy_filter"
+        ).squeeze()
     except Exception as e:
         logger.warning("SPY fetch failed (%s) — performance summary will mark SPY/alpha as unavailable", e)
         spy = pd.Series(dtype=float)
