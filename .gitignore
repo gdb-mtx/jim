@@ -48,9 +48,6 @@ dashboard/dist/
 # OS
 Thumbs.db
 
-# References (large PDFs)
-References/*.pdf
-
 # Playwright
 .playwright-mcp/
 
@@ -63,3 +60,6 @@ data/research_cache/
 # Copyrighted books — never publish (verified untracked + absent from all history, 2026-08-12)
 References/*.pdf
 References/*.epub
+
+# Scraped earnings-call transcripts (Insider Monkey) — copyright, never publish; stripped from history 2026-08-12
+data/mode2/transcripts/
