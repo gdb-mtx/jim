@@ -1,6 +1,8 @@
-# FIRE - Quantitative Trading System
+# Jim - Quantitative Trading System
 
 A personal quantitative trading research system. Momentum and trend factor strategies, paper-traded on Alpaca, built solo with Claude Code as the engineering partner. Spec'd as a partnership proposal in January 2020 (the original doc is in `References/`), built for real starting March 2026.
+
+About the name: internally this project is called FIRE - financial independence, retire early. It has not achieved that purpose, so the public name honors Jim Simons instead, whose system actually worked. The docs and code say FIRE throughout - that's the internal name and the honest record.
 
 > **Disclaimer, read this first.** This is personal research running on paper accounts. Nothing here is investment advice. No performance claims are made or implied. Backtest results in this repo (and there are many) predict nothing - most of the strategies documented here were killed by their own validation numbers, which is rather the point.
 

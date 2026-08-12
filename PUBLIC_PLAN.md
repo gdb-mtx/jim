@@ -112,6 +112,27 @@ Order matters: history rewrite happens while the repo is still private.
    sequence resumes. Update FIREMasterPrivate/strategy/MARKETING_PLAN.md with a
    one-line "second public repo live" note so the room playbooks know it exists.
 
+## Execution deltas (2026-08-12 session — recorded as receipts)
+
+1. **Scores/index review (step 1):** kept. Rationales embed only fair-use-length
+   quotes (max ~15 words); index/urls files contain no transcript content.
+2. **References proposal:** contained NO collaborator names in any committed version
+   (verified across all history — the recon's memory was of the unpublished 2020
+   original). What it DID contain: personal Google Drive links to the Ernie Chan
+   book PDFs. Links stripped, old versions filtered from history.
+3. **gitleaks:** clean (285 commits). Manual sweep's only hit: the SEC-required
+   contact email in EDGAR User-Agent headers — kept (compliance, not a secret).
+4. **Recon miss found in step 5:** `docs/archive/BRIDGE_STRATEGY_REVIEW.md` carried
+   the full personal financial picture (NW to the dollar, property names, IRA split,
+   runway). Filtered from all history; kept on disk untracked. Property names and
+   cash-event figures also scrubbed from PLAN_MODE2.md / STRATEGY_CAPSULE.md
+   (history `--replace-text`) and CLAUDE.md trimmed to newsletter level.
+5. **Force-push does not purge GitHub:** old pre-rewrite commits remained fetchable
+   by SHA on github.com (verified live). Fix: recreate the repo fresh — and George
+   renamed it in the same move. **Public name: `jim`** (the system never delivered
+   FIRE; Jim Simons' system worked). Local directories stay `FIRE`. The travel
+   watcher's Actions secrets must be re-created in the new repo.
+
 ## Kickoff prompt for the fresh session
 
 > Read PUBLIC_PLAN.md at the repo root and execute it top to bottom. The recon section
