@@ -35,8 +35,12 @@
 - `data/validation_reports/*.md` are tracked — paper-account numbers, harmless,
   **keep**: they are receipts.
 - `References/Proprietary Quantitative Trading Partnership Proposal.md` — the 2020
-  spec. Written for other people: **George reads it before the flip** (names, private
-  context). Options: keep (great artifact — "spec'd 2020, built 2026") or untrack.
+  spec. **DECIDED (George, 2026-08-12): keep it** — great artifact ("spec'd 2020,
+  built 2026") — **but strip the names of potential collaborators referenced in it.
+  Names of people who inspired it stay.** The names appear in prior history too, so
+  after editing, filter the file's old versions from history (filter-repo
+  `--path <file> --invert-paths` then re-add the cleaned version, or
+  `--replace-text` with a names file) in the same rewrite as the transcripts.
 - No PDFs/books tracked (Ernie Chan books are a mention in CLAUDE.md, not files).
 
 ## Execution checklist (fresh session)
@@ -81,7 +85,8 @@ Order matters: history rewrite happens while the repo is still private.
    - `CLAUDE.md` — FIREMaster/bridge-plan references are fine at the level already
      public in the newsletter (laid off at 53, bridge to 59.5); trim anything beyond
      that. Absolute paths (`/Users/george/...`) are fine to keep (docs, not secrets).
-   - `References/` proposal — George's read + keep/untrack decision (see recon).
+   - `References/` proposal — apply the decided name-scrub (see recon: collaborators
+     out, inspirations stay), history-filtered in step 1's rewrite.
    - `AUTOMATION.md`, `DEPLOYMENT_PLAN.md` — quick skim for anything
      account-identifying (Alpaca account numbers, emails). Cron/TCC/laptop war stories
      STAY — they're the good stuff.
@@ -108,8 +113,9 @@ Order matters: history rewrite happens while the repo is still private.
 > Read PUBLIC_PLAN.md at the repo root and execute it top to bottom. The recon section
 > is current as of 2026-08-12 — trust it, don't re-derive. Stop for my input at: the
 > scores/index copyright review call (step 1), anything gitleaks finds (step 2), the
-> References proposal keep/untrack call (step 5), and the final pre-flip read (step 6).
-> The visibility flip itself happens only after my explicit go.
+> References proposal name-scrub review (step 5 — collaborator names out,
+> inspiration names stay; show me the edited version), and the final pre-flip read
+> (step 6). The visibility flip itself happens only after my explicit go.
 
 ## Open items riding along (not part of this plan, don't lose them)
 
