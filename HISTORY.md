@@ -271,6 +271,55 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-08-12 — Repo public as `gdb-mtx/jim`; Jim is the public name
+
+Executed `docs/archive/PUBLIC_PLAN.md` (execution deltas recorded in that
+file). History rewritten twice while private (git-filter-repo): Insider
+Monkey transcripts, the References proposal's personal Drive links, and
+`docs/archive/BRIDGE_STRATEGY_REVIEW.md` (personal financials) stripped
+from all history; all SHAs changed. Because force-push does not purge
+GitHub's serverside objects (old SHAs verified still fetchable), the repo
+was recreated fresh — and renamed: **public name Jim** (FIRE never
+delivered its namesake; Jim Simons' system worked). Old repo survives
+privately as `gdb-mtx/fire-archive` (pre-scrub history — never publish).
+Display strings renamed FIRE→Jim (dashboard, API title, account labels
+"Jim 0.x", notification titles); `FIRE_*` env vars, paths, and internal
+docs unchanged. PolyForm Noncommercial license; README rewritten for
+strangers. Travel watcher disabled in both repos (no daily-cadence
+client; `NTFY_TOPIC` not carried to jim). gitleaks clean over full
+history; the SEC-required EDGAR contact email kept deliberately.
+
+## 2026-08-12 — Sizing made honest: signal-book scalar, financing drag, vol_target 0.18
+
+Three-part pack (commits 9a10990, 0ac2406), then revalidation:
+
+1. **Signal-book vol scalar (exact backtest parity).** The live scalar now
+   comes from the signal book via `run_portfolio`'s stages-out capture —
+   bit-for-bit what `apply_vol_scaling` computes. The old account-equity
+   estimator had three structural divergences (compositional lag, leverage
+   feedback, weekend-row dilution) and applied 1.084 where 0.833 was
+   correct on 2026-08-12. Kept as a diagnostic only.
+2. **Margin financing modeled.** `apply_vol_scaling` gains
+   `borrow_rate_annual` (default 5.5%): gross above 1.0× pays daily
+   financing in every backtest and validation path. Every pre-August
+   levered number booked the margin for free.
+3. **vol_target 0.15 → 0.18** on both equity books per the 08-12 juice
+   grid (OOS 2023+, net of costs + financing); cap raise past 1.5
+   rejected in every combo.
+
+Revalidation on the honest model: **A1 PASS — CAGR 33.0%, MaxDD -13.2%,
+Calmar 2.49, ratio 174%, bootstrap p5 +14.4%.** **A2 MARGINAL — CAGR
+12.9%, Calmar 1.05, ratio 84%** (target is a no-op for A2 — raw vol ~7%
+pins it at the cap; the entire 16.8%→12.9% drop is the financing drag).
+MARGINAL allowed for paper; Q4 Calmar < 1.0 kill/swap trigger stands.
+The 50/50 combined figure (24.1%) is superseded — book goes ~70/30 at the
+08-20 rebalance. Also: daily position-drift check added to the SPY cron
+leg (broker vs last-rebalance targets, notifies same-day). Platform
+hardening 08-08..11 (three cache incidents → 54-call-site hot-path audit,
+canonical floor starts, cron-warmed caches) is chronicled in
+`DATA_SOURCES.md`; the daily-rebalance staleness watchdog was removed
+with its job.
+
 ## 2026-07-18 (later) — A1 book-level vol scaling added (George-approved)
 
 Investigation trigger: A1's clean-window lag vs SPY (dashboard impression

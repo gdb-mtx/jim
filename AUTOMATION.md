@@ -4,6 +4,17 @@ This document describes what runs automatically (SPY/BTC filter monitors,
 the alert-only VIX tail + macro composite signals, the A3 VIXY tail pilot),
 the fallback layers, and what manual actions (if any) you take day-to-day.
 
+> **2026-08-12:** current state in one paragraph. The crontab holds **three
+> entries**: SPY filter check (4h), BTC filter check (4h), weekly live
+> scorecard (Mon 09:00). The SPY leg picked up three more duties in the
+> 08-08..12 hardening: daily position-drift check, daily equity snapshots,
+> and warming the S&P 500 cache (so dashboard-facing TTLs never expire into
+> a request — see DATA_SOURCES.md hot-path audit). The **travel watcher is
+> DISABLED** (its daily-strategy client is retired; section below kept as
+> revival reference — the repo is now `gdb-mtx/jim`, so revival needs the
+> `NTFY_TOPIC` secret re-created there). Notification titles now say "Jim"
+> (the public display name), not "FIRE".
+>
 > **2026-07-18:** the A4 daily-rebalance cron entry and its deployed wrapper
 > were removed (A4 retired 2026-07-13; the hourly trigger had been pure
 > no-op churn against the validation gate). `scripts/daily_crypto_rebalance.py`
@@ -21,23 +32,25 @@ thing that fires them changed.
 
 Three cron entries (system crontab — `crontab -l`). **Cron fires at
 laptop-local wall-clock time and the laptop travels** — so no time-of-day
-invariant lives in the crontab. The daily rebalance entry is an hourly *trigger*;
-the script itself decides (in UTC) whether today's run is due:
+invariant lives in the crontab:
 
 ```
-# Daily crypto rebalance (A4): hourly trigger; script runs at most once per
-# UTC day via --if-due (first awake hour after 00:00 UTC)
-10 * * * *             ~/.fire-cron/cron_crypto_rebalance.sh
-
-# Filter check — SPY (A1/A2): every 4h on the hour
+# Filter check — SPY (A1/A2): every 4h on the hour.
+# Also runs: daily drift check, daily snapshots, S&P cache warm,
+# VIX tail signal (drives the A3 pilot), macro composite.
 0 0,4,8,12,16,20 * * * ~/.fire-cron/cron_filter_check.sh spy
 
-# Filter check — BTC (A4): every 4h, offset 5 min
+# Filter check — BTC: every 4h, offset. State-keeping while A4 is retired
+# (the validation gate blocks any trade); ready for a crypto successor.
 5 1,5,9,13,17,21 * * * ~/.fire-cron/cron_filter_check.sh btc
+
+# Weekly live scorecard (Q3-checkpoint evidence): Monday 09:00
+0 9 * * 1              ~/.fire-cron/cron_scorecard.sh
 ```
 
-**Why hourly + `--if-due` instead of a fixed daily minute (failure mode #5,
-diagnosed 2026-06-09).** The original `5 20 * * *` entry encoded "00:05 UTC"
+**The `--if-due` hourly-trigger pattern (successor reference — the A4 entry
+that used it is removed). Why hourly + `--if-due` instead of a fixed daily
+minute (failure mode #5, diagnosed 2026-06-09):** The original `5 20 * * *` entry encoded "00:05 UTC"
 as "8:05 PM ET" — correct only while the system TZ was EDT. When the laptop
 moved to MDT (UTC-6), the same entry silently fired at 02:05 UTC; worse, three
 consecutive days were skipped entirely because the laptop was asleep at the
@@ -117,32 +130,37 @@ or offline at the scheduled minute, that fire is simply skipped. There is no
 deferred catch-up.
 
 How each job absorbs this:
-- **Daily A4 rebalance** → self-healing since 2026-06-09: the hourly
-  `--if-due` trigger means a sleep gap delays the run to the first awake hour
-  of the UTC day instead of skipping the day. A full laptop-dark *day* still
-  skips (21d momentum tolerates a one-day rotation gap — noise).
 - **Laptop asleep across a filter flip** → the real exposure. While asleep, the
-  4h filter checks don't run either, so a BTC cross-down isn't acted on until
-  the laptop is awake at the *next* scheduled cron minute (the next slot — not
-  a catch-up of the missed ones).
+  4h filter checks don't run, so an SPY cross isn't acted on until the laptop
+  is awake at the *next* scheduled cron minute (the next slot — not a catch-up
+  of the missed ones).
+- **Weekly scorecard** → a missed Monday is harmless (report-only; run
+  `live_scorecard.py` manually if curious).
+- *(Successor reference: the retired A4 daily job was self-healing via the
+  hourly `--if-due` trigger — a sleep gap delayed the run to the first awake
+  hour instead of skipping the day.)*
 
 Mitigations in place:
 - The 4h filter cadence means that *while the laptop is awake*, a flip is caught
   within ~4h.
-- The Ops panel flags the daily rebalance as **stale if it hasn't fired in
-  >26h** (sourced from `daily_rebalance.log`) — a silent miss surfaces instead
-  of being discovered by accident.
-- The travel watcher (below) pushes a phone alert on a flip when the laptop is
-  fully off.
+- The Ops panel checks the expected crontab entries are present and flags
+  silent fire-stops on the filter checks. (The daily-rebalance staleness
+  watchdog was removed 2026-08-12 with its job retired.)
+- The travel watcher used to cover the laptop-fully-off case; it is disabled
+  as of 2026-08-12 (revival recipe below) — a multi-day laptop-dark stretch
+  currently has no automated alerting.
 
 ## What to expect day-to-day
 
-- **Most days**: tiny adjustment trades as the 50/50 weight drifts. Dollar
-  amounts are small (fractions of 1%).
-- **Top-2 change** (e.g. SOL overtakes ETH): full swap — sell the loser, buy the
-  new winner. Larger turnover that one day.
-- **BTC drops below the 125d MA**: filter → 0.0, strategy rotates to cash.
-- **BTC crosses back above**: filter → 1.0, redeploy into the current top 2.
+- **Most days**: nothing trades. The 4h filter checks log "No filter changes
+  detected"; the daily drift check compares broker positions to last-rebalance
+  targets and stays quiet.
+- **Trades happen on exactly three triggers**: the manual 21-trading-day A1/A2
+  rebalance (~3 PM ET), an SPY 200d filter flip (auto-rebalance within ~4h),
+  or a VIX tail-signal transition (A3 pilot buys/sells VIXY automatically).
+- **Position drift between cycles**: macOS notification same-day ("Jim Drift")
+  instead of a surprise at the next rebalance preview.
+- **Monday 09:00**: one-line scorecard notification (A1/A2 alpha + shadow-A4).
 
 ## Filter monitors
 
@@ -157,11 +175,14 @@ filter + vol-scaling) — **not** an exposure-only tweak.
 
 Two scopes, both on the 4h cadence:
 - **`cron_filter_check.sh spy`** — SPY 200d MA filter; rebalances A1/A2 on flip.
-  (Under launchd this ran once daily at 4:30 PM; cron runs it every 4h now —
-  harmless, since SPY only moves on trading days and off-hours checks are no-ops.)
-- **`cron_filter_check.sh btc`** — BTC 125d SMA filter; rebalances A4 on flip.
-  The 4h cadence matches crypto's 24/7 nature — a cross is caught within ~4h
-  instead of waiting for the next daily fire.
+  Since 2026-08 the SPY leg is also the daily-housekeeping carrier: position
+  drift check (broker vs last-rebalance targets, notifies on mismatch), daily
+  equity snapshots, S&P 500 cache warm (non-forced), plus the two alert-only
+  signals (VIX tail → A3 pilot, macro composite — see the runbook below).
+- **`cron_filter_check.sh btc`** — BTC 125d SMA filter. With A4 retired the
+  validation gate blocks any trade it would trigger; it keeps
+  `filter_state.json` fresh and the BTC regime visible (dashboard + shadow-A4
+  context), and is ready for a crypto successor.
 
 Both pass `force_refresh=True` to the data layer — filter decisions are never
 made against a stale cached price.
@@ -170,14 +191,10 @@ made against a stale cached price.
 
 | Layer | Trigger | Work when triggered | Needs server? | Needs laptop awake? |
 |---|---|---|---|---|
-| Daily rebalance (cron) | Hourly at :10; runs at most once per UTC day (`--if-due`). Sleep delays to first awake hour, doesn't skip. | Full A4 rebalance: signal + filter + vol-scaling | No | Yes (any hour that UTC day) |
-| Filter monitor — SPY (cron) | Every 4h; rebalance only if SPY scalar changed | Full A1/A2 rebalance (same `compute_rebalance`) | No | Yes |
-| Filter monitor — BTC (cron) | Every 4h; rebalance only if BTC scalar changed | Full A4 rebalance (same `compute_rebalance`) | No | Yes |
-| Travel watcher (GitHub Actions) | Every ~30 min at `:07/:37` UTC | **Notifies phone only** (ntfy on cross + daily heartbeat) — does not trade | No | No |
-
-The BTC filter monitor is mostly redundant with the daily rebalance (both call
-`compute_rebalance` for A4); its remaining role is catching a mid-day BTC flip
-within ~4h instead of waiting up to 24h for the next daily fire.
+| Filter monitor — SPY (cron) | Every 4h; rebalance only if SPY scalar changed | Full A1/A2 rebalance (same `compute_rebalance`) + daily housekeeping (drift check, snapshots, cache warm, alert signals, A3 pilot) | No | Yes |
+| Filter monitor — BTC (cron) | Every 4h; would rebalance on BTC flip | Gate-blocked while A4 is retired — state-keeping only | No | Yes |
+| Weekly scorecard (cron) | Monday 09:00 | `live_scorecard.py --notify` report — no trades | No | Yes |
+| Travel watcher (GitHub Actions) | **DISABLED 2026-08-12** | (when enabled: ntfy phone alerts on SPY/BTC crossings — never trades) | No | No |
 
 ### filter_state.json writers (closing the double-rebalance gap)
 
@@ -217,7 +234,16 @@ The `if not args.dry_run:` gate (commit `3acc646`) fixed it. Lesson:
 `git log --follow` the file whose behavior is confusing before assuming a deep
 bug in the current code.
 
-## Travel-window safety net: GitHub Actions + ntfy.sh
+## Travel-window safety net: GitHub Actions + ntfy.sh — DISABLED
+
+> **DISABLED 2026-08-12** (George's call: not useful without a daily-cadence
+> strategy — its urgent client was A4's BTC filter). The workflow and scripts
+> remain in the repo; this section is the revival reference. To revive:
+> `gh secret set NTFY_TOPIC -R gdb-mtx/jim` (the secret was not carried to the
+> new public repo; ALPACA keys are already set) then
+> `gh workflow enable filter_watch -R gdb-mtx/jim`. Remember it also covered
+> the SPY-200d flip for A1/A2 while the laptop was closed — the switch to
+> flip back on before traveling through a rebalance window.
 
 Added 2026-04-23. The cron filter monitor still needs the laptop to be awake —
 a digital-nomad day where the laptop spends 24h in a bag means cron misses the
@@ -327,7 +353,7 @@ trade-triggering filters. They notify (macOS) and persist to
 `filter_state.json`; they never place trades. These are the only two
 automations that ask for a human decision.
 
-**"FIRE Tail Signal"** — VIX9D/VIX3M crosses 1.10 (deep backwardation =
+**"Jim Tail Signal"** (pre-08-12 logs say "FIRE Tail Signal") — VIX9D/VIX3M crosses 1.10 (deep backwardation =
 crash posture; historically long-vol pays ~+14%/day on SPY's worst days).
 **Paper pilot is LIVE (2026-07-18, George-approved):** the runbook trade
 now executes automatically in the idle A3 paper account — entry buys VIXY
@@ -339,7 +365,7 @@ open — correct for insurance. *Your remaining decision is real-money
 adoption,* judged on the pilot's live record (Q4 review). Numbers in
 `docs/research/EVENT_KILLTESTS_JUL2026.md`.
 
-**"FIRE Macro Composite"** — five price-based stress sensors (credit
+**"Jim Macro Composite"** — five price-based stress sensors (credit
 HYG/IEF, dollar UUP, VIX curve, S&P breadth, XLU/SPY rotation) vote every
 run; alert fires when the count crosses 2 in either direction. Led the
 SPY-200d filter by 34-56 days in 2018/2020/2022. *What to do:* storm
@@ -356,50 +382,37 @@ fields) and in the filter_check log lines.
 
 The **Ops** tab → Scheduler panel surfaces two health signals:
 
-- **Entries present** — parses `crontab -l` for the three expected wrappers; red
-  banner ("Scheduled jobs missing") if any are absent.
-- **Staleness** — flags the daily rebalance if its last fire (the
-  `Daily crypto rebalance starting` line in `daily_rebalance.log`) is **>26h**
-  old: the case where the entry exists but the job silently stopped firing (the
-  2026-05-28 BTM failure mode). Red banner: "Scheduler stopped firing". Sourced
-  from the run log, **not** the trade journal, so cash / no-trade days (which
-  don't journal) never false-positive.
+- **Entries present** — parses `crontab -l` for the expected wrappers (SPY +
+  BTC filter checks, weekly scorecard); red banner ("Scheduled jobs missing")
+  if any are absent.
+- **Staleness** — flags a filter check whose last real fire is older than its
+  cadence allows: the case where the entry exists but the job silently stopped
+  firing (the 2026-05-28 BTM failure mode). The daily-rebalance staleness
+  watchdog was removed 2026-08-12 — its job is retired and its journal-based
+  tracking had gone misleading.
 
 ## What you have to do
 
-**Nothing, as long as the laptop is awake at some point each UTC day.** Cron
-fires the scripts independently of the server, and the hourly `--if-due`
-trigger runs the daily rebalance on the first awake hour after 00:00 UTC. Only
-a full laptop-dark UTC day skips a rotation; the strategy tolerates a one-day
-gap, and the Ops staleness banner flags a longer outage.
+**Two manual actions on the calendar, nothing daily:**
 
-### Verify the daily job fired (next morning)
+1. **The 21-trading-day A1/A2 rebalance** (~3 PM ET; upcoming dates tracked in
+   CLAUDE.md) — dashboard Preview → Execute.
+2. **Read the Monday scorecard notification** — the Q3-checkpoint evidence
+   arriving on schedule.
 
-1. **Ops** tab → Scheduler panel — last-run / next-run / status for the daily
-   rebalance, plus the merged event timeline.
-2. CLI: grep `data/rebalance_log.jsonl` for a fresh `"source": "scheduled"`,
-   `"account": 4` entry.
-3. Tail `data/daily_rebalance.log` for `"Daily crypto rebalance starting"` +
-   `"Final outcome: ..."`.
+Everything else is cron: the 4h filter checks (with their daily housekeeping)
+and the A3 tail pilot need only a laptop that's awake at some cron slot each
+day. The drift check will notify if broker positions wander from targets
+between cycles.
 
 ### During travel (laptop off for days)
 
-1. Before leaving: `bash scripts/travel_prep.sh` (refresh thresholds, push).
-   Confirm one watcher run fires afterward.
-2. Subscribe to the ntfy topic on your phone.
-3. During the trip: expect a daily heartbeat ~14:00 UTC; on a crossing, a
-   high-priority ntfy bypasses DND — open the laptop within ~2h and Execute on
-   the affected account. Optionally trigger the A4 rebalance manually each day to
-   keep the live-tracking data flowing.
-4. After returning: cron resumes as normal. No state reconciliation needed —
-   `filter_state.json` stayed fresh via the manual-rebalance sync path.
-
-## Practical overnight checklist
-
-1. Laptop awake at some point each UTC day (the run lands at the first awake
-   :10 after 00:00 UTC). Server up or down — cron doesn't care.
-2. Next morning: check `data/rebalance_log.jsonl` or the Ops tab.
-3. Expect small drift trades (not a full swap) on days the top 2 are unchanged.
+The travel watcher is disabled, so a fully-dark laptop currently means **no
+filter checks and no alerts** until it wakes. For a trip through a rebalance
+window or a nervous market: revive the watcher first (see the disabled banner
+in the watcher section — ntfy secret + workflow enable + `travel_prep.sh`),
+or accept the gap knowingly. While the book is A1/A2 on a 200d filter, a
+multi-day gap is slow-moving risk, not the old A4 crypto exposure.
 
 ## Install / reinstall cron
 
@@ -411,10 +424,12 @@ and ensure these three lines are present (pointing at the **deployed** wrappers
 in `~/.fire-cron/`, never at `scripts/` under `~/Desktop` — see the TCC note
 above):
 ```
-10 * * * * /Users/george/.fire-cron/cron_crypto_rebalance.sh
 0 0,4,8,12,16,20 * * * /Users/george/.fire-cron/cron_filter_check.sh spy
 5 1,5,9,13,17,21 * * * /Users/george/.fire-cron/cron_filter_check.sh btc
+0 9 * * 1 /Users/george/.fire-cron/cron_scorecard.sh
 ```
+(A crypto successor would add back the hourly `--if-due` line:
+`10 * * * * /Users/george/.fire-cron/cron_crypto_rebalance.sh`.)
 Deploy the wrappers (`cp scripts/cron_*.sh ~/.fire-cron/`) and keep them
 executable (`chmod +x`). Verify with `crontab -l`, then confirm via the Ops
 panel (entries-present + staleness) or by tailing the logs after the next fire.
@@ -424,16 +439,17 @@ To remove: `crontab -e` and delete the lines (or `crontab -r` to clear all).
 ## Manual invocation
 
 ```
-# Daily rebalance — one fire, same code path as the cron job. A manual real
-# run marks today's UTC date done, so the hourly cron won't re-run it.
-uv run python3 scripts/daily_crypto_rebalance.py            # real, unconditional
-uv run python3 scripts/daily_crypto_rebalance.py --if-due   # real, but skip if today already ran (cron mode)
-uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # dry, no orders, doesn't mark the day done
-
 # Filter monitor — any scope
 uv run python3 scripts/filter_check.py --filter all --dry-run   # check all, no trades
-uv run python3 scripts/filter_check.py --filter btc             # crypto-only real run
+uv run python3 scripts/filter_check.py --filter btc             # crypto-only real run (gate-blocked while A4 retired)
 uv run python3 scripts/filter_check.py --filter spy             # equity-only real run
+
+# Live scorecard (same as the Monday cron, on demand)
+uv run python3 scripts/live_scorecard.py
+
+# Daily crypto rebalance — successor reference (gate blocks while A4 retired).
+# A manual real run marks today's UTC date done, so an hourly cron won't re-run it.
+uv run python3 scripts/daily_crypto_rebalance.py --dry-run  # dry, no orders, doesn't mark the day done
 ```
 
 ## Related files
@@ -443,9 +459,13 @@ uv run python3 scripts/filter_check.py --filter spy             # equity-only re
 - [scripts/cron_crypto_rebalance.sh](scripts/cron_crypto_rebalance.sh) — cron
   wrapper (sets `HOME`, `cd`, absolute `uv`, log redirection).
 - [scripts/filter_check.py](scripts/filter_check.py) — filter monitor
-  (scope-aware via `--filter`).
+  (scope-aware via `--filter`); the SPY leg also carries the daily drift check,
+  snapshots, cache warm, VIX tail signal (A3 pilot), and macro composite.
 - [scripts/cron_filter_check.sh](scripts/cron_filter_check.sh) — cron wrapper;
   sets `FIRE_FILTER_CHECK_SOURCE=cron-<scope>`.
+- [scripts/live_scorecard.py](scripts/live_scorecard.py) +
+  [scripts/cron_scorecard.sh](scripts/cron_scorecard.sh) — weekly Monday
+  scorecard (Q3-checkpoint evidence engine + shadow-A4 tracker).
 - [api/main.py](api/main.py) — FastAPI lifespan only; no in-process scheduler
   (APScheduler retired 2026-05-05).
 - [data/filter_state.py](data/filter_state.py) — shared accessor for

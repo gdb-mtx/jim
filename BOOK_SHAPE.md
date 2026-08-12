@@ -1,5 +1,17 @@
 # Book Shape — What We Need to Find
 
+> **Update 2026-08-12 — read the banners, then treat the body as the
+> strategic map only.** Deltas since the 07-18 banner below: **Gap 1 is no
+> longer "awaiting purchase" — the VIXY tail-leg paper pilot is LIVE in A3**
+> (auto-executing since 07-18; real-money adoption is the Q4 decision on its
+> record). Current validated numbers live in `STRATEGIES.md` /
+> `CAPABILITIES.md` (08-12: A1 PASS 33.0%, A2 MARGINAL 12.9% with margin
+> financing now modeled — every combined-book figure in the body below,
+> 26.5%/Calmar 4.28 etc., is pre-A4-retirement AND pre-financing-model;
+> cite nothing from the body). A4 is RETIRED (07-13) — body references to
+> it, including the 33%→40% upgrade trigger in the reopen table, are void.
+> The three-gaps framing itself remains the canonical map.
+
 > **Update 2026-07-18 — gap status after the July build-out:**
 > **Gap 3 (regime adaptivity): CLOSED** — 5-sensor macro composite live as
 > the alert layer (led SPY-200d by 34-56 days in 2018/2020/2022; exposure

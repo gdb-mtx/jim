@@ -11,6 +11,11 @@ kept current for when the trigger fires. Stale detail: the "daily rebalance
 at 8:05 PM ET" schedule became hourly `--if-due` on 06-09 and was removed
 2026-07-18.
 
+**2026-08-12: still parked** (George — real money he's not ready to commit).
+Repo context since the plan was written: now public at `gdb-mtx/jim`, and the
+GitHub Actions travel watcher is disabled (workflow retained; secrets note in
+`AUTOMATION.md`). The `fly secrets` / deploy steps below are unaffected.
+
 **Status:** Working document. **Updated 2026-05-28.** Phase 0 (decouple live from backtest) is done; cloud deployment has **not** started yet — it slipped ~5 weeks past the original early-May target, pushing the earliest real-money window to **~September**. The laptop interim is stable (scheduler migrated launchd→cron 2026-05-28, plus a `pmset` wake and a >26h staleness banner on the Ops panel), so there's no fire-drill. But deployed-paper time is a hard prerequisite for real money — running paper on Fly is the only way to surface infrastructure bugs before they have real blast radius — so Phase 1 should begin ~mid-June to keep September realistic. See "Timeline" below.
 **Context:** FIRE currently runs on George's MacBook. cron fires the filter monitor every 4h AND the daily crypto rebalance at 8:05 PM ET (= 00:05 UTC in EDT); FastAPI runs when George is working. For paper it's fine; for real money it's not. Also: George is a digital nomad and his laptop is not always on/connected, so the live trading path shouldn't depend on it.
 
