@@ -63,3 +63,6 @@ References/*.epub
 
 # Scraped earnings-call transcripts (Insider Monkey) — copyright, never publish; stripped from history 2026-08-12
 data/mode2/transcripts/
+
+# Personal bridge-plan financials — never publish (stripped from history 2026-08-12)
+docs/archive/BRIDGE_STRATEGY_REVIEW.md

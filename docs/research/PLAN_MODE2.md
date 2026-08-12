@@ -154,7 +154,7 @@ EVERY WEEKEND (George + Claude):
 
 **Months 2-3 (Jun-Jul 2026): Small live.** If paper results show >50% hit rate on PEAD trades, deploy $10K real money. Max 3 positions at a time. The planned property sale hasn't happened yet — preserve capital.
 
-**Months 4-6 (Aug-Oct 2026): Scale if working.** a planned property sale closes. If Mode 2 is generating alpha, scale to $25-30K deployed. If not, stay at $10K or pause.
+**Months 4-6 (Aug-Oct 2026): Scale if working.** A planned property sale closes. If Mode 2 is generating alpha, scale to $25-30K deployed. If not, stay at $10K or pause.
 
 **Months 7+ (Nov 2026+): Full deployment.** Cash cushion is built. Mode 2 can operate at full $50K allocation. Mode 1 can go live too if paper trading results justify it.
 

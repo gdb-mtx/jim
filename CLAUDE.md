@@ -5,7 +5,7 @@
 ### Guiding Principle
 We're optimized for a builder with an AI partner. Different constraints, different optimal path. We build fast, iterate fast, and the infrastructure serves the research.
 
-**Bigger picture:** FIRE is one piece of George's bridge-to-59.5 financial plan. The full life picture — net worth, property sales, SEPP 72(t), income targets, risk tolerance — lives in **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`). Not all research that touches FIRE is a factor-trading strategy. Some serves income generation, yield harvesting, or life-design objectives with different evaluation criteria. When George brings research from outside (Gemini sessions, personal analysis), engage with the thesis on its own terms before reaching for the CAGR/Calmar gates.
+**Bigger picture:** FIRE is one piece of George's bridge-to-59.5 financial plan. The full life picture lives in **FIREMaster** (`/Users/george/Desktop/Projects/FIREMaster`). Not all research that touches FIRE is a factor-trading strategy. Some serves income generation, yield harvesting, or life-design objectives with different evaluation criteria. When George brings research from outside (Gemini sessions, personal analysis), engage with the thesis on its own terms before reaching for the CAGR/Calmar gates.
 
 ### Key Documents
 - **`CAPABILITIES.md`** — standing system-capabilities brief (LP / operator / future-self framing). Inventory + honest limits + peer comparison in one place. Update as the system evolves.
