@@ -317,6 +317,7 @@ def main():
         # whenever the server stayed up between rebalances (18-day gap).
         if args.filter in ("all", "spy") and not args.dry_run:
             _daily_snapshot()
+            _daily_drift_check()
 
 
 def _daily_snapshot():
@@ -342,6 +343,29 @@ def _daily_snapshot():
         download_sp500_prices()
     except Exception as e:
         log.error(f"S&P cache warm failed (filter run unaffected): {e}")
+
+
+def _daily_drift_check():
+    """Diff broker positions against the last rebalance's saved targets.
+
+    Reconciliation previously ran only inside compute_rebalance — drift
+    between rebalances (manual orders, corporate actions, phantom fills)
+    went unnoticed for up to 21 trading days. Piggybacks on the SPY cron
+    like _daily_snapshot; must never break the filter run.
+    """
+    try:
+        from execution.alpaca_broker import AlpacaBroker, active_accounts
+        from execution.position_reconciliation import check_position_consistency
+
+        for acct in active_accounts():
+            broker = AlpacaBroker(account=acct)
+            recon = check_position_consistency(acct, broker.get_position_map())
+            if not recon.consistent:
+                log.warning(f"DRIFT account {acct}: {recon.details[:300]}")
+                notify(f"FIRE Drift (acct {acct})", recon.details[:200])
+        log.info("Daily drift check clean")
+    except Exception as e:
+        log.error(f"drift check failed (filter run unaffected): {e}")
 
 
 def _run_check(args, source: str):

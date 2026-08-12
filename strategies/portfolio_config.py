@@ -36,7 +36,10 @@ PORTFOLIOS = {
         # Calmar 2.56→2.82). Same params/infra as trend_lowvol.
         "vol_scaling": True,
         "vol_scaling_params": {
-            "vol_target": 0.15,
+            # 0.15 -> 0.18 on 2026-08-12 (George-approved juice grid, OOS
+            # 2023+ net of costs+financing: +2-3pp CAGR, Calmar flat-to-up;
+            # cap raise past 1.5 rejected — degraded Calmar in every combo).
+            "vol_target": 0.18,
             "vol_halflife": 21,
             "scalar_floor": 0.5,
             "scalar_cap": 1.5,
@@ -72,7 +75,7 @@ PORTFOLIOS = {
         "spy_filter": True,
         "vol_scaling": True,
         "vol_scaling_params": {
-            "vol_target": 0.15,
+            "vol_target": 0.18,
             "vol_halflife": 21,
             "scalar_floor": 0.5,
             # 1.5 restores the strategy's original validated design (calm-regime
