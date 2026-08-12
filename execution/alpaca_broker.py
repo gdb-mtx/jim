@@ -8,10 +8,10 @@ Wraps the alpaca-trade-api SDK with methods tailored to our strategies:
 - Order history and cancellation
 
 Supports 4 paper trading accounts for multi-factor strategy diversification:
-- Account 1: FIRE 0.1 — Momentum (SM + SPY Filter)
-- Account 2: FIRE 0.2 — Trend + Low-Vol
-- Account 3: FIRE 0.3 — Reversal + Momentum Blend
-- Account 4: FIRE 0.4 — Crypto Momentum (daily rebalance)
+- Account 1: Jim 0.1 — Momentum (SM + SPY Filter)
+- Account 2: Jim 0.2 — Trend + Low-Vol
+- Account 3: Jim 0.3 — Reversal + Momentum Blend
+- Account 4: Jim 0.4 — Crypto Momentum (daily rebalance)
 
 All methods include error handling and return structured dicts
 suitable for our API endpoints.
@@ -59,10 +59,10 @@ def _is_position_non_tradeable(position) -> bool:
 # future strategy assignment without trading activity. Liquidation is a
 # prerequisite (see scripts/liquidate_account.py).
 ACCOUNT_INFO = {
-    1: {"name": "FIRE 0.1", "strategy": "sm_filtered", "label": "Momentum", "status": "active"},
-    2: {"name": "FIRE 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol", "status": "active"},
-    3: {"name": "FIRE 0.3", "strategy": None, "label": "Retired — tail-leg pilot host", "status": "retired", "retired_at": "2026-04-20"},
-    4: {"name": "FIRE 0.4", "strategy": None, "label": "Retired (was Crypto)", "status": "retired", "retired_at": "2026-07-13"},
+    1: {"name": "Jim 0.1", "strategy": "sm_filtered", "label": "Momentum", "status": "active"},
+    2: {"name": "Jim 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol", "status": "active"},
+    3: {"name": "Jim 0.3", "strategy": None, "label": "Retired — tail-leg pilot host", "status": "retired", "retired_at": "2026-04-20"},
+    4: {"name": "Jim 0.4", "strategy": None, "label": "Retired (was Crypto)", "status": "retired", "retired_at": "2026-07-13"},
 }
 
 

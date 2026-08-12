@@ -109,7 +109,7 @@ def main() -> int:
 
     if os.environ.get("FORCE_TEST") == "1":
         send_ntfy(
-            "FIRE Filter Watch - TEST",
+            "Jim Filter Watch - TEST",
             f"Pipeline OK. BTC ${btc_price:,.0f} ({'above' if btc_above else 'below'} ${btc_ma:,.0f}); "
             f"SPY ${spy_price:,.2f} ({'above' if spy_above else 'below'} ${spy_ma:,.2f}).",
             priority="default",
@@ -124,7 +124,7 @@ def main() -> int:
     in_heartbeat_window = now.hour == 14 and now.minute < 30
     if in_heartbeat_window and last_heartbeat_iso != today_str:
         send_ntfy(
-            "FIRE Filter Watch - daily heartbeat",
+            "Jim Filter Watch - daily heartbeat",
             f"All green. BTC ${btc_price:,.0f} ({'above' if btc_above else 'below'} ${btc_ma:,.0f}); "
             f"SPY ${spy_price:,.2f} ({'above' if spy_above else 'below'} ${spy_ma:,.2f}).",
             priority="low",
@@ -134,7 +134,7 @@ def main() -> int:
 
     if alerts:
         body = "\n".join(alerts) + "\n\nOpen laptop and rebalance affected accounts."
-        send_ntfy("FIRE Filter Flip", body, priority="high", tags="rotating_light")
+        send_ntfy("Jim Filter Flip", body, priority="high", tags="rotating_light")
         print(f"Sent {len(alerts)} alert(s):")
         for a in alerts:
             print(f"  - {a}")

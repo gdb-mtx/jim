@@ -20,21 +20,21 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     description:
       "Top 15 S&P 500 stocks by 12-month momentum, halves exposure when SPY < 200d MA",
     account: 1,
-    accountLabel: "FIRE 0.1",
+    accountLabel: "Jim 0.1",
     sortOrder: 1,
   },
   trend_lowvol: {
     category: "live",
     description: "30% Multi-Asset Trend + 70% Low Volatility, volatility-scaled",
     account: 2,
-    accountLabel: "FIRE 0.2",
+    accountLabel: "Jim 0.2",
     sortOrder: 2,
   },
   crypto_momentum_filtered: {
     category: "building_block",
     description: "RETIRED 2026-07-13 — was: top 2 cryptos by 21d momentum, BTC 125d SMA filter + vol-scaling (edge decay + bug-era drag; HISTORY.md)",
     account: 4,
-    accountLabel: "FIRE 0.4 (retired)",
+    accountLabel: "Jim 0.4 (retired)",
     sortOrder: 3,
   },
 
@@ -53,7 +53,7 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
   // ── Building Blocks (individual strategies) ────────────────────────
   reversal_blend: {
     category: "building_block",
-    description: "Retired 2026-04-21 — was FIRE 0.3 (60% Short-Term Reversal + 40% Stock Momentum). Too correlated to A1 (0.88 OOS) to earn its weight.",
+    description: "Retired 2026-04-21 — was Jim 0.3 (60% Short-Term Reversal + 40% Stock Momentum). Too correlated to A1 (0.88 OOS) to earn its weight.",
     sortOrder: 0,
   },
   stock_momentum: {

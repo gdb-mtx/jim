@@ -289,7 +289,7 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FIRE filter monitor")
+    parser = argparse.ArgumentParser(description="Jim filter monitor")
     parser.add_argument("--dry-run", action="store_true", help="Check only, no trades")
     parser.add_argument(
         "--filter",
@@ -362,7 +362,7 @@ def _daily_drift_check():
             recon = check_position_consistency(acct, broker.get_position_map())
             if not recon.consistent:
                 log.warning(f"DRIFT account {acct}: {recon.details[:300]}")
-                notify(f"FIRE Drift (acct {acct})", recon.details[:200])
+                notify(f"Jim Drift (acct {acct})", recon.details[:200])
         log.info("Daily drift check clean")
     except Exception as e:
         log.error(f"drift check failed (filter run unaffected): {e}")
@@ -370,7 +370,7 @@ def _daily_drift_check():
 
 def _run_check(args, source: str):
     log.info("=" * 60)
-    log.info(f"FIRE Filter Check starting (source={source}, scope={args.filter})")
+    log.info(f"Jim Filter Check starting (source={source}, scope={args.filter})")
 
     # Load .env for Alpaca credentials
     env_file = PROJECT_ROOT / ".env"
@@ -423,7 +423,7 @@ def _run_check(args, source: str):
                 "last_spy_flip": None,
                 "last_btc_flip": None,
             })
-        notify("FIRE Filter Monitor", f"Initialized ({args.filter}). {', '.join(parts)}")
+        notify("Jim Filter Monitor", f"Initialized ({args.filter}). {', '.join(parts)}")
         return
 
     # VIX tail signal — alert-only, independent of the rebalance-triggering
@@ -444,7 +444,7 @@ def _run_check(args, source: str):
                     f"backwardation over. Tail-leg exit signal."
                 )
             log.warning(f"TAIL SIGNAL: {msg}")
-            notify("FIRE Tail Signal", msg)
+            notify("Jim Tail Signal", msg)
 
             # Paper pilot (A3, George-approved 2026-07-18): execute the
             # runbook trade automatically so the insurance rule builds a
@@ -458,7 +458,7 @@ def _run_check(args, source: str):
                     pilot = exit_tail_leg(current["vix_ratio"], dry_run=args.dry_run)
                 log.info(f"tail_leg pilot: {pilot}")
                 if pilot.get("status") in ("entered", "exited"):
-                    notify("FIRE Tail Pilot (A3 paper)", f"{pilot['status'].upper()} — {pilot}")
+                    notify("Jim Tail Pilot (A3 paper)", f"{pilot['status'].upper()} — {pilot}")
             except Exception as e:
                 log.error(f"tail_leg pilot failed (filter run unaffected): {e}")
 
@@ -476,7 +476,7 @@ def _run_check(args, source: str):
             msg = (f"Macro composite {prev_votes:.0f} → {cur_votes:.0f}/5 votes ({direction}). "
                    f"Stressed sensors: {detail}. Historical lead over SPY-200d: 34-56 days.")
             log.warning(f"MACRO ALERT: {msg}")
-            notify("FIRE Macro Composite", msg)
+            notify("Jim Macro Composite", msg)
 
     if not spy_changed and not btc_changed:
         log.info("No filter changes detected")
@@ -489,7 +489,7 @@ def _run_check(args, source: str):
             labels.append(f"SPY={'BULL' if current['spy_scalar'] == 1.0 else 'BEAR'}")
         if "btc_scalar" in current:
             labels.append(f"BTC={'BULL' if current['btc_scalar'] == 1.0 else 'BEAR'}")
-        notify("FIRE Filter Check", f"No changes. " + ", ".join(labels))
+        notify("Jim Filter Check", f"No changes. " + ", ".join(labels))
         return
 
     # --- Filter changed — rebalance affected accounts ---
@@ -528,12 +528,12 @@ def _run_check(args, source: str):
     total_orders = sum(r["orders"] for r in executed)
     change_str = ", ".join(changes)
     if args.dry_run:
-        notify("FIRE Filter Monitor (DRY RUN)", f"{change_str}. Would rebalance {len(accounts_to_rebalance)} accounts.")
+        notify("Jim Filter Monitor (DRY RUN)", f"{change_str}. Would rebalance {len(accounts_to_rebalance)} accounts.")
     elif executed:
-        notify("FIRE Filter Monitor", f"{change_str}. Rebalanced {len(executed)} accounts, {total_orders} orders.")
+        notify("Jim Filter Monitor", f"{change_str}. Rebalanced {len(executed)} accounts, {total_orders} orders.")
     else:
         skipped = [r for r in results if r["status"] != "executed"]
-        notify("FIRE Filter Monitor", f"{change_str}. {len(skipped)} accounts skipped (check log).")
+        notify("Jim Filter Monitor", f"{change_str}. {len(skipped)} accounts skipped (check log).")
 
     log.info(f"Filter check complete: {change_str}")
     for r in results:

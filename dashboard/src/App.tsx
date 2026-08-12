@@ -75,7 +75,7 @@ function App() {
       <header className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#e8e8f0]">
-            FIRE
+            Jim
           </h1>
           <p className="text-sm text-[#8888a0]">
             Quantitative Trading Dashboard
@@ -251,7 +251,7 @@ function App() {
 
       {/* Footer */}
       <footer className="mt-12 text-center text-xs text-[#8888a050]">
-        FIRE Quantitative Trading System &mdash; Built with Claude Code
+        Jim Quantitative Trading System &mdash; Built with Claude Code
       </footer>
 
       <ToastContainer />

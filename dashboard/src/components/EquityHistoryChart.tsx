@@ -17,9 +17,9 @@ type AccountView = 0 | 1 | 2 | 3 | 4;
 // A3 retired 2026-04-20; its series is excluded so the live chart isn't polluted.
 const SERIES_CONFIG = [
   { key: "combined", label: "Combined", color: "#7c4dff" },
-  { key: "acct_1", label: "FIRE 0.1", color: "#00d4aa" },
-  { key: "acct_2", label: "FIRE 0.2", color: "#4d8eff" },
-  { key: "acct_4", label: "FIRE 0.4", color: "#ff6b9d" },
+  { key: "acct_1", label: "Jim 0.1", color: "#00d4aa" },
+  { key: "acct_2", label: "Jim 0.2", color: "#4d8eff" },
+  { key: "acct_4", label: "Jim 0.4", color: "#ff6b9d" },
 ] as const;
 
 const ACCT_SERIES = SERIES_CONFIG.filter((c) => c.key !== "combined");
@@ -387,7 +387,7 @@ export default memo(function EquityHistoryChart({ account, refreshKey }: Props) 
   const legend =
     account === 0
       ? [SERIES_CONFIG[0], { key: "spy", label: "SPY", color: "#ff4444" }]
-      : [{ key: "main", label: `FIRE 0.${account}`, color: ACCT_COLOR[account] ?? "#00d4aa" }];
+      : [{ key: "main", label: `Jim 0.${account}`, color: ACCT_COLOR[account] ?? "#00d4aa" }];
 
   return (
     <div className="rounded-xl border border-[#2a2a3e] bg-[#1a1a2e] p-4">

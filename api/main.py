@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="FIRE Trading API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Jim Trading API", version="0.1.0", lifespan=lifespan)
 
 
 @app.middleware("http")

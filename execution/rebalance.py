@@ -320,7 +320,7 @@ def compute_rebalance(
     recon = check_position_consistency(broker.account, current_positions)
     if not recon.consistent:
         from execution.notifications import notify_macos
-        notify_macos("FIRE Position Mismatch", recon.details[:200])
+        notify_macos("Jim Position Mismatch", recon.details[:200])
         return RebalanceResult(
             strategy_id=strategy_id,
             portfolio_value=portfolio_value,
