@@ -2,11 +2,11 @@
 
 *A standing overview of the system's design, validation discipline, and honest limits. Intended for a sophisticated reader (LP, operator, future-self) who wants to understand what was built, what it does, what makes it credible, and what it deliberately isn't.*
 
-> **Status (2026-07-18, post build-out week):** The July sessions retired A4 (edge decay + bug-era drag), killed the entire public-event research family on fresh data, and redirected the breakthrough into **sizing engineering**: A1 book-level vol-scaling (OOS 25.3%→31.2%) + A2 cap=1.5 restoration (11.0% MARGINAL→16.8% PASS) ≈ +4pp validated book CAGR at equal-or-better Calmar. The book also gained a sensory layer (VIX tail signal + 5-sensor macro composite, alert-only) and a live crisis-alpha experiment (VIXY tail-leg paper pilot in A3). BOOK_SHAPE gaps: regime adaptivity CLOSED, crisis alpha in live pilot, non-price edge dead on free data. The full verdict ledger is the `docs/archive/AUDIT_FABLE.md` banner.
+> **Status (2026-08-12):** The repo is **public** as of today — github.com/gdb-mtx/jim, public name **Jim**, PolyForm Noncommercial (FIRE stays the internal name throughout the docs and code; see README). The August work was honesty + hardening: the live vol scalar now comes bit-for-bit from the signal book (exact backtest parity — the old account-equity estimator had three divergences), **margin financing above 1.0× is now modeled in every backtest** (5.5%/yr borrow rate), and vol_target moved 0.15→0.18 per a juice grid run net of costs + financing (cap raise past 1.5 rejected in every combo). Revalidated on the honest model: **A1 PASS 33.0%**; **A2 MARGINAL 12.9%** — the drop from 16.8% is entirely the financing drag that the old number booked for free; the Q4 Calmar < 1.0 kill/swap trigger stands. Platform hardening 08-08..12: all 54 yfinance call sites audited and cache-fronted after three incidents (DATA_SOURCES.md). July's verdict ledger is the `docs/archive/AUDIT_FABLE.md` banner; the take-public receipts are `docs/archive/PUBLIC_PLAN.md`.
 
-**Last updated:** 2026-07-18 (full refresh).
-**Status:** Paper-first operational since 2026-03-10. Live book = A1 + A2 (A3 retired 2026-04-20, hosts the tail pilot; A4 retired 2026-07-13).
-**Live-money graduation gated on:** (a) Q3 checkpoint — A1 clean-window alpha ≥ 0 vs SPY over 2-3 rebalance cycles with the 07-18 configs (`scripts/live_scorecard.py` is the evidence engine), (b) Fly.io deploy per [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) (deferred by George until live evidence justifies the spend), (c) C3 handled by a ~1-2pp expectation haircut on A1 (Norgate declined 2026-07-18).
+**Last updated:** 2026-08-12 (post-publish refresh).
+**Status:** Paper-first operational since 2026-03-10. Live book = A1 + A2 (A3 retired 2026-04-20, hosts the tail pilot; A4 retired 2026-07-13). Book allocation moves to ~70/30 A1/A2 at the 2026-08-20 rebalance.
+**Live-money graduation gated on:** (a) Q3 checkpoint — A1 clean-window alpha ≥ 0 vs SPY over 2-3 rebalance cycles (clock started at the 07-22 rebalance; cycle 1 closes 08-20; `scripts/live_scorecard.py` is the evidence engine, now on a weekly Monday cron), (b) Fly.io deploy per [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) (parked by George pending real-money commitment), (c) C3 handled by a ~1-2pp expectation haircut on A1 (Norgate declined 2026-07-18).
 
 ---
 
@@ -25,7 +25,7 @@ FIRE is a multi-strategy systematic trading system operating 2 live paper accoun
 
 **Two-account live book + pilot** (A3 retired 2026-04-20; A4 retired 2026-07-13 — see HISTORY.md):
 
-- **Account 1 — Momentum.** Top-15 S&P 500 momentum + SPY 200d trend filter + book-level vol-scaling (15% target, cap 1.5, added 2026-07-18 — recaptures the diversification benefit that per-name vol targeting discarded). 21-trading-day rebalance.
+- **Account 1 — Momentum.** Top-15 S&P 500 momentum + SPY 200d trend filter + book-level vol-scaling (18% target since 2026-08-12, cap 1.5; the book-level overlay, added 2026-07-18, recaptures the diversification benefit that per-name vol targeting discarded). 21-trading-day rebalance.
 - **Account 2 — Trend + Low-Vol.** 30% multi-asset trend + 70% low-vol + vol-scaling at its original validated cap=1.5 (restored 2026-07-18). 21-trading-day rebalance.
 - **Account 3 — tail-leg pilot host.** Retired as a strategy account; since 2026-07-18 auto-executes the VIXY tail hedge (5% of book) on VIX9D/VIX3M ≥ 1.10 (`execution/tail_leg.py`). Paper evidence for the Q4 real-money-tail decision.
 - **Account 4 — retired 2026-07-13.** Was crypto momentum. Shadow-tracked on every `live_scorecard.py` run (reopen threshold: shadow > +10% since retirement).
@@ -34,17 +34,16 @@ FIRE is a multi-strategy systematic trading system operating 2 live paper accoun
 
 ## Current headline numbers
 
-OOS window 2023-01-03 → present, revalidated 2026-07-18 with the current configs:
+OOS window 2023-01-03 → present, revalidated 2026-08-12 with the current configs (vol_target 0.18, cap 1.5, **margin financing modeled at 5.5%/yr**):
 
 | Book | Status | CAGR | MaxDD | Calmar | Bootstrap p5 |
 |---|---|---|---|---|---|
-| A1 Momentum + book vol-scaling ⚠ C3 | PASS | +31.2% | -11.0% | 2.84 | +15.3% |
-| A2 Trend + Low-Vol (cap 1.5) | PASS | +16.8% | -10.8% | 1.56 | +11.5% |
-| **Live book (A1+A2 @ 50/50)** | — | **+24.1%** | **-8.7%** | **2.77** | — |
+| A1 Momentum + book vol-scaling ⚠ C3 | PASS | +33.0% | -13.2% | 2.49 | +14.4% |
+| A2 Trend + Low-Vol (cap 1.5) | MARGINAL | +12.9% | -12.3% | 1.05 | +9.7% |
 
-A1's bootstrap p5 (+15.3%) clears the 15% CAGR gate outright — the 5th-percentile path passes on its own. Overlay parameters are robust, not fitted: an 18-config sensitivity grid holds Calmar in a flat 2.62-2.84 band; the vol target is a risk dial (0.12→24.5%/-8.9% … 0.18→36.5%/-13.3%).
+A1's bootstrap p5 (+14.4%) sits essentially at the 15% CAGR gate — the 5th-percentile path is a near-pass on its own (the hard Test-4 gate, p5 ≥ 0%, clears with room). A2's 16.8%→12.9% revision is not a strategy change: the financing drag was always going to be paid live, and the old number booked ~3pp of margin for free. It is MARGINAL honestly, allowed for paper, with the Q4 Calmar < 1.0 kill/swap trigger standing. No fresh combined-book OOS number is published for the new configs — the 08-20 rebalance moves the allocation to ~70/30 A1/A2, and the prior 50/50 combined figure (24.1%) is superseded.
 
-**Forward-looking haircut — read before citing.** The OOS window is mostly benign (no 2008-style synchronized bear). Correlations in crises spike toward 1. A1 standalone is ~1-2pp overstated by S&P 500 survivorship (C3 — handled by haircut, Norgate declined). Backtests model no margin interest — at ~8% real-money rates the calm-regime extension gives back ~1-2pp when fully deployed (paper pays none). Live evidence to date: A1 execution parity clean (+0.1pp/60d); the clean-window record *lags SPY* pre-upgrade — the Q3 checkpoint judges the upgraded configs. Realistic live Calmar: **~2**, not 2.77.
+**Forward-looking haircut — read before citing.** The OOS window is mostly benign (no 2008-style synchronized bear). Correlations in crises spike toward 1. A1 standalone is ~1-2pp overstated by S&P 500 survivorship (C3 — handled by haircut, Norgate declined). Margin financing is now in the backtest (5.5%/yr on exposure above 1.0×); real-money borrow rates can run higher, worth ~1pp more of give-back at ~8%. Live evidence to date: A1 execution parity clean (+0.1pp/60d); the clean-window record *lagged SPY* pre-upgrade — the Q3 checkpoint judges the upgraded configs. Realistic live Calmar on A1: **~2**, not 2.49.
 
 ---
 
@@ -54,6 +53,7 @@ A1's bootstrap p5 (+15.3%) clears the 15% CAGR gate outright — the 5th-percent
 
 - **Six price pipelines** (ETF universe, S&P 500, SPY filter cache, VIX, crypto universe, BTC) with TTL caches (16-24h), atomic tmp-rename writes, and exponential-backoff retry at the downloader.
 - **Per-ticker value-plausibility layer** ([data/plausibility.py](data/plausibility.py)) — hard `(min, max)` bands for BTC/ETH/SPY/VIX/SHY with cited rationale, wired into every `download_*` before write, plus read-time cross-validation against Alpaca live quotes on the `/filters` endpoint. Catches the "structurally valid but semantically wrong" failure mode (e.g., yfinance returned a 4099-row series under "BTC-USD" with values in the $9-$29 range — observed 2026-04-21, defended same-day).
+- **Hot-path audit, kept true by construction (2026-08-11)** — after three cache incidents in one week, all 54 yfinance call sites were enumerated and classified: `api/` contains zero direct yfinance calls, every request-reachable path is cache-fronted with cron-warmed TTLs, cache writes always download from canonical floor starts (2005 equities / 2020 crypto, full universe) so no short-lookback caller can truncate a shared cache. Remaining live calls are cron/research scripts whose failure mode is a late cron, never a frozen dashboard. Incident log in [DATA_SOURCES.md](DATA_SOURCES.md).
 - **S&P 500 constituent list** with 7-day TTL auto-refresh from Wikipedia + stale-cache fallback. Coverage gate is trailing-500d ≥80% non-NaN (allows recent IPOs to enter live rotation once they have ~2y history).
 - **ET-anchored trading-date helpers** ([data/trading_dates.py](data/trading_dates.py)) — `today_et()`, `utc_ts_to_et_date()`, `zoneinfo`-based. TZ-stable across local (ET laptop) and cloud (UTC Fly) servers.
 - **Daily equity snapshots** per account (parquet) with cross-process-safe read-modify-write (fcntl file lock).
@@ -63,7 +63,7 @@ A1's bootstrap p5 (+15.3%) clears the 15% CAGR gate outright — the 5th-percent
 - **10 strategies** across 3 universes: 18 ETFs + SHY, 501 S&P 500 stocks, 9 liquid coins.
 - **Signal → weights API** ([strategies/base.py](strategies/base.py)) — every strategy exposes `generate_signals(prices) → weights DataFrame` and inherits `generate_returns` from base, with `signals.shift(1) × asset_returns` convention (no forward-look).
 - **Equal-weight top-N + blend combiners** with SPY 200d trend filter (Faber 2007: half exposure below MA) and BTC 125d SMA filter (binary cash below MA; parameter picked by robust-opt via `min(Calmar_half_A, Calmar_half_B)` across a 144-config grid, not naive Sharpe-max).
-- **Vol-scaling overlay** (Moreira-Muir 2017) — EWMA realized-vol inverse, target 15% vol, scalar bounded **[0.5, 1.5] on equity accounts** (cap raised 2026-07-18; >1.0 extends into Reg-T margin, confirmed live at the broker — the old "Alpaca paper is spot-only" claim was true only for crypto, which stays clamped at 1.0). Levered targets require a margin account (multiplier ≥ 2) and log Reg-T buying power; weight-sum invariant allows gross up to the configured cap. Applied in both paths with math verified to match within 1e-6 on A2 snapshot history (C4 work, 2026-04-21). **Why vol-scaling instead of Kelly for sizing:** Kelly requires reliable forward-looking expected returns per position — our factor signals (momentum rank, trend filter) tell us *which* assets to hold, not *how much we expect to earn* from each. Vol-scaling is mathematically the reduced-form Kelly under the empirical finding (Moreira & Muir) that expected returns don't scale with volatility for momentum factors — it captures the time-varying exposure adjustment without needing the return estimate that Kelly can't get right. Our 15% vol target is roughly quarter-Kelly (full Kelly for a Sharpe-1.76 strategy implies 176% vol target), which is where practitioners land after discounting for estimation uncertainty and fat tails (Barroso & Santa-Clara 2015). Kelly stays in the scorecard as a diagnostic for "is this strategy worth sizing into at all."
+- **Vol-scaling overlay** (Moreira-Muir 2017) — EWMA realized-vol inverse, target 18% vol (raised from 15% on 2026-08-12 per a juice grid run net of costs + financing; cap raise past 1.5 rejected in every combo), scalar bounded **[0.5, 1.5] on equity accounts** (cap raised 2026-07-18; >1.0 extends into Reg-T margin, confirmed live at the broker — the old "Alpaca paper is spot-only" claim was true only for crypto, which stays clamped at 1.0). Levered targets require a margin account (multiplier ≥ 2) and log Reg-T buying power; weight-sum invariant allows gross up to the configured cap. **Financing is modeled**: exposure above 1.0× pays a daily borrow cost (5.5%/yr default) in every backtest and validation path, added 2026-08-12 — pre-August levered numbers booked the margin for free. **Live/backtest parity is exact**: the live scalar is captured from the signal book itself (`run_portfolio` stages-out), bit-for-bit the value `apply_vol_scaling` computes — the retired account-equity estimator had three structural divergences (compositional lag, leverage feedback, weekend-row dilution; it once applied 1.084 where 0.833 was correct) and is kept only as a diagnostic. A daily drift check on the cron compares broker positions against last-rebalance targets so divergence between 21-day cycles surfaces within a day. **Why vol-scaling instead of Kelly for sizing:** Kelly requires reliable forward-looking expected returns per position — our factor signals (momentum rank, trend filter) tell us *which* assets to hold, not *how much we expect to earn* from each. Vol-scaling is mathematically the reduced-form Kelly under the empirical finding (Moreira & Muir) that expected returns don't scale with volatility for momentum factors — it captures the time-varying exposure adjustment without needing the return estimate that Kelly can't get right. Our 18% vol target is in the quarter-Kelly neighborhood (full Kelly for a Sharpe-1.7 strategy implies a vol target near 170%), which is where practitioners land after discounting for estimation uncertainty and fat tails (Barroso & Santa-Clara 2015). Kelly stays in the scorecard as a diagnostic for "is this strategy worth sizing into at all."
 
 ### Backtest + validation layer
 
@@ -98,10 +98,11 @@ A1's bootstrap p5 (+15.3%) clears the 15% CAGR gate outright — the 5th-percent
 
 ### Automation + monitoring
 
-- **cron, three entries** (migrated launchd→cron 2026-05-28 after macOS BTM kept disabling agents; five laptop-scheduling failure modes diagnosed and worked around to date — see AUTOMATION.md):
-  - Hourly `--if-due` trigger for the (now gate-blocked) A4 daily job — the TZ-immune, sleep-tolerant pattern that survived failure mode #5.
-  - SPY + BTC filter checks every 4h. The SPY run also computes two **alert-only** signals: the VIX9D/VIX3M tail signal (≥1.10 → notification + drives the A3 VIXY paper pilot) and the 5-sensor macro composite (vote alerts at ≥2; led SPY-200d by 34-56 days in 2018/2020/2022; exposure-scaling explicitly tested and rejected — `docs/research/MACRO_COMPOSITE_EVAL.md`).
-- **GitHub Actions travel watcher** — `.github/workflows/filter_watch.yml` polls SPY/BTC every ~30 min, pushes ntfy.sh alerts on filter crossings + daily heartbeat. Catches the laptop-fully-off case during digital-nomad travel days. Doesn't trade — notifies only.
+- **cron, three entries** (migrated launchd→cron 2026-05-28 after macOS BTM kept disabling agents; five laptop-scheduling failure modes diagnosed and worked around to date — see AUTOMATION.md; the A4 hourly rebalance entry was removed after the retirement):
+  - SPY filter check every 4h — the workhorse leg. Beyond the filter itself it computes two **alert-only** signals (the VIX9D/VIX3M tail signal, ≥1.10 → notification + drives the A3 VIXY paper pilot; the 5-sensor macro composite, vote alerts at ≥2, led SPY-200d by 34-56 days in 2018/2020/2022 — exposure-scaling explicitly tested and rejected, `docs/research/MACRO_COMPOSITE_EVAL.md`), runs the daily position-drift check, saves daily equity snapshots, and warms the S&P 500 cache so TTLs never expire into a dashboard request.
+  - BTC filter check every 4h (kept live for the shadow-A4 tracker and any successor).
+  - Weekly live scorecard (Monday 9am) — `scripts/live_scorecard.py`, the Q3-checkpoint evidence engine.
+- **GitHub Actions travel watcher** — `.github/workflows/filter_watch.yml` polls SPY/BTC every ~30 min and pushes ntfy.sh alerts on filter crossings. **Disabled 2026-08-12** (its daily-strategy client is retired); infrastructure retained. Reviving it = re-enable the workflow + set the `NTFY_TOPIC` secret in the repo.
 - **Ops dashboard tab** consolidates scheduler status, filter state, validation status, and event timeline into one pane (replaces older macOS notifications). Endpoints at `/api/ops/*`.
 - **Strategy-discovery workflow** — new candidates get evaluated via the same six-test framework before going live. Never "trust the paper defaults."
 
@@ -140,13 +141,13 @@ Concretely: things here that most solo / small-team setups don't do.
 ## Honest limitations — what this system is NOT
 
 - **Not point-in-time in its equity universe.** The S&P 500 backtest uses today's constituent list, not the as-of-date list. A1 standalone CAGR is ~1-2pp overstated by survivorship bias. Fix requires CRSP or Kenneth French data and ~week of work; deferred until pre-real-money gate. Documented caveat on every A1 CAGR citation.
-- **Not a real-money system yet.** Paper-first discipline is deliberate. Live-money graduation gated on C3 resolution + Phase 0 cloud deployment + ≥6 months of live paper evidence.
+- **Not a real-money system yet.** Paper-first discipline is deliberate. Live-money graduation runs through the gates in the Status block at the top (Q3 alpha checkpoint, deployment decision, C3 haircut).
 - **No execution algos.** Market orders only. Fine at a $50k book; wrong at a $50M book. No VWAP / TWAP / implementation shortfall / liquidity-seeking logic. Not required at scale but worth flagging.
 - **No formal factor-risk model.** No Barra / Axioma attribution. No sector-level risk decomposition. The strategies' implicit factor exposures (momentum, low-vol, trend) are documented but not decomposed into a formal risk model.
 - **Modest, bounded leverage only.** Equity accounts extend to 1.5× gross via Reg-T margin in calm regimes (built 2026-07-18); crypto stays spot-only. No shorting, no options in live use (Alpaca options L3 is verified available but unexploited — a SPY put-ladder tail hedge is parked pending the VIXY pilot's first realized round trip), no futures.
 - **No prime brokerage / compliance / regulatory reporting.** Not relevant at current scale; would be a rebuild at institutional scale.
 - **No sub-second market data.** End-of-day cadence only. Correct for monthly / daily rebalance strategies; wrong if you're doing intraday.
-- **Sample size is short** for strategies running on crypto. A4's OOS window is 3.3 years; statistical confidence on the Calmar claim is meaningful but not deep. Block-bootstrap p5 of +20.9% is our honest downside estimate.
+- **Sample size was short** on crypto — one of the reasons A4 is retired: its 3.3-year OOS window couldn't distinguish edge decay from noise until the walk-forward windows decayed monotonically. The equity books' 904-day OOS window is longer but still mostly benign-regime (see the haircut note above).
 - **No auto-disaster-recovery.** State files are on a single local disk (laptop). Fly.io migration (Phase 0 deployment) is the remedy; not yet started.
 
 ---
@@ -199,8 +200,9 @@ This system was built solo with AI tooling over ~2 months of part-time work. The
 ## Roadmap
 
 **Pre-real-money path (as re-sequenced 2026-07-18):**
-- **Q3 checkpoint** — A1 clean-window alpha ≥ 0 vs SPY over 2-3 rebalance cycles under the 07-18 configs. `scripts/live_scorecard.py` is the single source (cycle-by-cycle live/signal/SPY, plus the shadow-A4 tracker). Clock starts at the 2026-07-22 rebalance.
-- **Fly.io deploy** ([DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)) — deferred by George until live evidence justifies the spend; recent underperformance was design/bugs, never hosting. Free interim alternative if wanted: run the 4h filter checks on the existing GitHub Actions scaffold.
+- **Q3 checkpoint** — A1 clean-window alpha ≥ 0 vs SPY over 2-3 rebalance cycles. Clock started at the 2026-07-22 rebalance; cycle 1 closes at the 2026-08-20 rebalance (which also resets the book to ~70/30 A1/A2). `scripts/live_scorecard.py` is the single source (cycle-by-cycle live/signal/SPY, plus the shadow-A4 tracker), now cron-run every Monday.
+- **A2's fate** — MARGINAL at 12.9% on the honest financing model; rides as ballast for paper, with the pre-committed Q4 trigger: live Calmar < 1.0 at the review → kill or DBMF swap.
+- **Fly.io deploy** ([DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)) — parked by George pending the real-money commitment; recent underperformance was design/bugs, never hosting. Free interim alternative if wanted: run the 4h filter checks on the existing GitHub Actions scaffold.
 - **C3** — Norgate declined (2026-07-18); handled by a ~1-2pp expectation haircut on A1, or a free sensitivity test pre-real-money.
 
 **Research state (2026-07-18):** every proposal now carries a disposition — the `docs/archive/AUDIT_FABLE.md` banner is the DONE/KILLED/PARKED ledger, and every doc in `docs/research/` opens with a STATUS banner. Untested cheap vectors: CEF discount reversion, on-chain slices (netflows, stablecoin supply, MSTR/IBIT NAV basis). Parked with triggers: basis carry (funding >8-10% ann.), DBMF A2 swap (A2 live Calmar <1.0 at Q4), SPY put-ladder vs VIXY comparison (after the pilot's first round trip), IBKR bundle ($150K+ real money), micro-cap QM (point-in-time data).
@@ -211,7 +213,9 @@ This system was built solo with AI tooling over ~2 months of part-time work. The
 
 ## Hands-on onboarding (new collaborators)
 
-1. **Run it locally:** `./scripts/start.sh` → backend on :8001, dashboard on http://localhost:5174.
+The repo is public: **https://github.com/gdb-mtx/jim** (public name Jim; FIRE internally — see README for the naming note). PolyForm Noncommercial 1.0.0.
+
+1. **Run it locally:** clone, add Alpaca paper keys to `.env`, then `./scripts/start.sh` → backend on :8001, dashboard on http://localhost:5174.
 2. **Read [CLAUDE.md](CLAUDE.md)** next — the operational manual. Loaded every Claude session, so it's the canonical "current state" reference.
 3. **Then [BOOK_SHAPE.md](BOOK_SHAPE.md)** for forward direction — what the book is, what's missing, what's prioritized.
 4. **Skim [HISTORY.md](HISTORY.md)** before trusting any headline number above — every CAGR/Calmar figure has caveats; this doc tracks them.
@@ -265,14 +269,14 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 
 ## Glossary
 
-**Accounts:**
-- **A1** — Account 1, FIRE 0.1, Stock Momentum (top-15 S&P 500 + SPY filter), monthly rebalance.
-- **A2** — Account 2, FIRE 0.2, Trend + Low-Vol blend (30% multi-asset trend + 70% low-vol + vol-scaling), monthly rebalance.
-- **A3** — Account 3, FIRE 0.3, RETIRED 2026-04-20 (Reversal + Momentum blend was structurally 40%-A1 by construction). Hosts the VIXY tail-leg paper pilot since 2026-07-18.
-- **A4** — Account 4, FIRE 0.4, RETIRED 2026-07-13 (was Crypto Momentum Rotation; walk-forward edge decay + bug-era live drag — HISTORY.md). Shadow-tracked in `live_scorecard.py`.
+**Accounts** (display name "Jim 0.x" since the 2026-08-12 publish; "FIRE 0.x" in older docs and logs):
+- **A1** — Account 1, Jim 0.1, Stock Momentum (top-15 S&P 500 + SPY filter), 21-trading-day rebalance.
+- **A2** — Account 2, Jim 0.2, Trend + Low-Vol blend (30% multi-asset trend + 70% low-vol + vol-scaling), 21-trading-day rebalance.
+- **A3** — Account 3, Jim 0.3, RETIRED 2026-04-20 (Reversal + Momentum blend was structurally 40%-A1 by construction). Hosts the VIXY tail-leg paper pilot since 2026-07-18.
+- **A4** — Account 4, Jim 0.4, RETIRED 2026-07-13 (was Crypto Momentum Rotation; walk-forward edge decay + bug-era live drag — HISTORY.md). Shadow-tracked in `live_scorecard.py`.
 
 **Time + windows:**
-- **OOS / IS** — Out-of-Sample / In-Sample. OOS test window is 2023-01-03 → 2026-04-20; IS is 2010 → 2022.
+- **OOS / IS** — Out-of-Sample / In-Sample. OOS test window is 2023-01-03 → present (2026-08-11 in the current validation run); IS is 2010 → 2022.
 - **ET** — America/New_York (DST-aware). System reference timezone.
 - **ppy** — periods per year (252 for equity, 365 for crypto-only books).
 
@@ -298,6 +302,6 @@ Everything above is a summary. Primary sources, grouped by what you'd open them 
 
 FIRE's strongest edge is the **discipline layer**: pre-committed thresholds, enforced validation gates, sim/live parity verification, willingness to kill hypotheses honestly. The mechanics are solid; the audit trail is real; the infrastructure works.
 
-Where the search stands (2026-07-18): the April-July research campaigns measured essentially every cheap public edge — 12 factor vectors, then all four event streams, the switched vol sleeve, and leveraged trend — and killed or priced each one. What survived contact with data was **sizing engineering on the strategies already owned** (+4pp validated book CAGR in one week), a priced insurance leg now running as a live paper pilot, and a regime sensory layer. The honest lesson the system keeps teaching: for a solo operator in 2026, edges live behind regimes, data walls, and drawdowns — not in published anomalies — and the discipline layer is what converts that lesson into decisions instead of drift.
+Where the search stands (2026-08-12): the April-July research campaigns measured essentially every cheap public edge — 12 factor vectors, then all four event streams, the switched vol sleeve, and leveraged trend — and killed or priced each one. What survived contact with data was **sizing engineering on the strategies already owned**, a priced insurance leg now running as a live paper pilot, and a regime sensory layer. August then made the sizing honest: exact signal-book parity for the live scalar, financing modeled in every levered backtest — which cost A2 its PASS (16.8%→12.9% MARGINAL, the margin was never free) and re-priced A1 at 33.0%. The honest lesson the system keeps teaching: for a solo operator in 2026, edges live behind regimes, data walls, and drawdowns — not in published anomalies — and the discipline layer is what converts that lesson into decisions instead of drift. As of 2026-08-12 that whole record is public (github.com/gdb-mtx/jim).
 
-The next verdicts belong to the calendar: the 07-22 levered rebalance, the pilot's first tail event, and the Q3 alpha checkpoint that gates real money.
+The next verdicts belong to the calendar: the 08-20 rebalance (cycle 1 of the Q3 alpha checkpoint closes; the book resets to ~70/30), the pilot's first tail event, and the Q4 A2 review.
