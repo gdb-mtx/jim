@@ -27,6 +27,24 @@ to yfinance behavior. Parquet was just the medium that recorded it.
 | 2026-04-26 | 5 concurrent refreshes → 429s + SQLite corruption | rate-limit + yfinance internal cache fragility |
 | 2026-04-27 | 4 caches written empty (0 rows) | DNS-fail returns column-correct, row-empty DataFrame |
 | 2026-05-06 | A4 live signal stale by 1 day vs backtest (C9/C10) | partial-bar contamination + 1-12h settled-bar publishing delay |
+| 2026-07-21 | rebalance-day previews "hung"; frontend 20s timeout masked it | rate-limited S&P refresh at ~50s/batch in the request path |
+| 2026-08-08 | refresh-cache "stuck" ~25 min; second click doubled it | Saturday rate-limit ~90s/batch × 24h-TTL expiry landing in-request |
+| 2026-08-10 | etf_prices truncated to 903 rows / crypto to 8 coins from 2025 | not yfinance's fault — shared caches writable by short-lookback callers (fixed: canonical floor starts) |
+| 2026-08-11 | Combined-tab chart frozen; server reload wedged | uncached SPY download on every 30s poll → session rate-limited into indefinite hangs (blocks, doesn't raise) |
+
+## 2026-08-11 — Hot-path audit (class-level fix)
+
+After the 08-11 incident, all 54 yfinance call sites were enumerated and
+classified. Current state, kept true by construction:
+
+- `api/` contains zero direct yfinance calls.
+- Every request-reachable path is cache-fronted, and the slow caches are
+  warmed from cron (spy_filter force-refreshed 4h; sp500_prices warmed
+  non-forced on the SPY cron leg) so TTLs never expire into a user request.
+- Remaining live calls are cron or manual research scripts only — their
+  failure mode is a late cron, never a frozen dashboard.
+- Cache writes always download from canonical floor starts (2005 equities /
+  2020 crypto, full universe), so no caller can truncate a shared cache.
 
 Each one got a defensive patch (threading.Lock, atomic writes, plausibility
 bands, retry+coverage gate, schema cross-check, 0-row guard). The system
@@ -62,6 +80,10 @@ those paths. Migration of the equity-data path stays a Phase-5 question.
    of the broader ETF universe may not have full history. Likely fits
    the live-decision path (filter checks, rebalance signals) cleanly;
    may not fully replace yfinance for 2010-onward backtest data.
+   **Free-tier caveat (2026-08-11):** bars are IEX-feed only, so closes
+   can diverge a few cents from official consolidated closes on quiet
+   names. Before cutover, run both sources for a full rebalance cycle
+   and diff the signal output (ranks, not prices — rank-stable = safe).
 
 2. **Polygon / Tiingo / EOD Historical** — paid feeds with proper
    time-series APIs and schema guarantees. ~$20-50/month at low tier.
@@ -72,6 +94,24 @@ those paths. Migration of the equity-data path stays a Phase-5 question.
    rebalance signal generation), keep yfinance for offline backtest /
    research where a corrupt cache produces "weird chart" not "wrong
    trade." Lowest-risk migration path.
+
+### The $0 stack (2026-08-11 addition)
+
+The deep history (2005+ equities, 2020+ crypto) is already banked in our
+parquets — a replacement source only has to *append* daily bars, which
+changes the economics: the full migration is possible at zero dollars.
+
+- **Equity daily bars:** Alpaca free tier (IEX caveat above), or one of
+  the consolidated-close free options below.
+- **VIX / VIX9D / VIX3M:** CBOE's own free historical CSVs
+  (cdn.cboe.com). This is an *upgrade* over yfinance — Yahoo republishes
+  CBOE, so the CSVs are the primary source. Stable URLs, no key. Closes
+  the doc's `^VIX` gap for free.
+- **Consolidated market-wide closes (append path):** Stooq free bulk EOD
+  (whole US market, no API key), or Polygon free tier's grouped-daily
+  endpoint — every US ticker's official close in one API call/day (free
+  tier's 2-year history cap is irrelevant for appends).
+- Paid tier (#2) becomes optional rather than the "cleanest fix."
 
 ## What this is not
 
