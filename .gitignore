@@ -59,3 +59,7 @@ References/*.pdf
 
 # Research caches — reproducible via scripts/*_poc.py --refresh (EDGAR/SEC/yfinance harvests)
 data/research_cache/
+
+# Copyrighted books — never publish (verified untracked + absent from all history, 2026-08-12)
+References/*.pdf
+References/*.epub

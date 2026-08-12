@@ -41,7 +41,11 @@
   after editing, filter the file's old versions from history (filter-repo
   `--path <file> --invert-paths` then re-add the cleaned version, or
   `--replace-text` with a names file) in the same rewrite as the transcripts.
-- No PDFs/books tracked (Ernie Chan books are a mention in CLAUDE.md, not files).
+- The Ernie Chan books + *Trading in Risk Dimensions* PDFs live in `References/` **on
+  disk only** — verified never tracked and absent from all history (no `*.pdf` ever
+  added). Now belt-and-suspenders gitignored (`References/*.pdf`) so no future
+  `git add -A` can publish them. Step 7's fresh-clone check should confirm the clone
+  contains zero PDFs.
 
 ## Execution checklist (fresh session)
 
