@@ -91,6 +91,8 @@ def apply_vol_scaling(
     vol_halflife: int = 21,
     scalar_floor: float = 0.5,
     scalar_cap: float = 1.0,
+    borrow_rate_annual: float = 0.055,
+    scalar_out: dict | None = None,
 ) -> pd.Series:
     """Apply volatility-scaling overlay to portfolio returns.
 
@@ -112,9 +114,17 @@ def apply_vol_scaling(
                     Reg-T margin in calm regimes (equity accounts only —
                     Alpaca crypto is non-marginable and stays capped at 1.0
                     in the live path).
+        borrow_rate_annual: Financing cost on the margined portion (scalar
+                    above 1.0). Added 2026-08-12 — before this, leverage
+                    was modeled as free, flattering every scalar_cap > 1.0.
+                    ~Fed funds + broker spread. Set 0.0 for gross runs.
+        scalar_out: Optional dict; receives {"scalar": <applied series>,
+                    "scalar_next": <scalar for the upcoming day>}. The live
+                    path reads scalar_next so live sizing IS the backtest
+                    computation (semantic parity by construction).
 
     Returns:
-        Vol-scaled daily returns
+        Vol-scaled daily returns, net of financing on the levered portion
     """
     # EWMA realized vol (responds faster to regime changes than rolling window)
     ewma_var = returns.ewm(halflife=vol_halflife).var()
@@ -124,10 +134,22 @@ def apply_vol_scaling(
     scalar = vol_target / realized_vol.replace(0, np.nan)
     scalar = scalar.clip(lower=scalar_floor, upper=scalar_cap)
 
+    if scalar_out is not None:
+        # Unshifted last value = vol through the latest settled bar = the
+        # scalar the backtest would apply to the NEXT day. Live rebalances
+        # read this for the upcoming period.
+        scalar_out["scalar_next"] = float(scalar.iloc[-1])
+        scalar_out["realized_vol"] = float(realized_vol.iloc[-1])
+
     # Lag by 1 day (use yesterday's vol estimate for today's sizing)
     scalar = scalar.shift(1).fillna(1.0)
+    if scalar_out is not None:
+        scalar_out["scalar"] = scalar
 
-    return returns * scalar
+    # Financing drag on the margined portion, charged daily
+    borrow_drag = (scalar - 1.0).clip(lower=0.0) * (borrow_rate_annual / 252)
+
+    return returns * scalar - borrow_drag
 
 
 def run_portfolio(
@@ -136,6 +158,7 @@ def run_portfolio(
     end: str | None = None,
     apply_costs: bool = True,
     strategy_params: dict | None = None,
+    stages_out: dict | None = None,
 ) -> tuple[str, pd.Series]:
     """Run a combined portfolio and return (name, returns Series).
 
@@ -201,8 +224,15 @@ def run_portfolio(
         combined = combined * btc_aligned
 
     # Apply vol-scaling overlay (Moreira & Muir 2017)
+    if stages_out is not None:
+        stages_out["raw_returns"] = combined.copy()
     if use_vol_scaling:
-        combined = apply_vol_scaling(combined, **vol_scaling_params)
+        scalar_capture: dict | None = {} if stages_out is not None else None
+        combined = apply_vol_scaling(
+            combined, **vol_scaling_params, scalar_out=scalar_capture
+        )
+        if stages_out is not None:
+            stages_out["vol_scaling"] = scalar_capture
 
     return config["name"], combined
 

@@ -367,16 +367,21 @@ def compute_rebalance(
     max_gross = 1.0
     portfolio_cfg = PORTFOLIOS.get(strategy_id, {})
     if portfolio_cfg.get("vol_scaling"):
-        from execution.vol_scaling import compute_live_vol_scalar
+        from execution.vol_scaling import compute_signal_vol_scalar
         params = dict(portfolio_cfg.get("vol_scaling_params", {}))
+        params.pop("borrow_rate_annual", None)  # backtest-only financing model
         is_crypto_book = any(
             k in CRYPTO_STRATEGIES for k in portfolio_cfg.get("weights", {})
         )
         if is_crypto_book:
             params["scalar_cap"] = min(1.0, params.get("scalar_cap", 1.0))
         max_gross = max(1.0, params.get("scalar_cap", 1.0))
-        vol_scalar, vol_scalar_diagnostics = compute_live_vol_scalar(
-            broker.account, **params
+        # Signal-book estimator (2026-08-12): the scalar the backtest would
+        # apply next, computed from the same raw series validation used.
+        # Replaced the account-equity estimator — see execution/vol_scaling.py
+        # module docstring for the three divergence causes.
+        vol_scalar, vol_scalar_diagnostics = compute_signal_vol_scalar(
+            strategy_id, **params
         )
         log.info(
             f"vol_scaling account={broker.account} strategy={strategy_id} "
