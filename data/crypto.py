@@ -1,9 +1,13 @@
 """
 Crypto Data Pipeline — Price data for crypto momentum strategies.
 
-Downloads daily crypto prices via yfinance and manages symbol mapping
-between yfinance format (BTC-USD) and Alpaca format (BTC/USD).
-Uses parquet caching consistent with data/sp500.py pattern.
+Caches daily crypto closes to parquet (consistent with data/sp500.py) and
+manages symbol mapping between yfinance format (BTC-USD) and Alpaca format
+(BTC/USD). Since 2026-08-13 the caches are Alpaca-sourced for every bar
+inside a coin's Alpaca listing range, with banked yfinance history filling
+earlier dates (Alpaca floor 2021+, ragged per coin); settled bars only.
+yfinance remains for the BNB column (best-effort) and the bootstrap path.
+See DATA_SOURCES.md.
 """
 
 import pandas as pd
@@ -59,15 +63,33 @@ def normalize_alpaca_position_symbol(symbol: str) -> str:
     return _ALPACA_POSITION_TO_ORDER.get(symbol, symbol)
 
 
+def _drop_unsettled(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop today's forming bar and any future-dated rows (UTC-day basis).
+
+    The cache stores settled bars only (since 2026-08-13). Both Alpaca and
+    yfinance include the current UTC day's partial bar in responses; a
+    partial written to the cache becomes a wrong "settled" value forever
+    (the C9 contamination class).
+    """
+    today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+    return df.loc[df.index < today_utc]
+
+
 def download_crypto_prices(
     symbols: list[str] | None = None,
     start: str = "2020-01-01",
     end: str | None = None,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
-    """Download daily crypto close prices via yfinance.
+    """Daily crypto close prices: Alpaca-sourced where Alpaca has bars,
+    banked yfinance history everywhere else (see DATA_SOURCES.md 2026-08-13).
 
-    Caches to parquet for fast reloading. Drops coins with < 50% coverage.
+    On refresh, every bar inside a coin's Alpaca listing range is (re)written
+    from Alpaca — self-healing, settled bars only. Dates before a coin's
+    Alpaca listing keep the banked yfinance values already in the cache.
+    BNB (not listed on Alpaca) appends best-effort from yfinance and never
+    blocks the refresh. yfinance is only load-bearing on the bootstrap path
+    (cache missing/corrupt → pre-Alpaca history must be re-downloaded).
 
     Args:
         symbols: List of yfinance tickers (default: CRYPTO_UNIVERSE)
@@ -121,41 +143,75 @@ def download_crypto_prices(
             print(f"Crypto cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     if end is not None:
-        # end-bounded requests bypass the cache write — a right-truncated
-        # frame must never become the shared cache.
-        print(f"Downloading prices for {len(symbols)} cryptos from {start} to {end} (no cache write)...")
+        # end-bounded requests serve a slice of the shared cache — never a
+        # separate download, and never a cache write (a right-truncated
+        # frame must never become the shared cache).
+        prices = download_crypto_prices(
+            symbols=symbols, start="2020-01-01", force_refresh=force_refresh
+        )
+        return prices.loc[start:end]
+
+    # --- Refresh: banked history + Alpaca overwrite -----------------------
+    from data.alpaca_crypto_bars import get_crypto_bars
+    from data.pipeline import write_parquet_atomic
+    from data.plausibility import assert_plausible_df
+
+    # Banked history = the existing cache minus any unsettled tail. Read it
+    # even under force_refresh — force refreshes the Alpaca region, it does
+    # not discard pre-Alpaca history (which Alpaca cannot re-supply: per-coin
+    # listing floors are ragged, e.g. ADA relisted 2026-02, XRP 2024-01).
+    banked = pd.DataFrame()
+    if cache_path.exists():
+        old = pd.read_parquet(cache_path)
+        if len(old) > 0 and not (set(old.columns) - set(CRYPTO_UNIVERSE)):
+            banked = _drop_unsettled(old)
+
+    if len(banked) == 0:
+        # Bootstrap (cache missing/corrupt): pre-Alpaca history only exists
+        # on yfinance. Full universe from the 2020 floor regardless of the
+        # caller's start/symbols — a short-lookback or subset caller must
+        # never shrink the shared cache (2026-08-10 incident). Require >=80%
+        # of the 9-coin universe returned; less means a yfinance hiccup.
+        print(f"Bootstrapping crypto cache from yfinance ({len(CRYPTO_UNIVERSE)} coins, 2020-01-01)...")
         from data.pipeline import download_with_retry
-        return download_with_retry(
-            symbols, start=start, end=end, min_coverage_ratio=0.8
-        ).ffill(limit=3)
+        banked = download_with_retry(
+            CRYPTO_UNIVERSE, start="2020-01-01", end=None, min_coverage_ratio=0.8
+        )
+        coverage = banked.notna().sum() / len(banked)
+        banked = banked[coverage[coverage >= 0.50].index].dropna(how="all")
+        banked = _drop_unsettled(banked)
 
-    # Download the FULL universe from the 2020 floor regardless of the
-    # caller's start/symbols — a short-lookback or subset caller must never
-    # shrink the shared cache. 2026-08-10: the Monday scorecard cron rewrote
-    # this cache as 8 coins from 2025 (was 9 from 2020); twin fix for
-    # etf_prices lives in data/pipeline.py download_and_cache.
-    print(f"Downloading prices for {len(CRYPTO_UNIVERSE)} cryptos from 2020-01-01...")
-    from data.pipeline import download_with_retry, write_parquet_atomic
-    # Require >=80% of the 9-coin universe returned; anything less points to
-    # a yfinance hiccup, not delisted coins.
-    prices = download_with_retry(
-        CRYPTO_UNIVERSE, start="2020-01-01", end=None, min_coverage_ratio=0.8
-    )
+    print(f"Refreshing crypto cache from Alpaca ({len(LIVE_CRYPTO_UNIVERSE)} coins) over banked history...")
+    alpaca = _drop_unsettled(get_crypto_bars(list(LIVE_CRYPTO_UNIVERSE), start="2021-01-01"))
+    missing = set(LIVE_CRYPTO_UNIVERSE) - set(alpaca.columns)
+    if missing:
+        raise RuntimeError(
+            f"Alpaca returned no bars for {sorted(missing)} — refusing to write crypto cache"
+        )
 
-    # Drop coins with too many missing values (< 50% historical coverage)
-    coverage = prices.notna().sum() / len(prices)
-    good_coins = coverage[coverage >= 0.50].index
-    prices = prices[good_coins].dropna(how="all")
+    # BNB: best-effort yfinance append (backtest-only coin, HISTORY.md C11).
+    # Failure keeps the banked BNB column as-is and never blocks the refresh.
+    bnb = pd.DataFrame()
+    try:
+        recent = (pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+                  - pd.Timedelta(days=14)).strftime("%Y-%m-%d")
+        raw = yf.download("BNB-USD", start=recent, auto_adjust=True, progress=False)
+        if raw is not None and len(raw) > 0:
+            closes = raw["Close"] if "Close" in raw else raw
+            bnb = _drop_unsettled(closes)[["BNB-USD"]].astype(float)
+    except Exception as e:
+        print(f"BNB yfinance append failed ({e}) — keeping banked BNB values")
 
-    # Forward-fill small gaps (weekends sometimes have gaps in yfinance crypto)
-    prices = prices.ffill(limit=3)
+    # Precedence: Alpaca > fresh BNB > banked. combine_first aligns on the
+    # union index, so per-coin Alpaca listing gaps fall through to banked.
+    prices = alpaca.combine_first(bnb).combine_first(banked) if len(bnb) else alpaca.combine_first(banked)
+    prices = prices.sort_index().ffill(limit=3)
+    prices.index.name = "Date"
 
-    print(f"Final universe: {prices.shape[1]} coins with 50%+ coverage")
-    print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
+    print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()} ({prices.shape[1]} coins)")
 
     # Plausibility guard. Columns without a band (most of the 9-coin universe)
     # pass silently; BTC-USD / ETH-USD raise loudly if wrong.
-    from data.plausibility import assert_plausible_df
     assert_plausible_df(prices)
 
     write_parquet_atomic(prices, cache_path)
@@ -224,16 +280,35 @@ def download_btc_prices(
         else:
             print(f"BTC cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
-    print("Downloading BTC price data...")
-    from data.pipeline import download_with_retry, write_parquet_atomic
+    # --- Refresh: banked history + Alpaca overwrite (see download_crypto_prices) ---
+    from data.alpaca_crypto_bars import get_btc_bars
+    from data.pipeline import write_parquet_atomic
     from data.plausibility import assert_plausible
-    prices = download_with_retry(["BTC-USD"], start=start, min_coverage_ratio=1.0)
-    btc = prices.iloc[:, 0]
-    btc.name = "BTC-USD"
+
+    banked = pd.DataFrame()
+    if cache_path.exists():
+        old = pd.read_parquet(cache_path)
+        if len(old) > 0 and list(old.columns) == ["BTC-USD"]:
+            banked = _drop_unsettled(old)
+
+    if len(banked) == 0:
+        # Bootstrap (cache missing/corrupt): pre-2021 history only exists on
+        # yfinance (Alpaca's BTC floor is 2021-01-01; ours is 2018).
+        print("Bootstrapping BTC cache from yfinance (2018-01-01)...")
+        from data.pipeline import download_with_retry
+        banked = download_with_retry(["BTC-USD"], start="2018-01-01", min_coverage_ratio=1.0)
+        banked.columns = ["BTC-USD"]
+        banked = _drop_unsettled(banked)
+
+    print("Refreshing BTC cache from Alpaca over banked history...")
+    fresh = _drop_unsettled(get_btc_bars(start="2021-01-01").to_frame())
+
+    btc_df = fresh.combine_first(banked).sort_index()
+    btc_df.index.name = "Date"
+    btc = btc_df["BTC-USD"]
 
     assert_plausible(btc, "BTC-USD")
 
-    btc_df = btc.to_frame()
     write_parquet_atomic(btc_df, cache_path)
     print(f"Cached BTC prices: {len(btc)} rows")
 

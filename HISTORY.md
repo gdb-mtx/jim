@@ -271,7 +271,31 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
-## 2026-08-12 — Repo public as `gdb-mtx/jim`; Jim is the public name
+## 2026-08-13 — Crypto cache refresh migrated yfinance → Alpaca (C10 class closed for backtest caches)
+
+The two backtest-only crypto caches (`btc_prices`, `crypto_prices`) were
+the last refresh paths drinking from yfinance's settled-bar publishing
+delay (C10 class): every evening after 00:00 UTC, yfinance serves
+"two-days-ago + today's partial" with yesterday missing, so the dashboard
+freshness pill flagged content-stale for up to 12h nightly and the
+refresh button couldn't fix it (re-downloading fetches the same gap).
+Verified 08-13: yfinance missing the settled bar Alpaca had served for
+hours.
+
+Fix (`data/crypto.py`): on refresh, every bar inside a coin's Alpaca
+listing range is (re)written from Alpaca via `combine_first`; banked
+yfinance history fills earlier dates (Alpaca floors are ragged — BTC/ETH/
+SOL/LINK 2021-01, AVAX 2021-11, DOT 2023-08, XRP 2024-01, ADA relisted
+2026-02). Caches now hold settled bars only (`_drop_unsettled`) — no more
+partial-bar rows (C9 class) in the files at all. BNB (Alpaca non-listing,
+C11) appends best-effort from yfinance in a 14-day self-healing window and
+never blocks a refresh. yfinance remains load-bearing only on the
+bootstrap path (cache missing/corrupt → pre-Alpaca history re-download).
+End-bounded research calls now slice the shared cache instead of hitting
+yfinance separately. Price seam at each coin's Alpaca floor is ~0.01-0.1%
+(venue aggregation difference) — noise for momentum ranks; historical
+values inside Alpaca ranges shifted once at migration and are stable
+thereafter.
 
 Executed `docs/archive/PUBLIC_PLAN.md` (execution deltas recorded in that
 file). History rewritten twice while private (git-filter-repo): Insider

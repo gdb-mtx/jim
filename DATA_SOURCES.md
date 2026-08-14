@@ -51,6 +51,28 @@ bands, retry+coverage gate, schema cross-check, 0-row guard). The system
 is now meaningfully hardened — but it's hardening *around* an unreliable
 source rather than fixing the source.
 
+## 2026-08-13 — Backtest crypto caches migrated to Alpaca appends
+
+The 05-06 migration (below) fixed the live path but left the backtest
+crypto caches on yfinance full re-downloads — which meant a nightly
+false-alarm window: after 00:00 UTC, yfinance serves "two-days-ago +
+today's partial" with yesterday missing (C10 pattern) for up to 12h,
+the freshness pill went red, and the refresh button couldn't fix it.
+On 08-13 Alpaca had the settled bar hours before yfinance published it.
+
+New refresh shape in `data/crypto.py` (the "$0 stack" append economics
+below, realized): banked yfinance history stays; every bar inside a
+coin's Alpaca listing range is (re)written from Alpaca on each refresh
+(`combine_first`, self-healing); caches store settled bars only. BNB
+(no Alpaca listing) appends best-effort from yfinance and never blocks.
+yfinance is load-bearing only for bootstrap (cache loss → pre-Alpaca
+history re-download). Alpaca listing floors are ragged (ADA relisted
+2026-02, XRP 2024-01, DOT 2023-08) — `combine_first` handles this
+per-coin with no special cases. Full narrative: HISTORY.md 2026-08-13.
+
+Remaining yfinance dependencies: equity caches (S&P 500, ETF universe,
+SPY filter, VIX — the Phase-5 question) + BNB appends + crypto bootstrap.
+
 ## 2026-05-06 — Live crypto signal computation migrated to Alpaca
 
 Hybrid path (option 3 below) implemented for the crypto leg ahead of the
