@@ -9,12 +9,12 @@ This is the interface the validation framework expects.
 from abc import ABC, abstractmethod
 import pandas as pd
 
-# Live rebalance calendar: A1/A2 trade every 21 trading days from this date.
-# Every strategy's re-ranking grid is phased to it (rebalance_dates below), so
-# the backtest's rebalance phase IS the live phase. Before 2026-09-09 each grid
-# counted from the first bar of whatever frame it was handed, which put live
-# 2-3 weeks behind the signal on every cycle (HISTORY.md 2026-09-09).
-REBALANCE_ANCHOR = "2026-04-21"
+# Every strategy's re-ranking grid is phased to the live rebalance calendar
+# (rebalance_dates below), so the backtest's rebalance phase IS the live
+# phase. Before 2026-09-09 each grid counted from the first bar of whatever
+# frame it was handed, which put live 2-3 weeks behind the signal on every
+# cycle (HISTORY.md 2026-09-09). The anchor lives with the calendar helpers.
+from data.trading_dates import REBALANCE_ANCHOR  # noqa: E402  (re-exported)
 
 
 def rebalance_dates(

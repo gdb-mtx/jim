@@ -4,6 +4,10 @@ This document describes what runs automatically (SPY/BTC filter monitors,
 the alert-only VIX tail + macro composite signals, the A3 VIXY tail pilot),
 the fallback layers, and what manual actions (if any) you take day-to-day.
 
+> **2026-09-09:** the 21-trading-day A1/A2 rebalance is now cron-fired
+> (`scripts/scheduled_rebalance.py`, hourly `--if-due`) — the last manual
+> action on the calendar is gone. See "Scheduled rebalance" below.
+>
 > **2026-08-12:** current state in one paragraph. The crontab holds **three
 > entries**: SPY filter check (4h), BTC filter check (4h), weekly live
 > scorecard (Mon 09:00). The SPY leg picked up three more duties in the
@@ -30,7 +34,7 @@ thing that fires them changed.
 
 ## What's automated
 
-Three cron entries (system crontab — `crontab -l`). **Cron fires at
+Four cron entries (system crontab — `crontab -l`). **Cron fires at
 laptop-local wall-clock time and the laptop travels** — so no time-of-day
 invariant lives in the crontab:
 
@@ -43,6 +47,10 @@ invariant lives in the crontab:
 # Filter check — BTC: every 4h, offset. State-keeping while A4 is retired
 # (the validation gate blocks any trade); ready for a crypto successor.
 5 1,5,9,13,17,21 * * * ~/.fire-cron/cron_filter_check.sh btc
+
+# Scheduled A1/A2 rebalance: hourly at :10; trades only on a live rebalance
+# date (every 21 trading days from 2026-04-21) in the last 75 min before close.
+10 * * * * ~/.fire-cron/cron_scheduled_rebalance.sh
 
 # Weekly live scorecard (Q3-checkpoint evidence): Monday 09:00
 0 9 * * 1              ~/.fire-cron/cron_scorecard.sh
@@ -391,14 +399,40 @@ The **Ops** tab → Scheduler panel surfaces two health signals:
   watchdog was removed 2026-08-12 — its job is retired and its journal-based
   tracking had gone misleading.
 
+## Scheduled rebalance (added 2026-09-09)
+
+`scripts/scheduled_rebalance.py`, fired hourly at :10 with `--if-due`. Each
+fire decides for itself (timezone-immune, sleep-tolerant):
+
+1. **Due date** — the latest *settled* S&P bar is a re-ranking grid date
+   (the bar before a live rebalance date; `strategies/base.py
+   rebalance_dates`, phased to `REBALANCE_ANCHOR = 2026-04-21`), or was
+   within the last 7 calendar days (catch-up after a missed fire — trades
+   the same ranking a day late, never 21 days late).
+2. **Not already done** — no journal entry for the account after that grid
+   date. Manual, filter-monitor and scheduled rebalances all count, so a
+   hand rebalance on the day doesn't get doubled.
+3. **Trade window** — market open and ≤ 75 min to close (15:10 ET normal
+   days, 12:10 ET early closes), via Alpaca's clock.
+
+Execution is `execution/rebalance_runner.rebalance_account` — the same
+guarded path the filter monitor uses (validation gate, file lock,
+reconciliation, halt, price staleness, journal, snapshot, expected
+positions), journaled as `source="scheduled_rebalance"`. A macOS
+notification reports orders per account, titled "ATTENTION" if any account
+came back unvalidated / halted / mismatched / errored. Logs:
+`data/scheduled_rebalance.log` (+ `_stdout.log` / `_stderr.log`). The Ops
+panel shows next run (calendar) and last run (journal) under "scheduled
+rebalance". Manual/off-cycle: `--force --account N`; `--dry-run` to see
+due-ness without trading.
+
 ## What you have to do
 
-**Two manual actions on the calendar, nothing daily:**
+**One manual action on the calendar, nothing daily:**
 
-1. **The 21-trading-day A1/A2 rebalance** (~3 PM ET; upcoming dates tracked in
-   CLAUDE.md) — dashboard Preview → Execute.
-2. **Read the Monday scorecard notification** — the Q3-checkpoint evidence
-   arriving on schedule.
+1. **Read the Monday scorecard notification** — the Q3-checkpoint evidence
+   arriving on schedule — and the "Jim Scheduled Rebalance" notification
+   every 21 trading days (next: 2026-09-21).
 
 Everything else is cron: the 4h filter checks (with their daily housekeeping)
 and the A3 tail pilot need only a laptop that's awake at some cron slot each
@@ -420,13 +454,14 @@ Edit the crontab:
 ```
 crontab -e
 ```
-and ensure these three lines are present (pointing at the **deployed** wrappers
+and ensure these four lines are present (pointing at the **deployed** wrappers
 in `~/.fire-cron/`, never at `scripts/` under `~/Desktop` — see the TCC note
 above):
 ```
 0 0,4,8,12,16,20 * * * /Users/george/.fire-cron/cron_filter_check.sh spy
 5 1,5,9,13,17,21 * * * /Users/george/.fire-cron/cron_filter_check.sh btc
 0 9 * * 1 /Users/george/.fire-cron/cron_scorecard.sh
+10 * * * * /Users/george/.fire-cron/cron_scheduled_rebalance.sh
 ```
 (A crypto successor would add back the hourly `--if-due` line:
 `10 * * * * /Users/george/.fire-cron/cron_crypto_rebalance.sh`.)

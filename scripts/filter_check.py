@@ -15,19 +15,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from api.locks import file_rebalance_lock
 from data import filter_state
 from data.snapshots import take_snapshot
 from execution.alpaca_broker import ACCOUNT_INFO, AlpacaBroker
 from execution.notifications import notify_macos
-from execution.rebalance import (
-    check_price_staleness,
-    compute_rebalance,
-    execute_rebalance,
-)
-from execution.rebalance_log import log_rebalance
-from execution.risk_manager import RiskManager
-from execution.validation_gate import ValidationGateError, require_validated
+from execution.rebalance_runner import rebalance_account
 from strategies.portfolio import compute_btc_trend_filter, compute_spy_trend_filter
 
 # --- Config ---
@@ -177,116 +169,6 @@ def compute_filters(scope: str = "all") -> dict:
 def notify(title: str, message: str):
     """Thin wrapper — delegates to the shared `execution.notifications` helper."""
     notify_macos(title, message)
-
-
-def rebalance_account(account: int, dry_run: bool = False) -> dict:
-    """Run a full rebalance for one account. Returns result summary."""
-    strategy_id = ACCOUNT_INFO[account]["strategy"]
-    label = ACCOUNT_INFO[account]["label"]
-
-    log.info(f"  Account {account} ({label}): rebalancing strategy={strategy_id}")
-
-    if dry_run:
-        log.info(f"  Account {account}: DRY RUN — skipping execution")
-        return {"account": account, "status": "dry_run", "orders": 0}
-
-    try:
-        require_validated(account)
-    except ValidationGateError as e:
-        log.warning(f"  Account {account}: validation gate blocked — {e}")
-        return {"account": account, "status": "unvalidated", "orders": 0, "reason": str(e)}
-
-    try:
-        with file_rebalance_lock(account):
-            broker = AlpacaBroker(account=account)
-            risk_mgr = RiskManager(account=account)
-
-            result = compute_rebalance(
-                broker=broker,
-                strategy_id=strategy_id,
-                risk_manager=risk_mgr,
-            )
-
-            if result.risk_check.get("halted"):
-                log.warning(f"  Account {account}: catastrophe halt active — skipping")
-                return {"account": account, "status": "halted", "orders": 0}
-
-            if result.position_mismatch:
-                log.error(f"  Account {account}: position reconciliation failed — skipping")
-                return {"account": account, "status": "position_mismatch", "orders": 0}
-
-            if result.price_error:
-                log.error(f"  Account {account}: missing prices {result.missing_prices}")
-                return {"account": account, "status": "price_error", "orders": 0}
-
-            # Price staleness check
-            if result.prices:
-                drifted = check_price_staleness(broker, result.prices)
-                if drifted:
-                    log.error(f"  Account {account}: price drift detected: {drifted}")
-                    return {"account": account, "status": "price_drift", "orders": 0}
-
-            if not result.orders:
-                log.info(f"  Account {account}: no trades needed")
-                return {"account": account, "status": "no_trades", "orders": 0}
-
-            # Execute — try/finally so the journal survives any raise (R4)
-            order_results: list[dict] = []
-            execute_error: str | None = None
-            try:
-                order_results = execute_rebalance(broker, result)
-            except Exception as e:
-                execute_error = f"{type(e).__name__}: {e}"
-                log.error(f"  Account {account}: execute raised: {execute_error}", exc_info=True)
-            finally:
-                failed = [o for o in order_results if o.get("status") == "error"]
-                log_rebalance(
-                    account=account,
-                    strategy_id=strategy_id,
-                    portfolio_value=result.portfolio_value,
-                    orders_submitted=len(order_results),
-                    orders_failed=len(failed),
-                    order_details=order_results,
-                    spy_filter_active=result.spy_filter_active,
-                    spy_filter_scalar=result.spy_filter_scalar,
-                    btc_filter_active=result.btc_filter_active,
-                    btc_filter_scalar=result.btc_filter_scalar,
-                    vol_scalar=result.vol_scalar,
-                    vol_scalar_diagnostics=result.vol_scalar_diagnostics,
-                    raw_signal_weights=result.raw_signal_weights,
-                    post_filter_weights=result.post_filter_weights,
-                    execute_error=execute_error,
-                    source="filter_monitor",
-                    prices=result.prices,
-                    target_positions=result.target_positions,
-                    signal_asof=result.signal_asof,
-                )
-
-            if execute_error:
-                return {"account": account, "status": "execute_error", "orders": len(order_results), "error": execute_error}
-
-            take_snapshot(account)
-
-            from execution.position_reconciliation import save_expected_positions
-            save_expected_positions(account, result.target_positions or {}, result.portfolio_value)
-
-            log.info(
-                f"  Account {account}: {len(order_results)} orders"
-                + (f" ({len(failed)} failed)" if failed else "")
-            )
-            return {
-                "account": account,
-                "status": "executed",
-                "orders": len(order_results),
-                "failed": len(failed),
-            }
-
-    except OSError:
-        log.warning(f"  Account {account}: locked by another process — skipping")
-        return {"account": account, "status": "locked", "orders": 0}
-    except Exception as e:
-        log.error(f"  Account {account}: rebalance failed: {e}", exc_info=True)
-        return {"account": account, "status": "error", "error": str(e), "orders": 0}
 
 
 def main():
@@ -513,7 +395,7 @@ def _run_check(args, source: str):
     # Execute rebalances
     results = []
     for account in accounts_to_rebalance:
-        result = rebalance_account(account, dry_run=args.dry_run)
+        result = rebalance_account(account, source="filter_monitor", dry_run=args.dry_run, log=log)
         results.append(result)
 
     # Persist the flip. `track_flips` stamps `last_spy_flip` /

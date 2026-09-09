@@ -39,6 +39,7 @@ EXPECTED_CRON_MARKERS = [
     "cron_filter_check.sh spy",
     "cron_filter_check.sh btc",
     "cron_scorecard",
+    "cron_scheduled_rebalance",
 ]
 
 
@@ -120,10 +121,11 @@ FILTER_MONITOR_JOBS: list[tuple[str, str, str, tuple]] = [
 # matches FILTER_MONITOR_JOBS for the `_next_run_iso` helper.
 LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
     # (plist_label, job_id, name, journal_source_tag, schedule)
-    # Empty since 2026-07-18: the A4 daily job was the sole member and A4 is
-    # retired. Its journal-staleness tracking had also been misleading since
-    # ~06-01 — gate-skipped/no-trade runs never journal, so "last scheduled
-    # rebalance" aged even while the cron fired hourly on schedule.
+    # A4's daily job left 2026-07-18 with its retirement. Since 2026-09-09 the
+    # A1/A2 21-day rebalance is cron-fired (scripts/scheduled_rebalance.py,
+    # hourly --if-due); last run comes from journal entries tagged "scheduled".
+    ("cron_scheduled_rebalance", "scheduled_rebalance", "A1/A2 21-day rebalance",
+     "scheduled_rebalance", ("next_live_rebalance", 15, 10)),
 ]
 
 
@@ -161,6 +163,17 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
         if candidate <= now_utc:
             candidate = candidate + timedelta(days=1)
         return candidate.isoformat()
+    if kind == "next_live_rebalance":
+        # Next date on the live rebalance calendar, at the given ET wall time.
+        from zoneinfo import ZoneInfo
+        from data.trading_dates import next_live_rebalance_date, today_et
+        _, hour, minute = schedule
+        d = next_live_rebalance_date(today_et())
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        if d == today_et() and (now_et.hour, now_et.minute) >= (hour, minute):
+            d = next_live_rebalance_date(d)
+        when = datetime.fromisoformat(f"{d}T{hour:02d}:{minute:02d}").replace(tzinfo=ZoneInfo("America/New_York"))
+        return when.astimezone(timezone.utc).isoformat()
     if kind == "interval_seconds":
         if last_run_local is None:
             return None

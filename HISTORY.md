@@ -271,6 +271,21 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-09 — 21-day A1/A2 rebalance automated (cron, hourly `--if-due`)
+
+The manual "Preview → Execute at 3 PM ET" was the last calendar action and
+the weakest link: August slipped 8 days, A2 missed a cycle entirely, and
+with the grid fix below a late rebalance trades a stale ranking by
+construction. `scripts/scheduled_rebalance.py` fires hourly and trades
+when the latest settled S&P bar is a grid date (or within a 7-day
+catch-up), nothing is journaled since, and the market closes within 75
+min — through `execution/rebalance_runner.rebalance_account`, extracted
+from filter_check.py so the filter monitor and the scheduler share one
+guarded path. Calendar helpers (`REBALANCE_ANCHOR`, NYSE holidays,
+`live_rebalance_dates`) moved to `data/trading_dates.py`; the Ops panel
+lists the job (next run from the calendar, last run from the journal tag
+`scheduled_rebalance`). Runbook in AUTOMATION.md.
+
 ## 2026-09-09 — Live traded stale rankings: re-ranking grid phased to the live calendar
 
 Decomposing A1's 07-22→08-20 cycle (live −0.99% vs signal +1.88%): live
