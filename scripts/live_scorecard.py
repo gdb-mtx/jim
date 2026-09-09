@@ -31,6 +31,11 @@ from strategies.portfolio_backtest import run_portfolio
 CLEAN_START = pd.Timestamp("2026-04-21")
 CYCLE_DAYS = 21
 ACCOUNTS = {1: "sm_filtered", 2: "trend_lowvol"}
+# Real-money allocation between the two strategies (2026-08-12 sizing
+# decision). The paper accounts sit ~50/50 by equity and are never reset —
+# a reset would print as a fake ±38% cycle here — so the 70/30 book is
+# scored synthetically from per-account returns instead.
+BOOK_WEIGHTS = {1: 0.70, 2: 0.30}
 
 
 def load_live(account: int) -> pd.Series:
@@ -59,6 +64,8 @@ def main(notify: bool = False):
     if bounds[-1] < cal[-1]:
         bounds.append(cal[-1])
 
+    cycle_live: dict[int, dict] = {}   # acct -> {(a, b): live cycle return}
+    cycle_spy: dict = {}
     for acct, strat in ACCOUNTS.items():
         live = load_live(acct)
         _, sig_r = run_portfolio(strat, start="2023-01-01")
@@ -67,12 +74,15 @@ def main(notify: bool = False):
         print(f"\n=== A{acct} ({strat}) — cycles since {CLEAN_START.date()} ===")
         print(f"{'cycle':22s} {'live':>8s} {'signal':>8s} {'drag':>7s} {'SPY':>8s} {'alpha':>7s}")
         tot = {"live": 1.0, "sig": 1.0, "spy": 1.0}
+        cycle_live[acct] = {}
         for a, b in zip(bounds, bounds[1:]):
             lv = window_return(live, a, b)
             sg = window_return(signal, a, b)
             sp = window_return(spy, a, b)
             if lv is None or sp is None:
                 continue
+            cycle_live[acct][(a, b)] = lv
+            cycle_spy[(a, b)] = sp
             tag = f"{a.date()} → {b.date()}"
             drag = f"{lv - sg:+7.2%}" if sg is not None else "      —"
             print(f"{tag:22s} {lv:+8.2%} {(f'{sg:+8.2%}' if sg is not None else '       —')} "
@@ -86,6 +96,22 @@ def main(notify: bool = False):
         print(f"Q3 gate (alpha >= 0 over trailing cycles): "
               f"{'MET' if lv - sp >= 0 else 'NOT MET'} at {lv - sp:+.2%} cumulative")
         summaries.append(f"A{acct} alpha {lv - sp:+.1%}")
+
+    # Synthetic book: weights re-applied at every cycle boundary.
+    w = " / ".join(f"{int(v * 100)}% A{k}" for k, v in BOOK_WEIGHTS.items())
+    print(f"\n=== BOOK (synthetic {w}, rebalanced each cycle) ===")
+    print(f"{'cycle':22s} {'book':>8s} {'SPY':>8s} {'alpha':>7s}")
+    tot_book, tot_spy = 1.0, 1.0
+    for key, sp in cycle_spy.items():
+        if any(key not in cycle_live[k] for k in BOOK_WEIGHTS):
+            continue
+        bk = sum(BOOK_WEIGHTS[k] * cycle_live[k][key] for k in BOOK_WEIGHTS)
+        print(f"{f'{key[0].date()} → {key[1].date()}':22s} {bk:+8.2%} {sp:+8.2%} {bk - sp:+7.2%}")
+        tot_book *= 1 + bk
+        tot_spy *= 1 + sp
+    bk, sp = tot_book - 1, tot_spy - 1
+    print(f"{'CUMULATIVE':22s} {bk:+8.2%} {sp:+8.2%} {bk - sp:+7.2%}")
+    summaries.append(f"book alpha {bk - sp:+.1%}")
 
     summaries.append(shadow_a4())
     if notify:
