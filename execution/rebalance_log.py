@@ -34,6 +34,7 @@ def log_rebalance(
     source: str = "manual",
     prices: dict[str, float] | None = None,
     target_positions: dict[str, float] | None = None,
+    signal_asof: str = "",
 ):
     """Append a rebalance event to the JSONL log.
 
@@ -79,6 +80,8 @@ def log_rebalance(
         "btc_filter_scalar": btc_filter_scalar,
         "vol_scalar": vol_scalar,
         "vol_scalar_diagnostics": vol_scalar_diagnostics,
+        # Grid date of the ranking traded (2026-09-09) — post-mortems can see slips.
+        "signal_asof": signal_asof,
         # Intermediate weight stages — post-mortems don't depend on the live cache.
         "raw_signal_weights": raw_signal_weights,
         "post_filter_weights": post_filter_weights,

@@ -23,7 +23,7 @@ A simple VIX threshold avoids the worst of these crashes.
 
 import numpy as np
 import pandas as pd
-from strategies.base import BaseStrategy
+from strategies.base import BaseStrategy, REBALANCE_ANCHOR
 
 
 class StockMomentum(BaseStrategy):
@@ -47,6 +47,7 @@ class StockMomentum(BaseStrategy):
         vix_threshold_exit: float = 45.0,
         vix_reduce_factor: float = 0.5,
         weighting_scheme: str = "equal_weight",
+        rebalance_anchor: str | None = REBALANCE_ANCHOR,
     ):
         """
         Args:
@@ -54,6 +55,8 @@ class StockMomentum(BaseStrategy):
             skip_recent: Skip most recent N days to avoid short-term reversal
             top_n: Number of top stocks to hold
             holding_period_days: Rebalance frequency (21 = monthly)
+            rebalance_anchor: Grid phase — see strategies.base.rebalance_dates.
+                Default = the live calendar; None = count from the first bar.
             vol_target: Target annualized vol per position
             vol_lookback_days: Volatility estimation window
             vix_threshold_reduce: VIX level to halve exposure
@@ -73,6 +76,7 @@ class StockMomentum(BaseStrategy):
         self.vix_threshold_exit = vix_threshold_exit
         self.vix_reduce_factor = vix_reduce_factor
         self.weighting_scheme = weighting_scheme
+        self.rebalance_anchor = rebalance_anchor
         self._vix = None
         self._market_caps = None
 
@@ -196,8 +200,8 @@ class StockMomentum(BaseStrategy):
         rebalance_mask = pd.Series(False, index=prices.index)
         valid_idx = weights.dropna(how="all").index
         if len(valid_idx) > 0:
-            rebalance_dates = valid_idx[::self.holding_period_days]
-            rebalance_mask.loc[rebalance_dates] = True
+            grid_dates = self.rebalance_grid(valid_idx)
+            rebalance_mask.loc[grid_dates] = True
 
         weights[~rebalance_mask] = np.nan
         weights = weights.ffill()

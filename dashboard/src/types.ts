@@ -174,6 +174,8 @@ export interface RebalancePreview {
   price_error?: boolean;
   position_mismatch?: boolean;
   position_mismatch_details?: string;
+  signal_asof?: string;
+  signal_age_days?: number | null;
 }
 
 export interface RebalanceExecuteResult {

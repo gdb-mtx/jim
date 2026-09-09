@@ -259,6 +259,7 @@ def rebalance_account(account: int, dry_run: bool = False) -> dict:
                     source="filter_monitor",
                     prices=result.prices,
                     target_positions=result.target_positions,
+                    signal_asof=result.signal_asof,
                 )
 
             if execute_error:

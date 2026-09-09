@@ -31,6 +31,7 @@ to yfinance behavior. Parquet was just the medium that recorded it.
 | 2026-08-08 | refresh-cache "stuck" ~25 min; second click doubled it | Saturday rate-limit ~90s/batch × 24h-TTL expiry landing in-request |
 | 2026-08-10 | etf_prices truncated to 903 rows / crypto to 8 coins from 2025 | not yfinance's fault — shared caches writable by short-lookback callers (fixed: canonical floor starts) |
 | 2026-08-11 | Combined-tab chart frozen; server reload wedged | uncached SPY download on every 30s poll → session rate-limited into indefinite hangs (blocks, doesn't raise) |
+| 2026-09-08 | sp500_prices truncated to 673 rows (2024+); validation "insufficient history" | not yfinance's fault — macro composite's `start="2024-01-01"` refresh had no canonical floor (fixed: `SP500_CACHE_FLOOR` + truncation check on read, HISTORY.md 2026-09-09) |
 
 ## 2026-08-11 — Hot-path audit (class-level fix)
 

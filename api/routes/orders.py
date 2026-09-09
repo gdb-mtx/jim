@@ -123,6 +123,8 @@ async def preview_rebalance(
         "price_error": result.price_error,
         "position_mismatch": result.position_mismatch,
         "position_mismatch_details": result.position_mismatch_details,
+        "signal_asof": result.signal_asof,
+        "signal_age_days": result.signal_age_days,
     }
 
 
@@ -240,6 +242,7 @@ async def _execute_under_lock(account: int, strategy_id: str):
             source="manual",
             prices=result.prices,
             target_positions=result.target_positions,
+            signal_asof=result.signal_asof,
         )
 
     if execute_error:

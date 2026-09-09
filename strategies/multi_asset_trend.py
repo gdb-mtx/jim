@@ -25,7 +25,7 @@ Key properties:
 
 import numpy as np
 import pandas as pd
-from strategies.base import BaseStrategy
+from strategies.base import BaseStrategy, REBALANCE_ANCHOR
 
 
 # Deliberately small, uncorrelated universe — one ETF per asset class
@@ -48,6 +48,7 @@ class MultiAssetTrend(BaseStrategy):
         holding_period_days: int = 21,
         vol_lookback_days: int = 63,
         vol_target: float = 0.10,
+        rebalance_anchor: str | None = REBALANCE_ANCHOR,
     ):
         """
         Args:
@@ -56,12 +57,14 @@ class MultiAssetTrend(BaseStrategy):
             holding_period_days: Rebalance frequency (21 = monthly)
             vol_lookback_days: Volatility estimation window
             vol_target: Target annualized vol per position
+            rebalance_anchor: Grid phase — see strategies.base.rebalance_dates.
         """
         self.lookback_days = lookback_days
         self.ma_period = ma_period
         self.holding_period_days = holding_period_days
         self.vol_lookback_days = vol_lookback_days
         self.vol_target = vol_target
+        self.rebalance_anchor = rebalance_anchor
 
     def generate_signals(self, prices: pd.DataFrame) -> pd.DataFrame:
         """Generate trend signals across asset classes.
@@ -109,8 +112,8 @@ class MultiAssetTrend(BaseStrategy):
         rebalance_mask = pd.Series(False, index=prices.index)
         valid_idx = weights.dropna(how="all").index
         if len(valid_idx) > 0:
-            rebalance_dates = valid_idx[:: self.holding_period_days]
-            rebalance_mask.loc[rebalance_dates] = True
+            grid_dates = self.rebalance_grid(valid_idx)
+            rebalance_mask.loc[grid_dates] = True
 
         weights[~rebalance_mask] = np.nan
         weights = weights.ffill()

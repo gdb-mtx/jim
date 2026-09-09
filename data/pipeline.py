@@ -187,6 +187,9 @@ def download_and_cache(
                     f"Cache {cache_path.name} has unexpected columns "
                     f"{sorted(extras)} — refreshing"
                 )
+            elif cached.index[0] > pd.Timestamp("2005-01-01") + pd.Timedelta(days=7):
+                # A truncated frame already on disk must not live out its TTL.
+                print(f"Cache {cache_path.name} starts {cached.index[0].date()} (floor 2005) — truncated, refreshing")
             elif all(s in cached.columns for s in symbols):
                 if content_is_stale(cached):
                     print(f"Cache {cache_path.name} content is stale — refreshing")

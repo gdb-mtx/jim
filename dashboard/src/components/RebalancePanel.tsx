@@ -299,6 +299,22 @@ export default memo(function RebalancePanel({
             </div>
           )}
 
+          {/* Ranking as-of: the grid date the book was computed on. Live is
+              meant to trade the bar after it; older means the rebalance slipped. */}
+          {preview.signal_asof && (
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs ${
+                (preview.signal_age_days ?? 0) > 5
+                  ? "border-[#ffc04d40] bg-[#ffc04d08] text-[#ffc04d]"
+                  : "border-[#2a2a3e] text-[#8888a0]"
+              }`}
+            >
+              Ranking as of {preview.signal_asof}
+              {preview.signal_age_days != null && ` (${preview.signal_age_days}d old)`}
+              {(preview.signal_age_days ?? 0) > 5 && " — rebalance slipped past its grid date; this book is stale"}
+            </div>
+          )}
+
           {/* Missing prices warning */}
           {preview.missing_prices && preview.missing_prices.length > 0 && (
             <div className="rounded-lg border border-[#ffc04d40] bg-[#ffc04d08] px-3 py-2 text-xs text-[#ffc04d]">

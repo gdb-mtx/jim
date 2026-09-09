@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 # Single-flight refresh: prevents concurrent callers from interleaving batches and triggering Yahoo 429s.
 _SP500_REFRESH_LOCK = threading.Lock()
 
+# Canonical floor for the shared S&P cache. Every write downloads from here
+# regardless of the caller's `start`, and a cached frame starting later is
+# treated as truncated. 2026-09-08: the 4-hourly macro composite
+# (start="2024-01-01") hit the TTL-expired cache and rewrote it as 673 rows;
+# every validation/scorecard/backtest then ran on 2024+ data. Same class as
+# the 2026-08-10 etf_prices incident (fixed in download_and_cache).
+SP500_CACHE_FLOOR = "2010-01-01"
+
+
+def _is_truncated(prices: pd.DataFrame) -> bool:
+    return prices.index[0] > pd.Timestamp(SP500_CACHE_FLOOR) + pd.Timedelta(days=7)
+
 
 def get_sp500_tickers() -> list[str]:
     """Get current S&P 500 constituent tickers.
@@ -113,6 +125,8 @@ def download_sp500_prices(
         prices = pd.read_parquet(cache_path)
         if len(prices) == 0:
             print("S&P 500 cache has 0 rows — refreshing")
+        elif _is_truncated(prices):
+            print(f"S&P 500 cache starts {prices.index[0].date()} (floor {SP500_CACHE_FLOOR}) — truncated, refreshing")
         else:
             from data.pipeline import content_is_stale
             if content_is_stale(prices):
@@ -127,6 +141,8 @@ def download_sp500_prices(
             prices = pd.read_parquet(cache_path)
             if len(prices) == 0:
                 print("S&P 500 cache has 0 rows — refreshing (after waiting on lock)")
+            elif _is_truncated(prices):
+                print("S&P 500 cache is truncated — refreshing (after waiting on lock)")
             else:
                 from data.pipeline import content_is_stale
                 if content_is_stale(prices):
@@ -143,7 +159,10 @@ def download_sp500_prices(
         if max_tickers:
             tickers = tickers[:max_tickers]
 
-        print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {start}...")
+        # Download from the floor of (caller start, SP500_CACHE_FLOOR) so a
+        # short-lookback caller can never truncate the shared cache.
+        dl_start = min(start, SP500_CACHE_FLOOR)
+        print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {dl_start}...")
         print("This may take a few minutes on first run...")
 
         # Batched download; raise on persistent batch failure rather than write a truncated cache.
@@ -160,7 +179,7 @@ def download_sp500_prices(
 
             try:
                 batch_prices = download_with_retry(
-                    batch, start=start, end=end, min_coverage_ratio=0.5
+                    batch, start=dl_start, end=end, min_coverage_ratio=0.5
                 )
             except Exception as e:
                 print(f"  Batch {batch_num} exhausted retries: {e}")
@@ -196,8 +215,13 @@ def download_sp500_prices(
         from data.plausibility import assert_plausible_df
         assert_plausible_df(prices)
 
-        write_parquet_atomic(prices, cache_path)
-        print(f"Cached to {cache_path}")
+        # A right-truncated (end-bounded) or subset (max_tickers) frame must
+        # never become the shared cache.
+        if end is None and max_tickers is None:
+            write_parquet_atomic(prices, cache_path)
+            print(f"Cached to {cache_path}")
+        else:
+            print("end/max_tickers request — no cache write")
 
         return prices
 

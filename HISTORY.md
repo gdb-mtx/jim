@@ -271,6 +271,44 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-09 — Live traded stale rankings: re-ranking grid phased to the live calendar
+
+Decomposing A1's 07-22→08-20 cycle (live −0.99% vs signal +1.88%): live
+and the signal held the same 15 names (13/15 overlap; +0.23% execution
+residual in live's favour), but the signal re-ranked on 08-07 while live
+kept the July semis book until 08-28 — **−2.33pp of the −2.88pp was
+rebalance timing**. Root cause: every strategy's grid was
+`valid_idx[::holding_period_days]`, i.e. every 21 bars counted from the
+first bar of whatever frame it was handed. Live rebalances on the
+04-21-anchored calendar and reads `signals.iloc[-1]` — the ranking
+forward-filled from the last grid date — so live always traded a
+2-3-week-old ranking (08-28 bought the 08-07 book). Worse, the phase
+depended on the frame start: live sliced ETF prices to 2023+ while the
+backtest started 2010, and a truncated cache (below) silently moved the
+grid.
+
+Fix: `strategies/base.py` `REBALANCE_ANCHOR = "2026-04-21"` +
+`rebalance_dates()`; every strategy's grid (10 call sites, 7 files) is
+now every 21 bars phased so the bar *before* each live rebalance date is
+a grid date (live trades on D with data through D-1, so row D-1 must be
+the fresh ranking). The backtest's phase IS the live phase; A1 and A2's
+components share one grid. `signal_asof` / `signal_age_days` now ride
+through preview, the journal and the panel — a rebalance that slips past
+its grid date shows its book as stale instead of hiding it. The live
+scorecard's `CLEAN_START` reads the same constant. OOS numbers re-run at
+the anchored phase (see the 2026-09-09 validation entries in
+STRATEGIES.md / CLAUDE.md).
+
+Same session, second cache-truncation incident: `download_sp500_prices`
+had no canonical floor, and the 4-hourly macro composite calls it with
+`start="2024-01-01"`. On 09-08 16:01 it was first to a TTL-expired cache
+and rewrote it as 673 rows from 2024 — validation, scorecard and every
+backtest then ran on 2.7 years of data (my first re-validation came back
+FAIL for "insufficient history"). `SP500_CACHE_FLOOR = "2010-01-01"`:
+writes download from the floor, cache hits refuse a frame starting after
+it, end-bounded / max_tickers requests never write. The ETF cache-hit
+path got the same depth check. Class now closed for all shared caches.
+
 ## 2026-09-09 — Reconciliation guard blinded by a corporate action (A2 blocked 26 days)
 
 EA was taken private; Alpaca ledgered a cash merger on 2026-08-14 (50 sh

@@ -28,7 +28,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from strategies.portfolio_backtest import run_portfolio
 
-CLEAN_START = pd.Timestamp("2026-04-21")
+from strategies.base import REBALANCE_ANCHOR
+
+# Cycle boundaries share the strategies' re-ranking phase by construction.
+CLEAN_START = pd.Timestamp(REBALANCE_ANCHOR)
 CYCLE_DAYS = 21
 ACCOUNTS = {1: "sm_filtered", 2: "trend_lowvol"}
 # Real-money allocation between the two strategies (2026-08-12 sizing

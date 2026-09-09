@@ -52,6 +52,9 @@ class RebalanceResult:
     price_error: bool = False
     position_mismatch: bool = False
     position_mismatch_details: str = ""
+    # Grid date of the ranking being traded, and its age in calendar days.
+    signal_asof: str = ""
+    signal_age_days: int | None = None
 
 
 def get_current_signals(
@@ -205,6 +208,7 @@ def _get_portfolio_signals(
 
     # Get latest signals from each component
     combined_weights: dict[str, float] = {}
+    grid_dates: list = []
     for strategy_id, blend_weight in weights.items():
         if strategy_id in CRYPTO_STRATEGIES:
             strategy = CRYPTO_STRATEGIES[strategy_id]()
@@ -234,10 +238,17 @@ def _get_portfolio_signals(
             for sym, w in latest.items():
                 if abs(w) > 1e-6:
                     combined_weights[sym] = combined_weights.get(sym, 0) + w * blend_weight
+        if strategy.last_grid_date is not None:
+            grid_dates.append(strategy.last_grid_date)
 
     # N4: snapshot the raw (pre-overlay) weights before any filter runs.
     if stages_out is not None:
         stages_out["raw"] = dict(combined_weights)
+        # The ranking's as-of date: the grid row the latest weights were
+        # computed on (oldest component wins). Live is meant to trade on the
+        # bar after it; anything older means the rebalance slipped.
+        if grid_dates:
+            stages_out["signal_asof"] = min(grid_dates).strftime("%Y-%m-%d")
 
     # Apply SPY trend filter
     if use_spy_filter:
@@ -359,6 +370,17 @@ def compute_rebalance(
     target_weights = get_current_signals(strategy_id, broker=broker, stages_out=stages)
     raw_signal_weights = stages.get("raw", dict(target_weights))
     post_filter_weights = stages.get("post_filter", dict(target_weights))
+    signal_asof = stages.get("signal_asof", "")
+    signal_age_days = None
+    if signal_asof:
+        from data.trading_dates import today_et
+        signal_age_days = (pd.Timestamp(today_et()) - pd.Timestamp(signal_asof)).days
+        if signal_age_days > 5:
+            log.warning(
+                f"account={broker.account} strategy={strategy_id}: ranking as of {signal_asof} "
+                f"is {signal_age_days}d old — rebalance slipped past its grid date "
+                f"(HISTORY.md 2026-09-09)"
+            )
 
     # Vol-scaling overlay. scalar_cap comes from the portfolio config (single
     # source with the backtest); >1.0 extends into Reg-T margin on equity
@@ -604,6 +626,8 @@ def compute_rebalance(
         prices=prices,
         missing_prices=missing_prices,
         price_error=price_error,
+        signal_asof=signal_asof,
+        signal_age_days=signal_age_days,
     )
 
 

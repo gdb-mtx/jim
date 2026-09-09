@@ -26,7 +26,7 @@ to avoid value traps — stocks that are low-vol because they're dying.
 
 import numpy as np
 import pandas as pd
-from strategies.base import BaseStrategy
+from strategies.base import BaseStrategy, REBALANCE_ANCHOR
 
 
 class LowVolatility(BaseStrategy):
@@ -53,9 +53,11 @@ class LowVolatility(BaseStrategy):
         vix_threshold_reduce: float = 35.0,
         vix_threshold_exit: float = 45.0,
         vix_reduce_factor: float = 0.5,
+        rebalance_anchor: str | None = REBALANCE_ANCHOR,
     ):
         """
         Args:
+            rebalance_anchor: Grid phase — see strategies.base.rebalance_dates.
             vol_lookback_days: Window for ranking stocks by vol (63 = 3 months)
             momentum_lookback_days: Window for momentum quality filter (252 = 12 months)
             top_n: Number of low-vol stocks to hold
@@ -74,6 +76,7 @@ class LowVolatility(BaseStrategy):
         self.position_vol_lookback = position_vol_lookback
         self.vix_threshold_reduce = vix_threshold_reduce
         self.vix_threshold_exit = vix_threshold_exit
+        self.rebalance_anchor = rebalance_anchor
         self.vix_reduce_factor = vix_reduce_factor
         self._vix = None
 
@@ -149,8 +152,8 @@ class LowVolatility(BaseStrategy):
         rebalance_mask = pd.Series(False, index=prices.index)
         valid_idx = weights.dropna(how="all").index
         if len(valid_idx) > 0:
-            rebalance_dates = valid_idx[:: self.holding_period_days]
-            rebalance_mask.loc[rebalance_dates] = True
+            grid_dates = self.rebalance_grid(valid_idx)
+            rebalance_mask.loc[grid_dates] = True
 
         weights[~rebalance_mask] = np.nan
         weights = weights.ffill()

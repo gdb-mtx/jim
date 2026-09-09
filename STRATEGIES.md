@@ -10,14 +10,14 @@ Numbers below are post the C1+C2+C4+C6 fix pack (calendar/ppy convention, BTC MA
 
 | Strategy | Status | CAGR | MaxDD | Calmar | Bootstrap p5 | Win rate |
 |---|---|---|---|---|---|---|
-| **Stock Momentum + SPY + book vol-scaling (Acct 1)** ⚠ C3 | PASS (08-12) | **+33.0%** | **-13.2%** | **2.49** | +14.4% | 58% |
-| **Trend + Low-Vol, cap=1.5 (Acct 2)** | MARGINAL (08-12) | **+12.9%** | **-12.3%** | **1.05** | +9.7% | 54% |
+| **Stock Momentum + SPY + book vol-scaling (Acct 1)** ⚠ C3 | PASS (09-09) | **+34.6%** | **-13.4%** | **2.59** | +14.3% | 58% |
+| **Trend + Low-Vol, cap=1.5 (Acct 2)** | MARGINAL (09-09) | **+11.8%** | **-13.1%** | **0.90** | +8.8% | 54% |
 | *Crypto Momentum (Acct 4)* — RETIRED 2026-07-13 | RETIRED | *+38.6%* | *-12.6%* | *3.05* | — | — |
 | *Reversal + Momentum (Acct 3)* — retired; hosts tail pilot | RETIRED | *+14.5%* | *-7.2%* | *2.03* | — | — |
 
 No fresh combined-book OOS number is published for the current configs — the 08-20 rebalance moves the allocation to ~70/30 A1/A2, and the old 50/50 figure (24.1%, pre-financing-model) is superseded. Shadow tracking of retired A4 runs in `scripts/live_scorecard.py` (reopen threshold: shadow > +10%).
 
-A1 PASSes the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates (revalidated 2026-08-12 at vol_target 0.18 with financing modeled: OOS CAGR 33.0%, MaxDD -13.2%, Calmar 2.49, ratio 174%, bootstrap p5 +14.4%). **A2 is MARGINAL as of 2026-08-12** — OOS CAGR 12.9%, Calmar 1.05, ratio 84%. Nothing about the strategy changed: the 07-18 PASS at 16.8% booked ~3pp of margin financing for free, and the vol_target raise is a no-op for A2 (raw vol ~7% pins the scalar at the cap either way). MARGINAL is allowed for paper; the pre-committed Q4 trigger stands — live Calmar < 1.0 at the review → kill or DBMF swap. **A4 RETIRED 2026-07-13** — walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87) + bug-era live drag never re-validated; canonical narrative in `HISTORY.md`.
+A1 PASSes the CAGR ≥ 15% / Calmar ≥ 1.0 / OOS/IS ≥ 70% gates (revalidated 2026-09-09 with the re-ranking grid phased to the live calendar — `REBALANCE_ANCHOR`, HISTORY.md 2026-09-09 — vol_target 0.18, financing modeled: OOS CAGR 34.6%, MaxDD -13.4%, Calmar 2.59, ratio 185%, bootstrap p5 +14.3%; the 08-12 run at the old phase read 33.0% / 2.49). **A2 is MARGINAL as of 2026-09-09** — OOS CAGR 11.8%, Calmar 0.90, ratio 78% (08-12 old phase: 12.9% / 1.05 / 84%). The phase change alone moved A2's Calmar from 1.05 to 0.90 — under the 1.0 gate — which says how thin the edge is. Nothing about the strategy changed: the 07-18 PASS at 16.8% booked ~3pp of margin financing for free, and the vol_target raise is a no-op for A2 (raw vol ~7% pins the scalar at the cap either way). MARGINAL is allowed for paper; the pre-committed Q4 trigger stands — live Calmar < 1.0 at the review → kill or DBMF swap. **A4 RETIRED 2026-07-13** — walk-forward edge decay (newest window +9.6% CAGR, Calmar 0.87) + bug-era live drag never re-validated; canonical narrative in `HISTORY.md`.
 
 A3's historical numbers retained as MARGINAL per last validation; strategy available in Backtests → Building Blocks as `reversal_blend`.
 

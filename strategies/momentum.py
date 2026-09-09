@@ -93,8 +93,8 @@ class CrossSectionalMomentum(BaseStrategy):
         rebalance_mask = pd.Series(False, index=prices.index)
         valid_idx = weights.dropna(how="all").index
         if len(valid_idx) > 0:
-            rebalance_dates = valid_idx[::self.holding_period_days]
-            rebalance_mask.loc[rebalance_dates] = True
+            grid_dates = self.rebalance_grid(valid_idx)
+            rebalance_mask.loc[grid_dates] = True
 
         weights[~rebalance_mask] = np.nan
         weights = weights.ffill()
@@ -214,8 +214,8 @@ class DualMomentum(BaseStrategy):
         rebalance_mask = pd.Series(False, index=prices.index)
         valid_idx = weights.dropna(how="all").index
         if len(valid_idx) > 0:
-            rebalance_dates = valid_idx[::self.holding_period_days]
-            rebalance_mask.loc[rebalance_dates] = True
+            grid_dates = self.rebalance_grid(valid_idx)
+            rebalance_mask.loc[grid_dates] = True
 
         weights[~rebalance_mask] = np.nan
         weights = weights.ffill()
