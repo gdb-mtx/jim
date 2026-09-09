@@ -359,7 +359,7 @@ def _daily_drift_check():
 
         for acct in active_accounts():
             broker = AlpacaBroker(account=acct)
-            recon = check_position_consistency(acct, broker.get_position_map())
+            recon = check_position_consistency(acct, broker.get_position_map(), broker=broker)
             if not recon.consistent:
                 log.warning(f"DRIFT account {acct}: {recon.details[:300]}")
                 notify(f"Jim Drift (acct {acct})", recon.details[:200])

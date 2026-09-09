@@ -172,6 +172,8 @@ export interface RebalancePreview {
   prices?: Record<string, number>;
   missing_prices?: string[];
   price_error?: boolean;
+  position_mismatch?: boolean;
+  position_mismatch_details?: string;
 }
 
 export interface RebalanceExecuteResult {

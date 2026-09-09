@@ -121,6 +121,8 @@ async def preview_rebalance(
         "prices": result.prices,
         "missing_prices": result.missing_prices,
         "price_error": result.price_error,
+        "position_mismatch": result.position_mismatch,
+        "position_mismatch_details": result.position_mismatch_details,
     }
 
 
@@ -169,6 +171,7 @@ async def _execute_under_lock(account: int, strategy_id: str):
         raise HTTPException(
             status_code=409,
             detail="Position reconciliation failed — Alpaca positions don't match expected state. "
+                   f"{result.position_mismatch_details} "
                    "Check data/risk_state/expected_positions_acct*.json and rebalance log.",
         )
 

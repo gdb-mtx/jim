@@ -481,6 +481,32 @@ class AlpacaBroker:
             for o in orders
         ]
 
+    # Account-activity types that change share counts without an order of
+    # ours: merger/acquisition, reorganization, symbol change, split,
+    # spin-off, share journal. Alpaca rejects the older SSO/SSP split codes.
+    CORPORATE_ACTION_TYPES = ["MA", "REORG", "SC", "SPLIT", "SPIN", "JNLS"]
+
+    def get_corporate_actions(self, after: str) -> list[dict]:
+        """Corporate-action ledger entries since `after` (ISO-8601).
+
+        Used by position reconciliation to tell a broker-ledgered event
+        (EA cash merger 2026-08-14) from a phantom-position bug. The SDK
+        needs a list here — a string is treated as a single URL-path type.
+        """
+        acts = self.api.get_activities(
+            activity_types=list(self.CORPORATE_ACTION_TYPES), after=after
+        )
+        return [
+            {
+                "symbol": a._raw.get("symbol"),
+                "activity_type": a._raw.get("activity_type"),
+                "date": a._raw.get("date"),
+                "qty": a._raw.get("qty"),
+                "description": a._raw.get("description", ""),
+            }
+            for a in acts
+        ]
+
     def cancel_all_orders(self) -> int:
         """Cancel all open orders. Returns number cancelled."""
         cancelled = self.api.cancel_all_orders()

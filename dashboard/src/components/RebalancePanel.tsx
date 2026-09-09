@@ -314,7 +314,12 @@ export default memo(function RebalancePanel({
           )}
 
           {/* Orders table */}
-          {preview.orders.length === 0 ? (
+          {preview.position_mismatch ? (
+            <div className="whitespace-pre-line rounded-lg border border-[#ff4d6a40] bg-[#ff4d6a08] px-3 py-2 text-xs text-[#ff4d6a]">
+              Rebalance blocked — position reconciliation failed. Broker positions don't match the state saved at the last rebalance:{"\n"}
+              {preview.position_mismatch_details}
+            </div>
+          ) : preview.orders.length === 0 ? (
             <p className="py-4 text-center text-sm text-[#00d4aa]">
               Portfolio already at target — no trades needed
             </p>

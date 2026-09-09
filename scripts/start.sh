@@ -41,7 +41,11 @@ fi
 #   throttling on the uvicorn process. Without this, a backgrounded
 #   Terminal lets App Nap delay APScheduler timers past their misfire grace.
 echo "Starting backend on :8001 (logging to $LOG_FILE)..."
+# --timeout-graceful-shutdown: without it a --reload waits forever on any
+# in-flight request whose worker thread is stuck, and the server wedges
+# with :8001 still listening (2026-08-11 and 2026-09-09 incidents).
 caffeinate -is $UV run uvicorn api.main:app --reload --port 8001 \
+  --timeout-graceful-shutdown 10 \
   --log-config "$PROJECT_DIR/scripts/log_config.json" \
   >> "$LOG_FILE" 2>&1 &
 BACKEND_PID=$!

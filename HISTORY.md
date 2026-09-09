@@ -271,6 +271,32 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-09 — Reconciliation guard blinded by a corporate action (A2 blocked 26 days)
+
+EA was taken private; Alpaca ledgered a cash merger on 2026-08-14 (50 sh
+→ $10,500 at $210). `execution/position_reconciliation.py` — built for
+Alpaca's phantom-position bug — saw "EA missing vs expected 50" and
+`compute_rebalance` returned zero targets and zero orders, which the
+dashboard rendered as the green "Portfolio already at target — no trades
+needed." Every A2 preview from 08-14 on, including the 08-20 cycle-1
+rebalance, was silently blocked; the only signal was the 4-hourly "Jim
+Drift (acct 2)" macOS notification. Execute was correctly guarded (409),
+but unreachable — the UI hides the button when the order list is empty.
+
+Fix: (1) the guard consults the broker ledger on mismatch —
+`AlpacaBroker.get_corporate_actions()` (MA/REORG/SC/SPLIT/SPIN/JNLS
+since the saved state's timestamp) — and a mismatch explained by a
+ledgered event passes with the event cited; phantom shorts never pass.
+State re-baselines at the next successful execute. (2) Preview now
+returns `position_mismatch` + details and the panel shows a red
+"Rebalance blocked" block instead of the green lie. (3) Same broker
+lookup wired into the 4-hourly drift check.
+
+Same session: editing `execution/alpaca_broker.py` wedged the dev server
+— uvicorn `--reload` waits forever on an in-flight request whose worker
+thread is stuck (the 08-11 "server reload wedged" line was this class).
+`scripts/start.sh` now passes `--timeout-graceful-shutdown 10`.
+
 ## 2026-08-13 — Crypto cache refresh migrated yfinance → Alpaca (C10 class closed for backtest caches)
 
 The two backtest-only crypto caches (`btc_prices`, `crypto_prices`) were
