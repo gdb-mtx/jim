@@ -5,7 +5,8 @@ The log is append-only and has no rotation policy. Readers must tail-scan
 as the file ages.
 
 Each filter_check.py invocation emits a block starting with a 60-equals
-separator and a `FIRE Filter Check starting (source=X, scope=Y)` header.
+separator and a `Jim Filter Check starting (source=X, scope=Y)` header
+(`FIRE ...` before the 2026-08-12 rename; both parse).
 Subsequent lines within the block include:
 
 - `Filters computed in T.Ts: SPY=S.S (...) [, BTC=S.S (...)]`
@@ -43,7 +44,7 @@ _LINE_RE = re.compile(
     r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(?P<level>\w+)\] (?P<msg>.*)$"
 )
 _HEADER_RE = re.compile(
-    r"^FIRE Filter Check starting(?: \(source=(?P<source>[^,]+), scope=(?P<scope>[^)]+)\))?$"
+    r"^(?:FIRE|Jim) Filter Check starting(?: \(source=(?P<source>[^,]+), scope=(?P<scope>[^)]+)\))?$"
 )
 _FLIP_RE = re.compile(
     r"^(?P<filter>SPY|BTC) filter changed: (?P<from>[\d.]+) → (?P<to>[\d.]+) \((?P<direction>\w+)\)$"
@@ -94,7 +95,7 @@ def _parse_timestamp(ts: str) -> datetime:
 def _parse_block(lines: list[str]) -> Optional[FilterCheckRun]:
     """Parse one block of log lines into a FilterCheckRun.
 
-    Returns None for blocks that lack a `FIRE Filter Check starting` header
+    Returns None for blocks that lack a `Jim/FIRE Filter Check starting` header
     (stray log output, truncated separator-only blocks).
     """
     started_at: datetime | None = None

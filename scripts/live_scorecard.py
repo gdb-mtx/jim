@@ -119,7 +119,7 @@ def main(notify: bool = False):
     summaries.append(shadow_a4())
     if notify:
         from execution.notifications import notify_macos
-        notify_macos("FIRE Weekly Scorecard", " | ".join(x for x in summaries if x))
+        notify_macos("Jim Weekly Scorecard", " | ".join(x for x in summaries if x))
 
 
 A4_RETIRED = pd.Timestamp("2026-07-13")
