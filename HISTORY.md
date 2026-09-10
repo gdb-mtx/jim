@@ -271,6 +271,25 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-10 — A4 fresh look after the grid bug: stays retired
+
+Asked whether the 09-09 stale-ranking bug exonerates A4. It doesn't — A4
+re-ranked daily (`holding_period_days=1`), so grid phase never applied.
+The pre-committed +10% shadow reopen trigger had fired (+16.6% since
+07-13, BTC +25.8%, in-market 34%), so the retirement kill test was re-run
+on data through 09-09 (state snapshot restored to `retired` afterwards;
+report `data/validation_reports/account_4_20260910_103659.md`). Aggregate
+OOS still "PASS" (36.1%, carried by 2023's +58%), but the walk-forward
+decay continued into a new sixth window: 58.2 → 34.4 → 22.3 → 23.5 →
+9.1 → **3.8% CAGR, −14.9% MaxDD, Calmar 0.26** (2025-06→2026-06). The
+shadow's two months are the rally slice after that window ends. Verdict:
+retired stays retired; the scorecard's reopen trigger now requires ≥126
+post-retirement days before saying "diverging". Filed, not actioned: the
+refit grid prefers an EMA-150 BTC filter over SMA-125 (Δ Calmar +1.16
+across windows) — a kill-test candidate if crypto momentum is ever
+re-scoped, with the usual caveat that every decaying strategy's refit
+says a different filter would have helped.
+
 ## 2026-09-09 — 21-day A1/A2 rebalance automated (cron, hourly `--if-due`)
 
 The manual "Preview → Execute at 3 PM ET" was the last calendar action and

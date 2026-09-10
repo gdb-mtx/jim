@@ -148,7 +148,14 @@ def shadow_a4():
     print(f"\n=== SHADOW A4 (retired {A4_RETIRED.date()} — signal-only, would-have-been) ===")
     print(f"since retirement: strategy {ret:+.2%} | cash +0.00% | BTC {btc_ret:+.2%} "
           f"| signal in-market {in_market:.0%} of days")
+    # The +10% reopen trigger needs a sample: on 2026-09-10 it fired on a
+    # two-month BTC rally while the fresh walk-forward's newest full-year
+    # window read +3.8% / Calmar 0.26 (HISTORY.md 2026-09-10). Six months
+    # minimum before "diverging" means anything.
+    min_days = 126
     verdict = ("retirement cost nothing so far" if abs(ret) < 0.02
+               else f"shadow +{ret:.0%} over {len(post)}d — too short to judge (needs {min_days}d)"
+               if ret > 0.10 and len(post) < min_days
                else "shadow DIVERGING — revisit the slot conversation" if ret > 0.10
                else "retirement saving money" if ret < 0 else "shadow mildly positive — keep watching")
     print(f"read: {verdict}")
