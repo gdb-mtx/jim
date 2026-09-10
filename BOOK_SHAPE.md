@@ -1,5 +1,33 @@
 # Book Shape — What We Need to Find
 
+> **Update 2026-09-10 — the book is A1. Concentrate on refining A1.**
+> The 09-09 session found that live had been trading every strategy's
+> ranking 2-3 weeks stale since day one (re-ranking grid phased to the
+> price frame's first bar, not the live calendar — `HISTORY.md`
+> 2026-09-09) and, separately, that A2 had been silently blocked for a
+> cycle by a corporate action. Both fixed; the rebalance is now cron-fired
+> on the correct phase. **Bug-free A1 vs SPY, today's config (vol_target
+> 0.18, cap 1.5, costs + 5.5% financing modeled), since the project
+> started 2026-03-09:** A1 +22.8% (maxDD −9.1%) vs SPY +13.5% (−6.6%);
+> live actually delivered +5.6% — the 17pp gap was harness, not strategy.
+> **Risk-adjusted, OOS 2023→today:** Calmar **2.59 vs SPY 1.17**, Sharpe
+> 1.80 vs 1.40, Sortino 2.57 vs 1.93, maxDD −13.4% vs −18.8%, beta 0.79,
+> corr 0.68, alpha +14.5%/yr. Since 03-09 (six months, annualized — read
+> as direction only): Calmar 5.46 vs 4.26, Sharpe 2.26 vs 1.86, alpha
+> +19%/yr. Caveats that bind: C3 survivorship (~1-2pp), the 1.5× calm
+> extension is untested through a crisis (plan on Calmar ~2 live), one
+> kind tape. **A2, bug-free, lost 2.3% over the same six months** while
+> SPY made 13.5% (OOS Calmar 0.90 at the anchored phase) and drags the
+> 70/30 book from +22.8% to +15.0% — the Q4 kill is likely. **A4 stays
+> retired** (walk-forward decay continued into a sixth window, +3.8% /
+> Calmar 0.26; `HISTORY.md` 2026-09-10). Direction for the next session
+> with this doc open: A1 is the growth engine and the book; the map's
+> gaps (crisis alpha, non-price edge) are now gaps *around A1*, and the
+> first move is two clean automated cycles (09-21, 10-20) at the correct
+> phase before any parameter work — the last three months proved the
+> harness was worth more than any parameter. The refit grid
+> (`scripts/walk_forward_refit_a1.py`) is where refinement starts.
+
 > **Update 2026-08-12 — read the banners, then treat the body as the
 > strategic map only.** Deltas since the 07-18 banner below: **Gap 1 is no
 > longer "awaiting purchase" — the VIXY tail-leg paper pilot is LIVE in A3**
