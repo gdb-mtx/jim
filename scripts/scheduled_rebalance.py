@@ -3,9 +3,12 @@ unattended. Replaces the manual "preview → execute at 3 PM ET" click
 (2026-09-09; the manual cycle slipped 8 days in August and A2 missed a
 cycle outright).
 
-Fired by cron HOURLY with `--if-due` (the daily_crypto_rebalance pattern):
-each fire decides for itself whether a rebalance is due and exits silently
-otherwise, which makes the schedule timezone-immune and sleep-tolerant.
+Fired by cron every 10 minutes with `--if-due` (the daily_crypto_rebalance
+pattern): each fire decides for itself whether a rebalance is due and exits
+silently otherwise, which makes the schedule timezone-immune and
+sleep-tolerant. Every 10 minutes, not hourly: on 2026-09-21 the single
+15:10 ET fire fell inside a 13-minute closed-lid nap and the day was lost
+(cron never catches up a missed minute). Six chances inside the window now.
 
 Due, per account, when all of:
   1. The latest settled S&P bar is a re-ranking grid date — the bar before
@@ -15,9 +18,9 @@ Due, per account, when all of:
      same cache, so "due" and "fresh ranking" can never disagree.
   2. No rebalance is journaled for the account after that grid date —
      manual, filter-monitor or scheduled all count.
-  3. The market is open and closes within TRADE_WINDOW_MIN (the 15:10 ET
-     hourly fire on normal days, 12:10 ET on early closes). `--force`
-     skips this check.
+  3. The market is open and closes within TRADE_WINDOW_MIN (15:00-16:00 ET
+     on normal days, 12:00-13:00 ET on early closes). `--force` skips this
+     check.
 
 Usage:
   uv run python3 scripts/scheduled_rebalance.py --if-due            # cron mode
@@ -113,7 +116,9 @@ def main() -> int:
     for acct in accounts:
         ok, why = (True, "forced") if args.force else is_due(acct, grid)
         due[acct] = ok
-        log.info(f"Account {acct}: {'DUE' if ok else 'not due'} — {why}")
+        # cron mode fires 144x/day; only due-ness is worth a log line there
+        (log.info if (ok or not args.if_due) else log.debug)(
+            f"Account {acct}: {'DUE' if ok else 'not due'} — {why}")
     todo = [a for a, ok in due.items() if ok]
     if not todo:
         return 0

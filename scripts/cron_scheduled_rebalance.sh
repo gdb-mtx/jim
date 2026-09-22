@@ -8,9 +8,10 @@
 # Cron provides minimal env — set what the scripts need.
 export HOME=/Users/george
 cd /Users/george/Desktop/Projects/FIRE
-# --if-due: cron fires this HOURLY (at :10); the script decides whether a
+# --if-due: cron fires this every 10 MINUTES; the script decides whether a
 # rebalance is due (settled bar = grid date, nothing journaled since, market
 # open and inside the last 75 min before close) and exits silently otherwise.
-# Timezone-immune and sleep-tolerant (a missed fire catches up next fire).
+# Timezone-immune and sleep-tolerant: six fires inside the window, so a
+# closed lid at one fire minute no longer loses the day (2026-09-21).
 exec /Users/george/.local/bin/uv run python3 scripts/scheduled_rebalance.py --if-due \
   >> data/scheduled_rebalance_stdout.log 2>> data/scheduled_rebalance_stderr.log

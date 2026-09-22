@@ -271,6 +271,16 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-21 — First automated rebalance day lost to a closed lid (fires now every 10 min)
+
+The scheduled rebalance fired at 14:10 ET ("110 min to close — waiting")
+and then never at 15:10 ET: `pmset` shows clamshell sleep 11:59:40→12:12:15
+PT, straddling the one fire minute that could trade. Cron never catches
+up a missed minute (laptop-scheduling silent failure #6). The 7-day
+catch-up traded the 09-18 ranking on 09-22 instead. Fix: cron fires every
+10 minutes, so the 75-minute window holds six chances; `--if-due` logs
+only when due. Durable fix remains Fly.io (DEPLOYMENT_PLAN.md).
+
 ## 2026-09-10 — A4 fresh look after the grid bug: stays retired
 
 Asked whether the 09-09 stale-ranking bug exonerates A4. It doesn't — A4

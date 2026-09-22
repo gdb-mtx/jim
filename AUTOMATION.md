@@ -48,9 +48,9 @@ invariant lives in the crontab:
 # (the validation gate blocks any trade); ready for a crypto successor.
 5 1,5,9,13,17,21 * * * ~/.fire-cron/cron_filter_check.sh btc
 
-# Scheduled A1/A2 rebalance: hourly at :10; trades only on a live rebalance
+# Scheduled A1/A2 rebalance: every 10 min; trades only on a live rebalance
 # date (every 21 trading days from 2026-04-21) in the last 75 min before close.
-10 * * * * ~/.fire-cron/cron_scheduled_rebalance.sh
+*/10 * * * * ~/.fire-cron/cron_scheduled_rebalance.sh
 
 # Weekly live scorecard (Q3-checkpoint evidence): Monday 09:00
 0 9 * * 1              ~/.fire-cron/cron_scorecard.sh
@@ -401,8 +401,10 @@ The **Ops** tab → Scheduler panel surfaces two health signals:
 
 ## Scheduled rebalance (added 2026-09-09)
 
-`scripts/scheduled_rebalance.py`, fired hourly at :10 with `--if-due`. Each
-fire decides for itself (timezone-immune, sleep-tolerant):
+`scripts/scheduled_rebalance.py`, fired every 10 minutes with `--if-due`
+(hourly until 2026-09-21, when a 13-minute closed-lid nap over the single
+15:10 ET fire lost the first automated rebalance day; cron never catches
+up a missed minute). Each fire decides for itself:
 
 1. **Due date** — the latest *settled* S&P bar is a re-ranking grid date
    (the bar before a live rebalance date; `strategies/base.py
@@ -412,8 +414,10 @@ fire decides for itself (timezone-immune, sleep-tolerant):
 2. **Not already done** — no journal entry for the account after that grid
    date. Manual, filter-monitor and scheduled rebalances all count, so a
    hand rebalance on the day doesn't get doubled.
-3. **Trade window** — market open and ≤ 75 min to close (15:10 ET normal
-   days, 12:10 ET early closes), via Alpaca's clock.
+3. **Trade window** — market open and ≤ 75 min to close (15:00-16:00 ET
+   normal days, 12:00-13:00 ET early closes), via Alpaca's clock. If every
+   fire in the window is missed (lid closed the whole hour), the 7-day
+   catch-up trades the same ranking next day.
 
 Execution is `execution/rebalance_runner.rebalance_account` — the same
 guarded path the filter monitor uses (validation gate, file lock,
@@ -461,7 +465,7 @@ above):
 0 0,4,8,12,16,20 * * * /Users/george/.fire-cron/cron_filter_check.sh spy
 5 1,5,9,13,17,21 * * * /Users/george/.fire-cron/cron_filter_check.sh btc
 0 9 * * 1 /Users/george/.fire-cron/cron_scorecard.sh
-10 * * * * /Users/george/.fire-cron/cron_scheduled_rebalance.sh
+*/10 * * * * /Users/george/.fire-cron/cron_scheduled_rebalance.sh
 ```
 (A crypto successor would add back the hourly `--if-due` line:
 `10 * * * * /Users/george/.fire-cron/cron_crypto_rebalance.sh`.)
