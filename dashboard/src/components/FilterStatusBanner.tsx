@@ -57,8 +57,8 @@ export default memo(function FilterStatusBanner({
 
   if (!filters) return null;
 
-  // SPY filter applies to active equity accounts (1, 2). A3 retired 2026-04-20.
-  const showSpy = account === 0 || account === 1 || account === 2;
+  // SPY filter applies to the live equity book (A1). A2 retired 2026-09-25.
+  const showSpy = account === 0 || account === 1;
   const showBtc = account === 0 || account === 4;
 
   const spy = filters.spy;

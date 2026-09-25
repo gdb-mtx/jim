@@ -218,6 +218,8 @@ def download_sp500_prices(
         # A right-truncated (end-bounded) or subset (max_tickers) frame must
         # never become the shared cache.
         if end is None and max_tickers is None:
+            from data.trading_dates import drop_unsettled_equity_rows
+            prices = drop_unsettled_equity_rows(prices)
             write_parquet_atomic(prices, cache_path)
             print(f"Cached to {cache_path}")
         else:
@@ -288,6 +290,8 @@ def download_vix(
 
     vix.name = "VIX"  # restore display name for downstream consumers
     vix_df = vix.to_frame()
+    from data.trading_dates import drop_unsettled_equity_rows
+    vix_df = drop_unsettled_equity_rows(vix_df)
     write_parquet_atomic(vix_df, cache_path)
     print(f"Cached VIX: {len(vix)} rows")
 

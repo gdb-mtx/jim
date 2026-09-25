@@ -21,11 +21,10 @@ type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3+4 retired, kept in type
 // (now hosts the tail-leg paper pilot — position visible via tail_leg_log +
 // notifications, tab returns if the pilot graduates). A4 retired 2026-07-13.
 // Retired strategies' backtests live in Backtests → Building Blocks; the
-// shadow-A4 tracker runs in scripts/live_scorecard.py.
+// Retired accounts (A2 09-25, A3, A4) get no tab; shadow trackers run in scripts/live_scorecard.py.
 const ACCOUNTS: { id: AccountView; name: string; label: string }[] = [
   { id: 0, name: "Combined", label: "All Accounts" },
   { id: 1, name: "Jim 0.1", label: "Momentum" },
-  { id: 2, name: "Jim 0.2", label: "Retired 09-25" },
 ];
 
 interface CombinedData {
@@ -274,7 +273,8 @@ export default function LivePortfolio() {
       <EquityHistoryChart account={account} refreshKey={chartRefreshKey} />
 
       {/* Correlation monitor (combined view only) */}
-      {isCombined && <CorrelationPanel />}
+      {/* Correlation needs two live accounts; the book is A1 only since 2026-09-25. */}
+      {isCombined && ACCOUNTS.length > 2 && <CorrelationPanel />}
 
       {/* Positions table */}
       <PositionsTable

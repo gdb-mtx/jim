@@ -271,6 +271,38 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-25 — Gremlin pass on A1: filter look-ahead, partial equity bars, intraday snapshots
+
+Asked whether more gremlins hid behind the 09-09 grid bug. Three found,
+all fixed the same day:
+
+1. **Backtest SPY/BTC filter look-ahead (material).** `run_portfolio`
+   scaled day D's return by the filter state computed from D's own close.
+   Lagging it one day (`shift(1)`) moves A1 OOS 2023→ from 36.8% /
+   Calmar 2.83 to **32.1% / −15.9% / Calmar 2.02** — 15 flips, but flip
+   days are big-move days by construction, so one day of look-ahead is
+   worth 4.7pp. Live's 4-hourly monitor acts from ~15:00 ET on D with a
+   live price, so reality sits between the two; the backtest now takes
+   the conservative side. Revalidated: PASS on every gate (ratio 199%,
+   bootstrap p5 +12.4%). SPY over the same window: Calmar 1.19. All
+   earlier A1/A2/A4 headline numbers carried this bias.
+2. **Equity caches could hold a forming bar as a close.** yfinance serves
+   the current session's partial bar as today's daily row; a cache
+   written mid-session carried a 3 PM price as the "close" for up to 24h
+   (the C9 class, equities edition). `drop_unsettled_equity_rows` on
+   every equity cache write: today's row is dropped before 16:05 ET.
+3. **Equity snapshots were intraday samples.** `take_snapshot` ran on
+   every 4-hourly SPY fire and the first fire of the day won, so a row
+   dated D held whatever equity the 03:00/11:00/15:00 ET fire saw (09-21:
+   105,797 vs the 106,431 close) — ±0.5% of noise in every live-vs-signal
+   and live-vs-SPY figure, plus weekend rows. Alpaca's daily portfolio
+   history is now the source of truth: `backfill_from_alpaca` overwrites,
+   `take_snapshot` only fires after the close, weekend rows dropped;
+   A1/A2 history rebuilt from Alpaca (1A).
+
+Also: retired accounts lose their dashboard tab and chart series; the
+correlation panel hides with a single live account.
+
 ## 2026-09-25 — A2 retired; the book is A1; live-tracking clock reset to 2026-09-21
 
 **A2 retired.** Pre-committed trigger (Q4: live Calmar < 1.0 → kill or

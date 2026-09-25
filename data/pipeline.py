@@ -218,6 +218,8 @@ def download_and_cache(
     from data.plausibility import assert_plausible_df
     assert_plausible_df(prices)
 
+    from data.trading_dates import drop_unsettled_equity_rows
+    prices = drop_unsettled_equity_rows(prices)
     write_parquet_atomic(prices, cache_path)
     print(f"Cached {len(prices)} rows to: {cache_path}")
 

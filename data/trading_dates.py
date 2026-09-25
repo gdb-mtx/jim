@@ -65,3 +65,21 @@ def next_live_rebalance_date(after: str) -> str:
 # REBALANCE_ANCHOR grid (the clean 09-22 rebalance sits inside its first
 # day). Full history stays on disk — /api/portfolio/history?full=1.
 LIVE_CLOCK_START = "2026-09-21"
+
+
+def equity_session_closed_today() -> bool:
+    """True once today's regular session has closed (16:05 ET or later,
+    weekends included). Equity caches drop today's row when this is False:
+    yfinance serves the current session's forming bar as a daily row, and
+    a cache written mid-session would carry a 3 PM price as a "close" for
+    up to 24h (C9's partial-bar class, equities edition — 2026-09-25)."""
+    now = datetime.now(ET)
+    return now.weekday() >= 5 or (now.hour, now.minute) >= (16, 5)
+
+
+def drop_unsettled_equity_rows(df):
+    """Drop today's row from a daily equity frame unless the session has closed."""
+    import pandas as pd
+    if len(df) == 0 or equity_session_closed_today():
+        return df
+    return df.loc[df.index < pd.Timestamp(today_et())]

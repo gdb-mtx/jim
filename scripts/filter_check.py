@@ -208,9 +208,15 @@ def _daily_snapshot():
         from execution.alpaca_broker import active_accounts
         from data.snapshots import backfill_from_alpaca, take_snapshot
 
+        from data.trading_dates import equity_session_closed_today
         for acct in active_accounts():
             backfill_from_alpaca(acct)
-            take_snapshot(acct)
+            # Only the post-close fire may write today's row: an intraday
+            # take_snapshot dated as the close was ±0.5% of pure noise in
+            # every scorecard comparison (2026-09-25). Alpaca's history
+            # backfills the day either way.
+            if equity_session_closed_today():
+                take_snapshot(acct)
         log.info("Daily equity snapshots recorded")
     except Exception as e:
         log.error(f"snapshot step failed (filter run unaffected): {e}")

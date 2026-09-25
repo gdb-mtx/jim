@@ -211,16 +211,22 @@ def run_portfolio(
     aligned = pd.DataFrame(strategy_returns).dropna()
     combined = sum(aligned[sid] * w for sid, w in weights.items())
 
-    # Apply SPY trend filter
+    # Apply SPY trend filter. shift(1): a cross is known at D's close and
+    # acted on for D+1 — the same-day version scaled D's own return by a
+    # state only known at D's close. 2026-09-25: that one-day look-ahead
+    # was worth +4.7pp OOS CAGR / +0.8 Calmar on A1 across 15 flips (flip
+    # days are big-move days by construction). Live's 4-hourly monitor can
+    # act from ~15:00 ET on D with a live price, so real behaviour sits
+    # between the two; the backtest takes the conservative side.
     if use_spy_filter:
         spy_filter = compute_spy_trend_filter(start=start)
-        spy_aligned = spy_filter.reindex(combined.index).ffill().fillna(1.0)
+        spy_aligned = spy_filter.reindex(combined.index).ffill().shift(1).fillna(1.0)
         combined = combined * spy_aligned
 
-    # Apply BTC trend filter (binary: 1.0 or 0.0)
+    # Apply BTC trend filter (binary: 1.0 or 0.0), same one-day lag
     if use_btc_filter:
         btc_filter = compute_btc_trend_filter(start=start)
-        btc_aligned = btc_filter.reindex(combined.index).ffill().fillna(1.0)
+        btc_aligned = btc_filter.reindex(combined.index).ffill().shift(1).fillna(1.0)
         combined = combined * btc_aligned
 
     # Apply vol-scaling overlay (Moreira & Muir 2017)

@@ -1,6 +1,6 @@
 # Book Shape — What We Need to Find
 
-> **Update 2026-09-25:** A2 retired (structural, not a bad week — HISTORY.md 2026-09-25); live-tracking clock reset to 2026-09-21. The 09-10 banner below is the program.
+> **Update 2026-09-25:** A2 retired (structural, not a bad week — HISTORY.md 2026-09-25); live-tracking clock reset to 2026-09-21. **Gremlin pass the same day removed a one-day look-ahead in the backtest's SPY filter: the 09-10 numbers below carried it.** Honest A1: OOS 2023→ CAGR 32.1% / MaxDD −15.9% / **Calmar 2.02 vs SPY 1.19**; since 03-09 synthetic +21.1% vs SPY +15.6%. Still PASS on every gate; the "Calmar ~2 live" planning number turned out to be the backtest number. The 09-10 banner below is the program.
 >
 > **Update 2026-09-10 — the book is A1. Concentrate on refining A1.**
 > The 09-09 session found that live had been trading every strategy's

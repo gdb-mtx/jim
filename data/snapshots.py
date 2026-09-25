@@ -114,16 +114,19 @@ def take_all_snapshots() -> list[dict]:
     return results
 
 
-def backfill_from_alpaca(account: int) -> int:
-    """Backfill historical equity from Alpaca portfolio history API.
+def backfill_from_alpaca(account: int, period: str = "3M") -> int:
+    """Backfill equity from Alpaca's daily portfolio history — the session
+    closes, which are the source of truth for every row they cover.
 
-    Returns number of new rows added. Runs under `file_snapshot_lock` so
-    concurrent writers (cron snapshot, /snapshot endpoint, startup) don't
-    race with the read-modify-write against the parquet.
+    Overwrites rows already present: until 2026-09-25 it skipped them, so a
+    cron `take_snapshot` that had fired mid-session (first fire of the day
+    wins) left an intraday value dated as the close, ±0.5% off, in every
+    live-vs-signal comparison. Returns the number of rows written. Runs
+    under `file_snapshot_lock`.
     """
     broker = AlpacaBroker(account=account)
     # get_portfolio_history returns an object with timestamp, equity, profit_loss
-    history = broker.api.get_portfolio_history(period="3M", timeframe="1D")
+    history = broker.api.get_portfolio_history(period=period, timeframe="1D")
 
     if not history or not hasattr(history, "timestamp") or not history.timestamp:
         return 0
@@ -137,8 +140,6 @@ def backfill_from_alpaca(account: int) -> int:
             dt = pd.Timestamp(utc_ts_to_et_date(ts)).normalize()
             if equity is None or float(equity) == 0:
                 continue
-            if dt in df.index:
-                continue
             new_rows.append({
                 "date": dt,
                 "equity": float(equity),
@@ -151,7 +152,13 @@ def backfill_from_alpaca(account: int) -> int:
             return 0
 
         new_df = pd.DataFrame(new_rows).set_index("date")
-        df = pd.concat([df, new_df]).sort_index()
+        # Alpaca's close wins; keep cash/positions_count from an existing row.
+        keep = df.reindex(new_df.index)
+        new_df["cash"] = keep["cash"]
+        new_df["positions_count"] = keep["positions_count"]
+        df = pd.concat([df.drop(index=new_df.index, errors="ignore"), new_df]).sort_index()
+        # Weekend rows are cron artefacts (Sunday 00:00 PT fire) — drop them.
+        df = df[df.index.dayofweek < 5]
 
         os.makedirs(SNAPSHOT_DIR, exist_ok=True)
         write_parquet_atomic(df, _snapshot_path(account))
