@@ -28,17 +28,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from strategies.portfolio_backtest import run_portfolio
 
-from strategies.base import REBALANCE_ANCHOR
+from data.trading_dates import LIVE_CLOCK_START, REBALANCE_ANCHOR
 
-# Cycle boundaries share the strategies' re-ranking phase by construction.
-CLEAN_START = pd.Timestamp(REBALANCE_ANCHOR)
+# Cycle boundaries share the strategies' re-ranking phase by construction
+# (counted from REBALANCE_ANCHOR); reporting starts at the live-tracking
+# clock (2026-09-21, the first automated cycle — earlier cycles were traded
+# on stale rankings, HISTORY.md 2026-09-09).
+GRID_START = pd.Timestamp(REBALANCE_ANCHOR)
+CLEAN_START = pd.Timestamp(LIVE_CLOCK_START)
 CYCLE_DAYS = 21
-ACCOUNTS = {1: "sm_filtered", 2: "trend_lowvol"}
-# Real-money allocation between the two strategies (2026-08-12 sizing
-# decision). The paper accounts sit ~50/50 by equity and are never reset —
-# a reset would print as a fake ±38% cycle here — so the 70/30 book is
-# scored synthetically from per-account returns instead.
-BOOK_WEIGHTS = {1: 0.70, 2: 0.30}
+ACCOUNTS = {1: "sm_filtered"}   # A2 retired 2026-09-25; the book is A1
+# Retired strategies keep being scored so the retirement decisions are too.
+SHADOWS = [
+    (4, "crypto_momentum_filtered", "2026-07-13", "BTC-USD"),
+    (2, "trend_lowvol", "2026-09-25", "SPY"),
+]
 
 
 def load_live(account: int) -> pd.Series:
@@ -62,13 +66,11 @@ def main(notify: bool = False):
     spy.index = pd.to_datetime(spy.index)
 
     # cycle boundaries: every 21 trading days from the anchor, on SPY's calendar
-    cal = spy.index[spy.index >= CLEAN_START]
-    bounds = list(cal[::CYCLE_DAYS])
+    cal = spy.index[spy.index >= GRID_START]
+    bounds = [b for b in cal[::CYCLE_DAYS] if b >= CLEAN_START]
     if bounds[-1] < cal[-1]:
         bounds.append(cal[-1])
 
-    cycle_live: dict[int, dict] = {}   # acct -> {(a, b): live cycle return}
-    cycle_spy: dict = {}
     for acct, strat in ACCOUNTS.items():
         live = load_live(acct)
         _, sig_r = run_portfolio(strat, start="2023-01-01")
@@ -77,15 +79,12 @@ def main(notify: bool = False):
         print(f"\n=== A{acct} ({strat}) — cycles since {CLEAN_START.date()} ===")
         print(f"{'cycle':22s} {'live':>8s} {'signal':>8s} {'drag':>7s} {'SPY':>8s} {'alpha':>7s}")
         tot = {"live": 1.0, "sig": 1.0, "spy": 1.0}
-        cycle_live[acct] = {}
         for a, b in zip(bounds, bounds[1:]):
             lv = window_return(live, a, b)
             sg = window_return(signal, a, b)
             sp = window_return(spy, a, b)
             if lv is None or sp is None:
                 continue
-            cycle_live[acct][(a, b)] = lv
-            cycle_spy[(a, b)] = sp
             tag = f"{a.date()} → {b.date()}"
             drag = f"{lv - sg:+7.2%}" if sg is not None else "      —"
             print(f"{tag:22s} {lv:+8.2%} {(f'{sg:+8.2%}' if sg is not None else '       —')} "
@@ -100,53 +99,32 @@ def main(notify: bool = False):
               f"{'MET' if lv - sp >= 0 else 'NOT MET'} at {lv - sp:+.2%} cumulative")
         summaries.append(f"A{acct} alpha {lv - sp:+.1%}")
 
-    # Synthetic book: weights re-applied at every cycle boundary.
-    w = " / ".join(f"{int(v * 100)}% A{k}" for k, v in BOOK_WEIGHTS.items())
-    print(f"\n=== BOOK (synthetic {w}, rebalanced each cycle) ===")
-    print(f"{'cycle':22s} {'book':>8s} {'SPY':>8s} {'alpha':>7s}")
-    tot_book, tot_spy = 1.0, 1.0
-    for key, sp in cycle_spy.items():
-        if any(key not in cycle_live[k] for k in BOOK_WEIGHTS):
-            continue
-        bk = sum(BOOK_WEIGHTS[k] * cycle_live[k][key] for k in BOOK_WEIGHTS)
-        print(f"{f'{key[0].date()} → {key[1].date()}':22s} {bk:+8.2%} {sp:+8.2%} {bk - sp:+7.2%}")
-        tot_book *= 1 + bk
-        tot_spy *= 1 + sp
-    bk, sp = tot_book - 1, tot_spy - 1
-    print(f"{'CUMULATIVE':22s} {bk:+8.2%} {sp:+8.2%} {bk - sp:+7.2%}")
-    summaries.append(f"book alpha {bk - sp:+.1%}")
-
-    summaries.append(shadow_a4())
+    summaries.extend(shadow(*sh) for sh in SHADOWS)
     if notify:
         from execution.notifications import notify_macos
         notify_macos("Jim Weekly Scorecard", " | ".join(x for x in summaries if x))
 
 
-A4_RETIRED = pd.Timestamp("2026-07-13")
-
-
-def shadow_a4():
-    """What the retired A4 strategy would have done since retirement.
+def shadow(account: int, strategy_id: str, retired: str, benchmark: str) -> str:
+    """What a retired strategy would have done since retirement.
 
     Honest re-litigation instrument: the account sits in cash, but the
     signal path keeps being computable. If the shadow rips while the cash
-    sits, we want that fact surfaced on every scorecard run — retirement
-    was a decision, and decisions get scored too. (Retirement rationale:
-    HISTORY.md 2026-07-13 — walk-forward decay + unexplained-then-explained
-    drag. A sustained shadow rally would reopen the slot conversation,
-    starting with the basis-carry successor, not necessarily this strategy.)
+    sits, that fact is surfaced on every scorecard run — retirement was a
+    decision, and decisions get scored too. (A4: HISTORY.md 2026-07-13 and
+    2026-09-10; A2: 2026-09-25.)
     """
-    _, r = run_portfolio("crypto_momentum_filtered", start="2025-01-01")
-    post = r.loc[A4_RETIRED:].fillna(0)
+    r0 = pd.Timestamp(retired)
+    _, r = run_portfolio(strategy_id, start="2025-01-01")
+    post = r.loc[r0:].fillna(0)
     if len(post) < 2:
         return ""
     ret = float((1 + post).prod() - 1)
-    btc = yf.download("BTC-USD", start=str(A4_RETIRED.date()), progress=False,
-                      auto_adjust=True)["Close"].squeeze()
-    btc_ret = float(btc.iloc[-1] / btc.iloc[0] - 1) if len(btc) > 1 else float("nan")
+    bm = yf.download(benchmark, start=str(r0.date()), progress=False, auto_adjust=True)["Close"].squeeze()
+    bm_ret = float(bm.iloc[-1] / bm.iloc[0] - 1) if len(bm) > 1 else float("nan")
     in_market = float((post != 0).mean())
-    print(f"\n=== SHADOW A4 (retired {A4_RETIRED.date()} — signal-only, would-have-been) ===")
-    print(f"since retirement: strategy {ret:+.2%} | cash +0.00% | BTC {btc_ret:+.2%} "
+    print(f"\n=== SHADOW A{account} ({strategy_id}, retired {r0.date()} — signal-only, would-have-been) ===")
+    print(f"since retirement: strategy {ret:+.2%} | cash +0.00% | {benchmark} {bm_ret:+.2%} "
           f"| signal in-market {in_market:.0%} of days")
     # The +10% reopen trigger needs a sample: on 2026-09-10 it fired on a
     # two-month BTC rally while the fresh walk-forward's newest full-year
@@ -159,7 +137,7 @@ def shadow_a4():
                else "shadow DIVERGING — revisit the slot conversation" if ret > 0.10
                else "retirement saving money" if ret < 0 else "shadow mildly positive — keep watching")
     print(f"read: {verdict}")
-    return f"shadowA4 {ret:+.1%}"
+    return f"shadowA{account} {ret:+.1%}"
 
 
 if __name__ == "__main__":

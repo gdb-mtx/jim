@@ -12,6 +12,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from data.trading_dates import LIVE_CLOCK_START
+
 from api.locks import file_snapshot_lock
 from data.pipeline import write_parquet_atomic
 from data.trading_dates import today_et, utc_ts_to_et_date
@@ -159,9 +161,16 @@ def backfill_from_alpaca(account: int) -> int:
 # ── Query functions ──────────────────────────────────────────────────
 
 
-def get_equity_history(account: int) -> list[dict]:
+def _since(df: pd.DataFrame, since: str | None) -> pd.DataFrame:
+    """Apply the live-tracking clock (data/trading_dates.LIVE_CLOCK_START)."""
+    if since is None or df.empty:
+        return df
+    return df.loc[df.index >= pd.Timestamp(since)]
+
+
+def get_equity_history(account: int, since: str | None = LIVE_CLOCK_START) -> list[dict]:
     """Return equity time series in EquityPoint format [{time, value}]."""
-    df = load_snapshots(account)
+    df = _since(load_snapshots(account), since)
     if df.empty:
         return []
     return [
@@ -170,14 +179,14 @@ def get_equity_history(account: int) -> list[dict]:
     ]
 
 
-def get_combined_equity_history() -> list[dict]:
+def get_combined_equity_history(since: str | None = LIVE_CLOCK_START) -> list[dict]:
     """Sum equity across active accounts by date. Retired accounts are
     excluded so the combined curve tracks the live book only."""
     from execution.alpaca_broker import active_accounts
 
     frames = []
     for acct in active_accounts():
-        df = load_snapshots(acct)
+        df = _since(load_snapshots(acct), since)
         if not df.empty:
             frames.append(df[["equity"]].rename(columns={"equity": f"acct_{acct}"}))
 
@@ -192,15 +201,15 @@ def get_combined_equity_history() -> list[dict]:
     ]
 
 
-def get_all_equity_histories() -> dict[str, list[dict]]:
+def get_all_equity_histories(since: str | None = LIVE_CLOCK_START) -> dict[str, list[dict]]:
     """Return equity curves for active accounts + combined, keyed for frontend.
     Retired account history remains available via per-account `/history`."""
     from execution.alpaca_broker import active_accounts
 
     result = {}
     for acct in active_accounts():
-        result[f"acct_{acct}"] = get_equity_history(acct)
-    result["combined"] = get_combined_equity_history()
+        result[f"acct_{acct}"] = get_equity_history(acct, since)
+    result["combined"] = get_combined_equity_history(since)
     return result
 
 
@@ -243,6 +252,7 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
 
 def get_performance_summary(
     live_equity: dict[int, float] | None = None,
+    since: str | None = LIVE_CLOCK_START,
 ) -> list[dict]:
     """Compute per-account and combined returns vs SPY since tracking started.
 
@@ -302,7 +312,7 @@ def get_performance_summary(
     # Load per-account snapshots and compute returns
     combined_start_date = None  # latest first date (when all accounts are live)
     for acct in (1, 2, 3, 4):
-        df = load_snapshots(acct)
+        df = _since(load_snapshots(acct), since)
         if df.empty or len(df) < 2:
             results.append({
                 "account": acct,
@@ -332,6 +342,8 @@ def get_performance_summary(
             "alpha_pct": _alpha(ret, acct_spy_ret),
         })
 
+        if ACCOUNT_INFO[acct].get("status", "active") != "active":
+            continue  # retired accounts show their own row but never enter Combined
         all_start += start_val
         all_current += current_val
 

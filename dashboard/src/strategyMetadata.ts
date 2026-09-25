@@ -12,7 +12,7 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
   // ── Live Accounts ──────────────────────────────────────────────────
   combined_3account: {
     category: "live",
-    description: "A1 (SM) + A2 (Trend+LowVol) — the live book after A3/A4 retirements (2026-07)",
+    description: "A1 (SM) — the live book after A2's retirement (2026-09-25); A3/A4 retired 2026-07",
     sortOrder: 0,
   },
   sm_filtered: {
@@ -24,10 +24,10 @@ export const STRATEGY_METADATA: Record<string, StrategyMeta> = {
     sortOrder: 1,
   },
   trend_lowvol: {
-    category: "live",
-    description: "30% Multi-Asset Trend + 70% Low Volatility, volatility-scaled",
+    category: "research",
+    description: "RETIRED 2026-09-25 — was: 30% Multi-Asset Trend + 70% Low Volatility, vol-scaled (OOS Calmar 0.90 at the anchored phase; -6% bug-free vs SPY +16% since March; HISTORY.md)",
     account: 2,
-    accountLabel: "Jim 0.2",
+    accountLabel: "Jim 0.2 (retired)",
     sortOrder: 2,
   },
   crypto_momentum_filtered: {

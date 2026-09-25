@@ -1,5 +1,7 @@
 # Book Shape — What We Need to Find
 
+> **Update 2026-09-25:** A2 retired (structural, not a bad week — HISTORY.md 2026-09-25); live-tracking clock reset to 2026-09-21. The 09-10 banner below is the program.
+>
 > **Update 2026-09-10 — the book is A1. Concentrate on refining A1.**
 > The 09-09 session found that live had been trading every strategy's
 > ranking 2-3 weeks stale since day one (re-ranking grid phased to the

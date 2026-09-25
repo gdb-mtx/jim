@@ -399,7 +399,7 @@ The **Ops** tab → Scheduler panel surfaces two health signals:
   watchdog was removed 2026-08-12 — its job is retired and its journal-based
   tracking had gone misleading.
 
-## Scheduled rebalance (added 2026-09-09)
+## Scheduled rebalance (added 2026-09-09; A1 only since A2's retirement 2026-09-25)
 
 `scripts/scheduled_rebalance.py`, fired every 10 minutes with `--if-due`
 (hourly until 2026-09-21, when a 13-minute closed-lid nap over the single

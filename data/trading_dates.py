@@ -56,3 +56,12 @@ def next_live_rebalance_date(after: str) -> str:
 
     horizon = (pd.Timestamp(after) + pd.Timedelta(days=60)).strftime("%Y-%m-%d")
     return next(d for d in live_rebalance_dates(horizon) if d > after)
+
+
+# Live-tracking clock. Everything before this date was traded by a harness
+# that handed the strategy stale rankings (HISTORY.md 2026-09-09); the
+# equity chart, SPY benchmark, performance table and scorecard cycles all
+# start here. 2026-09-21 is the first automated cycle boundary on the
+# REBALANCE_ANCHOR grid (the clean 09-22 rebalance sits inside its first
+# day). Full history stays on disk — /api/portfolio/history?full=1.
+LIVE_CLOCK_START = "2026-09-21"

@@ -25,7 +25,7 @@ type AccountView = 0 | 1 | 2 | 3 | 4; // 0 = combined; 3+4 retired, kept in type
 const ACCOUNTS: { id: AccountView; name: string; label: string }[] = [
   { id: 0, name: "Combined", label: "All Accounts" },
   { id: 1, name: "Jim 0.1", label: "Momentum" },
-  { id: 2, name: "Jim 0.2", label: "Trend + Low-Vol" },
+  { id: 2, name: "Jim 0.2", label: "Retired 09-25" },
 ];
 
 interface CombinedData {

@@ -124,7 +124,7 @@ LAUNCHD_REBALANCE_JOBS: list[tuple[str, str, str, str, tuple]] = [
     # A4's daily job left 2026-07-18 with its retirement. Since 2026-09-09 the
     # A1/A2 21-day rebalance is cron-fired (scripts/scheduled_rebalance.py,
     # hourly --if-due); last run comes from journal entries tagged "scheduled".
-    ("cron_scheduled_rebalance", "scheduled_rebalance", "A1/A2 21-day rebalance",
+    ("cron_scheduled_rebalance", "scheduled_rebalance", "A1 21-day rebalance",
      "scheduled_rebalance", ("next_live_rebalance", 15, 10)),
 ]
 

@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from execution.alpaca_broker import AlpacaBroker, ACCOUNT_INFO, active_accounts
 from execution.risk_manager import RiskManager, RiskLimits, compute_drawdown
+from data.trading_dates import LIVE_CLOCK_START
 from data.snapshots import (
     take_snapshot,
     take_all_snapshots,
@@ -177,12 +178,17 @@ def _patch_today(curve: list[dict], live_equity: float) -> list[dict]:
 @router.get("/history")
 async def equity_history(
     account: int = Query(default=0, ge=0, le=4, description="0=combined, 1-4=individual"),
+    full: bool = Query(default=False, description="ignore the live-tracking clock (forensics)"),
 ):
-    """Get historical equity time series for charting."""
+    """Get historical equity time series for charting.
+
+    Starts at data/trading_dates.LIVE_CLOCK_START unless `full=1`."""
+    since = None if full else LIVE_CLOCK_START
+
     def _compute():
         if account == 0:
-            histories = get_all_equity_histories()
-            combined = get_combined_equity_history()
+            histories = get_all_equity_histories(since)
+            combined = get_combined_equity_history(since)
 
             # Patch today's values with live Alpaca equity
             total_live = 0.0
@@ -211,11 +217,12 @@ async def equity_history(
                 "equity_curve": combined,
                 "per_account": histories,
                 "spy_benchmark": spy_benchmark,
-                "performance": get_performance_summary(live_equity or None),
+                "performance": get_performance_summary(live_equity or None, since),
                 "days": len(combined),
+                "clock_start": since,
             }
         else:
-            curve = get_equity_history(account)
+            curve = get_equity_history(account, since)
             try:
                 broker = _get_broker(account)
                 live_eq = broker.get_account()["equity"]
@@ -225,6 +232,7 @@ async def equity_history(
             return {
                 "equity_curve": curve,
                 "days": len(curve),
+                "clock_start": since,
             }
 
     return await asyncio.to_thread(_compute)

@@ -31,7 +31,6 @@ LOG_FILE = PROJECT_ROOT / "data" / "filter_check.log"
 # scope still computes/persists filter state for monitoring.
 ACCOUNT_FILTERS = {
     1: "spy",
-    2: "spy",
 }
 
 VALID_SCOPES = ("all", "spy", "btc")

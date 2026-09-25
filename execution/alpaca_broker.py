@@ -60,7 +60,7 @@ def _is_position_non_tradeable(position) -> bool:
 # prerequisite (see scripts/liquidate_account.py).
 ACCOUNT_INFO = {
     1: {"name": "Jim 0.1", "strategy": "sm_filtered", "label": "Momentum", "status": "active"},
-    2: {"name": "Jim 0.2", "strategy": "trend_lowvol", "label": "Trend + Low-Vol", "status": "active"},
+    2: {"name": "Jim 0.2", "strategy": None, "label": "Retired (was Trend + Low-Vol)", "status": "retired", "retired_at": "2026-09-25"},
     3: {"name": "Jim 0.3", "strategy": None, "label": "Retired — tail-leg pilot host", "status": "retired", "retired_at": "2026-04-20"},
     4: {"name": "Jim 0.4", "strategy": None, "label": "Retired (was Crypto)", "status": "retired", "retired_at": "2026-07-13"},
 }

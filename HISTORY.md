@@ -271,6 +271,34 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-09-25 — A2 retired; the book is A1; live-tracking clock reset to 2026-09-21
+
+**A2 retired.** Pre-committed trigger (Q4: live Calmar < 1.0 → kill or
+DBMF swap) executed six days early on structural evidence: OOS Calmar
+0.90 under the 1.0 gate at the anchored phase (09-09); bug-free synthetic
+−6.3% vs SPY +15.6% since 2026-03-09 with live at −6.2% — live tracked the
+strategy, so the harness fixes left no excuse; −6% over the last three
+months at the 1.5× vol-scaling cap while SPY +3% (vol scaling is sign-
+agnostic: a calm losing book gets *more* leverage). 33 market sells
+queued 09-25 after the close (fills 09-28 open); the non-tradeable
+`436CVR021` CVR stays. Propagated the A4 way: ACCOUNT_INFO status
+`retired`, gate state `retired` + reason, filter map, scheduled rebalance
+(via `active_accounts()`), Ops job name, dashboard metadata/tab,
+expected-positions cleared, journal `source="retirement"`. Scorecard:
+`ACCOUNTS = {1}`, synthetic 70/30 book removed, shadow tracking
+generalized to every retired strategy (A4 vs BTC, A2 vs SPY). DBMF swap
+stays parked under the 2022-class-event trigger.
+
+**Live-tracking clock.** `data/trading_dates.LIVE_CLOCK_START =
+"2026-09-21"`: the dashboard equity chart, SPY benchmark, performance
+table and scorecard cycles start there — the first automated cycle
+boundary on the anchor grid; the clean 09-22 rebalance sits inside its
+first day. Everything earlier was traded on stale rankings (03-09→09-09
+live +5.6% vs bug-free +22.8%, HISTORY.md 2026-09-09/10) and is history,
+not evidence. Snapshot files are untouched; `/api/portfolio/history?full=1`
+returns the full series. The Combined performance row now sums active
+accounts only (a retired account's post-clock rows were leaking in).
+
 ## 2026-09-21 — First automated rebalance day lost to a closed lid (fires now every 10 min)
 
 The scheduled rebalance fired at 14:10 ET ("110 min to close — waiting")
