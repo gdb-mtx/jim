@@ -145,14 +145,18 @@ def run_preflight(target: str, grid: str) -> list[dict]:
     add("validation gate (A1)", gate)
 
     def caches():
+        from data.trading_dates import previous_session
         need = last_completed_session()
+        # CBOE publishes the day's VIX close hours after Alpaca settles bars;
+        # a one-session VIX lag is harmless to the 35/45 regime thresholds.
+        floors = {"sp500_prices": need, "spy_filter": need, "vix": previous_session(need)}
         missing = []
-        for f in ("sp500_prices", "spy_filter", "vix"):
+        for f, floor in floors.items():
             idx = pd.read_parquet(PROJECT_ROOT / "data" / "raw" / f"{f}.parquet").index
-            if idx[-1] < pd.Timestamp(need):
-                missing.append(f"{f} ends {idx[-1].date()}")
-        return (not missing), (f"all hold {need}" if not missing else "; ".join(missing))
-    add("price caches hold the last completed session", caches)
+            if idx[-1] < pd.Timestamp(floor):
+                missing.append(f"{f} ends {idx[-1].date()} (need {floor})")
+        return (not missing), (f"S&P/SPY hold {need}" if not missing else "; ".join(missing))
+    add("price caches current", caches)
 
     settled = grid <= last_completed_session()
 
@@ -177,6 +181,30 @@ def run_preflight(target: str, grid: str) -> list[dict]:
 
     add("crontab entry", lambda: (hb.crontab_has("cron_scheduled_rebalance"), "present" if hb.crontab_has("cron_scheduled_rebalance") else "missing from crontab"))
     return checks
+
+
+def warm_caches_after_close(decision: dict) -> None:
+    """First fire after the close refreshes the equity caches (S&P panel, SPY,
+    VIX) so they hold today's session within ~10 minutes of 16:05 ET.
+    Before this (2026-10-20 evening) the only warm was the filter cron's
+    20:00-local fire: a dashboard preview in between hit the 4.5-min
+    refresh inline, and the pre-flight on a rebalance eve would have
+    flagged "caches don't hold today" at 16:10 and cleared at 20:10 — a
+    false alarm every cycle. Cheap when nothing is needed (one parquet
+    index read); weekends/holidays resolve to the previous session."""
+    from data.trading_dates import equity_session_closed_today, last_completed_session
+    if not equity_session_closed_today():
+        return
+    need = last_completed_session()
+    if cache_has_bar(need):
+        return
+    log.info(f"post-close cache warm: S&P cache lacks {need} — refreshing SPY, VIX, S&P panel")
+    from data.sp500 import download_sp500_prices, download_spy, download_vix
+    download_spy()
+    download_vix()
+    download_sp500_prices()
+    decision["warmed"] = need
+    log.info(f"post-close cache warm done: caches hold {need}" if cache_has_bar(need) else f"post-close warm did NOT produce {need}")
 
 
 def maybe_preflight(today: str, force: bool = False) -> None:
@@ -253,6 +281,10 @@ def _main(decision: dict) -> int:
         return 0
     if not todo:
         decision.update(decision="not_due", reason=next(iter(due_reasons.values()), ""))
+        try:
+            warm_caches_after_close(decision)
+        except Exception as e:  # a failed warm must not stop the pre-flight from reporting it
+            log.error(f"post-close cache warm failed: {e}")
         maybe_preflight(today)
         return 0
 

@@ -69,3 +69,24 @@ def test_runner_refuses_a_stale_ranking(monkeypatch):
     monkeypatch.setattr(rr, "execute_rebalance", lambda b, r: executed.append(1))
     res = rr.rebalance_account(1, source="test", require_signal_asof="2026-10-19")
     assert res["status"] == "stale_ranking" and not executed
+
+
+def test_post_close_warm_only_when_session_closed_and_bar_missing(monkeypatch):
+    import data.trading_dates as td
+    calls = []
+    import data.sp500 as sp
+    for name in ("download_sp500_prices", "download_spy", "download_vix"):
+        monkeypatch.setattr(sp, name, lambda *a, _n=name, **k: calls.append(_n))
+    monkeypatch.setattr(td, "last_completed_session", lambda: "2026-10-20")
+    # before the close: nothing
+    monkeypatch.setattr(td, "equity_session_closed_today", lambda: False)
+    monkeypatch.setattr(sr, "cache_has_bar", lambda d: False)
+    d = {}; sr.warm_caches_after_close(d); assert calls == [] and "warmed" not in d
+    # after the close with the bar already present: nothing
+    monkeypatch.setattr(td, "equity_session_closed_today", lambda: True)
+    monkeypatch.setattr(sr, "cache_has_bar", lambda d: True)
+    sr.warm_caches_after_close(d); assert calls == []
+    # after the close, bar missing: all three loaders, S&P last
+    monkeypatch.setattr(sr, "cache_has_bar", lambda d: False)
+    sr.warm_caches_after_close(d)
+    assert calls == ["download_spy", "download_vix", "download_sp500_prices"] and d["warmed"] == "2026-10-20"
