@@ -184,8 +184,12 @@ def run_portfolio(
     vol_scaling_params = config.get("vol_scaling_params", {})
 
     # Load data
-    symbols = EXPANDED_UNIVERSE + ["SHY"]
-    etf_prices = download_and_cache(symbols, start=start, end=end, cache_name="etf_prices")
+    # The ETF panel is yfinance-backed research data (the one yfinance cache
+    # kept, 2026-10-20); load it only when a component strategy trades it.
+    etf_prices = None
+    if any(sid not in STOCK_STRATEGIES and sid not in CRYPTO_STRATEGIES for sid in weights):
+        symbols = EXPANDED_UNIVERSE + ["SHY"]
+        etf_prices = download_and_cache(symbols, start=start, end=end, cache_name="etf_prices")
 
     stock_prices = None
     vix = None

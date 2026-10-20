@@ -168,7 +168,8 @@ def compute_spy_trend_filter(
         Series of scalars (1.0 or reduction) indexed by date
     """
     # Download extra history for MA warmup
-    spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter")
+    from data.sp500 import download_spy
+    spy_prices = download_spy()
     spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
 
     # Override last close with real-time price for live trading decisions

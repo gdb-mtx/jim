@@ -143,7 +143,8 @@ async def run_backtest(
         oos_start = oos_returns.index[0].strftime("%Y-%m-%d") if len(oos_returns) else None
 
         # SPY buy-and-hold benchmark for the same active period
-        spy_prices = download_and_cache(["SPY"], start=start, end=end, cache_name="spy_filter")
+        from data.sp500 import download_spy
+        spy_prices = download_spy().loc[start:end]
         spy_returns = spy_prices.pct_change().dropna().squeeze()
         first_date = returns.index[0]
         last_date = returns.index[-1]

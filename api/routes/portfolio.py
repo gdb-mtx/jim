@@ -370,7 +370,7 @@ async def filter_status():
     """Get current regime filter status (SPY 200d MA + BTC 125d MA).
 
     Uses Alpaca real-time quotes for the current price comparison.
-    SPY MA from yfinance cached data; BTC MA from Alpaca bars (broker-native,
+    SPY MA from the Alpaca-sourced SPY cache; BTC MA from Alpaca bars (broker-native,
     no publishing delay — yfinance had a 1-12h publishing delay on settled
     crypto bars; see HISTORY.md C10).
     """
@@ -383,11 +383,12 @@ async def filter_status():
         result = {}
 
         try:
-            spy_prices = download_and_cache(["SPY"], start="2008-01-01", cache_name="spy_filter").squeeze().dropna()
+            from data.sp500 import download_spy
+            spy_prices = download_spy().squeeze().dropna()
             spy_ma = spy_prices.rolling(200, min_periods=200).mean()
             spy_ma_val = float(spy_ma.iloc[-1])
 
-            # Use Alpaca real-time price instead of cached yfinance close
+            # Use Alpaca real-time price instead of the cached close
             live_spy: float | None = None
             try:
                 broker = _get_broker(1)
@@ -415,7 +416,7 @@ async def filter_status():
             btc_ma = btc_prices.rolling(125, min_periods=125).mean()
             btc_ma_val = float(btc_ma.iloc[-1])
 
-            # Use Alpaca real-time price instead of cached yfinance close
+            # Use Alpaca real-time price instead of the cached close
             live_btc: float | None = None
             try:
                 broker = _get_broker(4)
@@ -484,7 +485,7 @@ async def data_freshness():
         {"name": "VIX",                        "file": "vix.parquet",           "threshold_h": 20, "asset_class": "equity"},
         {"name": "S&P 500",                    "file": "sp500_prices.parquet",  "threshold_h": 30, "asset_class": "equity"},
         {"name": "SPY filter",                 "file": "spy_filter.parquet",    "threshold_h": 20, "asset_class": "equity"},
-        {"name": "ETF universe",               "file": "etf_prices.parquet",    "threshold_h": 20, "asset_class": "equity"},
+        {"name": "ETF universe (research)",    "file": "etf_prices.parquet",    "threshold_h": 20, "asset_class": "equity", "research_only": True},
     ]
     now = time.time()
     today_utc = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
@@ -498,6 +499,7 @@ async def data_freshness():
         if not p.exists():
             caches.append({
                 "name": f["name"], "file": f["file"], "asset_class": f["asset_class"],
+                "research_only": f.get("research_only", False),
                 "age_h": None, "threshold_h": f["threshold_h"],
                 "stale": True, "mtime_stale": True, "content_stale": False,
                 "latest_bar": None, "missing": True,
@@ -534,6 +536,7 @@ async def data_freshness():
             "name": f["name"],
             "file": f["file"],
             "asset_class": f["asset_class"],
+            "research_only": f.get("research_only", False),
             "age_h": round(age_h, 1),
             "threshold_h": f["threshold_h"],
             "stale": mtime_stale or content_stale,
@@ -542,7 +545,8 @@ async def data_freshness():
             "latest_bar": latest_bar,
             "missing": False,
         })
-    any_stale = any(c["stale"] for c in caches)
+    # Research-only caches (the yfinance ETF panel) never drive the red dot.
+    any_stale = any(c["stale"] and not c.get("research_only") for c in caches)
     return {"any_stale": any_stale, "caches": caches}
 
 
@@ -567,7 +571,7 @@ async def refresh_cache():
 
     def _refresh():
         from data.pipeline import download_and_cache, EXPANDED_UNIVERSE
-        from data.sp500 import download_sp500_prices, download_vix
+        from data.sp500 import download_sp500_prices, download_spy, download_vix
         from data.crypto import download_crypto_prices, download_btc_prices
 
         errors = []
@@ -575,8 +579,7 @@ async def refresh_cache():
         for name, fn in [
             ("ETF universe", lambda: download_and_cache(
                 EXPANDED_UNIVERSE + ["SHY"], cache_name="etf_prices", force_refresh=True)),
-            ("SPY filter", lambda: download_and_cache(
-                ["SPY"], cache_name="spy_filter", force_refresh=True)),
+            ("SPY filter", lambda: download_spy(force_refresh=True)),
             ("VIX", lambda: download_vix(force_refresh=True)),
             ("BTC", lambda: download_btc_prices(force_refresh=True)),
             ("Crypto universe", lambda: download_crypto_prices(force_refresh=True)),

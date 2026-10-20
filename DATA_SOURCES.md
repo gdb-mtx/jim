@@ -31,6 +31,7 @@ to yfinance behavior. Parquet was just the medium that recorded it.
 | 2026-08-08 | refresh-cache "stuck" ~25 min; second click doubled it | Saturday rate-limit ~90s/batch × 24h-TTL expiry landing in-request |
 | 2026-08-10 | etf_prices truncated to 903 rows / crypto to 8 coins from 2025 | not yfinance's fault — shared caches writable by short-lookback callers (fixed: canonical floor starts) |
 | 2026-08-11 | Combined-tab chart frozen; server reload wedged | uncached SPY download on every 30s poll → session rate-limited into indefinite hangs (blocks, doesn't raise) |
+| 2026-10-20 | scheduler reported "not due" on rebalance day: S&P cache permanently one session short | 24h TTL expiring at ~15:31 daily + the 10-min cron as first caller → pre-close refresh → unsettled-row guard dropped that day; 10-06 log shows the same path stuck 60 min in DNS timeouts (fixed: calendar-based due-check, session-aware staleness, and the whole path moved to Alpaca — below) |
 | 2026-09-08 | sp500_prices truncated to 673 rows (2024+); validation "insufficient history" | not yfinance's fault — macro composite's `start="2024-01-01"` refresh had no canonical floor (fixed: `SP500_CACHE_FLOOR` + truncation check on read, HISTORY.md 2026-09-09) |
 
 ## 2026-08-11 — Hot-path audit (class-level fix)
@@ -51,6 +52,46 @@ Each one got a defensive patch (threading.Lock, atomic writes, plausibility
 bands, retry+coverage gate, schema cross-check, 0-row guard). The system
 is now meaningfully hardened — but it's hardening *around* an unreliable
 source rather than fixing the source.
+
+## 2026-10-20 — yfinance retired from every live and validation path
+
+The thesis of this document, executed. After the 10-20 incident (the
+scheduler couldn't see its own rebalance day because the S&P cache was
+permanently one session short — a TTL-drift + pre-close-refresh cycle on
+top of yfinance's 5-45 minute downloads), George called it: no more Yahoo
+caches on anything that trades or validates.
+
+**Probe result that made it possible:** Alpaca's free tier serves
+`feed=sip` (consolidated tape, not IEX) historical daily bars with
+`adjustment=all` back to 2016-01-04. The 08-11 IEX caveat below no longer
+applies to daily closes. Tested against the yfinance panel (499 S&P
+names, 2023→): median close difference 0.002%, p95 0.08%; A1's top-15
+identical on 44/46 grid dates (Jaccard 0.995), the other two differ by
+one marginal name; A1 OOS 2023→ CAGR 31.6% / Calmar 1.92 on Alpaca vs
+30.7% / 1.87 on yfinance, same drawdown. Where the sources disagree by
+>1% (WDC, TDG, LEN, FTV, MDT, APTV; BK→BNY, RE→EG renames) Alpaca adjusts
+spin-offs and special dividends as distributions and yfinance doesn't —
+Alpaca is the better-adjusted series. SPY: max difference 0.006%. VIX
+from CBOE's own CSV matches the yfinance cache except two bad Yahoo prints.
+
+**New shape:**
+
+| Input | Source | Notes |
+|---|---|---|
+| S&P 500 panel (`sp500_prices`) | Alpaca SIP 2016→, full re-pull every refresh (~4.5 min at 200 req/min, per-symbol) | pre-2016 banked once from the last trusted yfinance cache (`data/banked/sp500_pre2016.parquet`, `scripts/bank_pre2016.py`), ratio-spliced over a Jan-Mar 2016 overlap because adjusted closes are re-based by every dividend (`data/alpaca_equity_bars.splice_banked`) |
+| SPY (200d filter, `spy_filter`) | `data.sp500.download_spy` — Alpaca SIP + banked 2005-2016 | replaces `download_and_cache(["SPY"], cache_name="spy_filter")` at all seven call sites |
+| VIX, VIX9D, VIX3M | `data/cboe.py` — CBOE's daily CSVs (primary publisher, no key, 1990→) | Yahoo republished these |
+| Macro composite inputs (HYG/IEF/UUP/XLU/SPY) | Alpaca | was one yfinance call per 4-hourly cron fire |
+| Live scorecard SPY / BTC | Alpaca equity bars / Alpaca crypto bars | |
+| Crypto backtest caches | banked + Alpaca (since 09-09); BNB frozen at banked history; no bootstrap path | the parquet *is* the pre-2021 history — back it up |
+| ETF universe (`etf_prices`) | **yfinance, research only** (`download_and_cache`) | loaded lazily — only when an ETF strategy is in the blend; excluded from the dashboard's red dot (`research_only`) |
+
+Research scripts (`scripts/*_poc.py`, `mode2/`, `data/fundamentals.py`)
+keep yfinance; none of them is on a cron or request path.
+
+**What a paid source would still buy:** pre-2016 depth without the banked
+splice, and survivorship-free constituent lists (C3). Daily SIP closes
+are already the consolidated data — reliability is no longer the reason.
 
 ## 2026-08-13 — Backtest crypto caches migrated to Alpaca appends
 

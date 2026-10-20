@@ -237,9 +237,8 @@ def get_spy_benchmark(dates: list[str], start_value: float) -> list[dict]:
         # Combined chart showed its empty state.
         from data.pipeline import download_and_cache
 
-        spy = download_and_cache(
-            ["SPY"], start="2008-01-01", cache_name="spy_filter"
-        ).squeeze()
+        from data.sp500 import download_spy
+        spy = download_spy().squeeze()
         # Align to snapshot dates
         snap_dates = pd.DatetimeIndex([pd.Timestamp(d) for d in dates])
         spy = spy.reindex(snap_dates).ffill().dropna()
@@ -292,9 +291,8 @@ def get_performance_summary(
         # row; the D4 concern (misleading zeros when SPY is unavailable) is
         # still handled by the except path below.
         from data.pipeline import download_and_cache
-        spy = download_and_cache(
-            ["SPY"], start="2008-01-01", cache_name="spy_filter"
-        ).squeeze()
+        from data.sp500 import download_spy
+        spy = download_spy().squeeze()
     except Exception as e:
         logger.warning("SPY fetch failed (%s) — performance summary will mark SPY/alpha as unavailable", e)
         spy = pd.Series(dtype=float)

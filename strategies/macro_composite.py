@@ -109,18 +109,21 @@ def compute_live_macro_state() -> dict:
     existing de-risk stack makes it pure bull-cost); it exists for alerting
     and downstream timing (e.g. the VIXY tail leg).
     """
-    import yfinance as yf
+    import pandas as pd
 
+    from data.alpaca_equity_bars import get_equity_closes
+    from data.cboe import fetch_cboe_index
     from data.sp500 import download_sp500_prices
 
-    px = yf.download(
-        ["HYG", "IEF", "UUP", "XLU", "SPY", "^VIX9D", "^VIX3M"],
-        period="2y", progress=False, auto_adjust=True,
-    )["Close"]
-    sp500 = download_sp500_prices(start="2024-01-01")
+    # Alpaca SIP + CBOE (2026-10-20; was one yfinance call per cron fire).
+    two_years_ago = (pd.Timestamp.today() - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+    px = get_equity_closes(["HYG", "IEF", "UUP", "XLU", "SPY"], start=two_years_ago)
+    vix9d = fetch_cboe_index("VIX9D").loc[two_years_ago:]
+    vix3m = fetch_cboe_index("VIX3M").loc[two_years_ago:]
+    sp500 = download_sp500_prices()
     comp = compute_macro_composite(
-        px[["HYG", "IEF", "UUP", "XLU", "SPY"]].dropna(subset=["HYG", "IEF"]),
-        vix9d=px["^VIX9D"], vix3m=px["^VIX3M"], sp500_prices=sp500,
+        px.dropna(subset=["HYG", "IEF"]),
+        vix9d=vix9d, vix3m=vix3m, sp500_prices=sp500,
     )
     last = comp.iloc[-1]
     return {

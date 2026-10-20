@@ -32,6 +32,17 @@ agents). Before launchd it was an in-process APScheduler job, retired
 2026-05-05. The Python scripts are unchanged across all three eras; only the
 thing that fires them changed.
 
+## Data sources (2026-10-20)
+
+Nothing on a cron or request path reads yfinance any more. The S&P panel,
+SPY and the macro ETFs come from Alpaca SIP daily bars (`data/alpaca_equity_bars.py`);
+VIX/VIX9D/VIX3M from CBOE's CSVs (`data/cboe.py`); crypto from Alpaca
+(`data/alpaca_crypto_bars.py`). Pre-2016 equity history is the one-time
+banked segment in `data/banked/` (gitignored — **back it up**; it is the
+only thing that would ever need yfinance again). The SPY filter-cron leg
+warms the S&P cache after the close; the scheduler never reads a cache to
+decide due-ness. `DATA_SOURCES.md` has the full story.
+
 ## What's automated
 
 Four cron entries (system crontab — `crontab -l`). **Cron fires at
@@ -421,7 +432,9 @@ up a missed minute). Each fire decides for itself:
    catch-up trades the same ranking next day.
 
 Before trading, the S&P cache must hold the grid bar (the session before
-the rebalance date); if not, one forced refresh runs inside the window,
+the rebalance date); if not, one forced refresh runs inside the window
+(Alpaca SIP, ~4.5 min at the free-tier 200 req/min — was 5-45 min on
+yfinance),
 and the runner refuses to execute unless the ranking is dated exactly on
 that bar (`require_signal_asof` → status `stale_ranking`).
 

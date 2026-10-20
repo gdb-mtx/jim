@@ -271,6 +271,45 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-10-20 — yfinance retired from every live and validation path (Alpaca SIP + CBOE)
+
+Same day as the scheduler incident below, George called the class: no
+more Yahoo caches on anything that trades or validates. Probe: Alpaca's
+free tier serves consolidated (`feed=sip`), split/dividend-adjusted daily
+bars back to 2016-01-04. Pre-cutover test on the full 499-name panel —
+median close difference 0.002%, A1's top-15 identical on 44/46 grid
+dates (Jaccard 0.995), OOS 31.6%/1.92 vs 30.7%/1.87 — then the rebuild:
+
+- `data/alpaca_equity_bars.py`: per-symbol throttled loader (200 req/min →
+  ~4.5 min for the S&P panel, deterministic, vs 5-45 min + DNS timeouts)
+  and `splice_banked`, which prepends the one-time banked yfinance segment
+  (`data/banked/`, `scripts/bank_pre2016.py`, gitignored — back it up)
+  rescaled by the median fresh/banked ratio over a Jan-Mar 2016 overlap.
+  Adjusted closes re-base on every dividend, so the Alpaca range is
+  re-pulled whole each refresh. A symbol whose overlap ratio is not
+  constant (MAD/median > 1%) is a different instrument behind a reused or
+  reorganised ticker — APTV, BKR, JCI, VTRS, AMCR, LIN, SW — and gets no
+  banked history rather than a fake seam return (the std-based first cut
+  tripped on a single bad print; MAD doesn't). SKYD drops out of the panel:
+  Alpaca's history starts at the 2025 listing and the existing 80%-of-500-
+  sessions gate applies; yfinance had spliced the predecessor's history.
+- `data/cboe.py`: VIX/VIX9D/VIX3M from CBOE's own CSVs (1990→, no key);
+  matches the yfinance VIX cache except two bad Yahoo prints.
+- `data/sp500.py`: `download_sp500_prices` and `download_vix` rewired;
+  new `download_spy` replaces `download_and_cache(["SPY"], cache_name=
+  "spy_filter")` at all seven call sites, so a TTL expiry can never
+  re-download SPY from yfinance over the Alpaca cache. Macro composite
+  inputs, the tail-signal VIX ratio and the scorecard benchmarks moved
+  too. Crypto: BNB frozen at banked history, bootstrap path removed. The
+  ETF universe (`download_and_cache`) stays on yfinance for research only,
+  loaded lazily by `run_portfolio` and excluded from the dashboard red dot.
+
+Revalidated A1 on the new source: **PASS 31.6% / −16.5% / Calmar 1.92**,
+ratio 193%, p5 +12.6% (09-25 on yfinance: 32.1% / 2.02 — the delta is
+source + three weeks of a drawdown). The first fully unattended
+rebalance fired the same afternoon on the calendar-based scheduler: 16
+orders, 16 filled, ranking dated on the grid bar.
+
 ## 2026-10-20 — Scheduler couldn't see its own rebalance day (cache missing the grid bar)
 
 At 12:43 ET on rebalance day the Ops panel said "next run in 29d" and a

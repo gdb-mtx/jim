@@ -241,6 +241,7 @@ export interface DataCacheInfo {
   content_stale: boolean;
   latest_bar: string | null;
   missing: boolean;
+  research_only?: boolean;
 }
 
 export interface DataFreshnessResponse {

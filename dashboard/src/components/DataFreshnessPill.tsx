@@ -53,6 +53,7 @@ export default memo(function DataFreshnessPill() {
       const flags: string[] = [];
       if (c.mtime_stale) flags.push("MTIME-STALE");
       if (c.content_stale) flags.push("CONTENT-STALE");
+      if (c.research_only) flags.push("research-only, not in status");
       const tail = flags.length ? ` (${flags.join(", ")})` : "";
       const bar = c.latest_bar ? ` latest: ${c.latest_bar}` : "";
       return `${c.name}: ${formatAge(c.age_h)}${bar}${tail}`;

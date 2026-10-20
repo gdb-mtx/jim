@@ -4,6 +4,8 @@
 import argparse
 import fcntl
 import logging
+
+import pandas as pd
 import logging.handlers
 import os
 import sys
@@ -114,9 +116,8 @@ def compute_filters(scope: str = "all") -> dict:
     result: dict = {}
 
     if scope in ("all", "spy"):
-        spy_prices = download_and_cache(
-            ["SPY"], start="2008-01-01", cache_name="spy_filter", force_refresh=True
-        )
+        from data.sp500 import download_spy
+        spy_prices = download_spy(force_refresh=True)
         spy_close = spy_prices["SPY"] if "SPY" in spy_prices.columns else spy_prices.squeeze()
         spy_ma = spy_close.rolling(200).mean()
         spy_filter = compute_spy_trend_filter()
@@ -129,10 +130,9 @@ def compute_filters(scope: str = "all") -> dict:
         # VIX term-structure ratio — tail-signal input. Alert-only downstream;
         # never triggers a rebalance. Failure must never block the SPY filter.
         try:
-            import yfinance as yf
-            vixes = yf.download(
-                ["^VIX9D", "^VIX3M"], period="10d", progress=False, auto_adjust=True
-            )["Close"].dropna()
+            from data.cboe import fetch_cboe_index
+            v9d, v3m = fetch_cboe_index("VIX9D"), fetch_cboe_index("VIX3M")
+            vixes = pd.concat([v9d, v3m], axis=1).dropna()
             if not vixes.empty:
                 ratio = float(vixes["^VIX9D"].iloc[-1] / vixes["^VIX3M"].iloc[-1])
                 result.update({

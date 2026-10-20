@@ -22,7 +22,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -62,8 +61,8 @@ def window_return(series: pd.Series, t0: pd.Timestamp, t1: pd.Timestamp) -> floa
 
 def main(notify: bool = False):
     summaries = []
-    spy = yf.download("SPY", start="2026-04-10", progress=False, auto_adjust=True)["Close"].squeeze()
-    spy.index = pd.to_datetime(spy.index)
+    from data.alpaca_equity_bars import get_equity_closes
+    spy = get_equity_closes(["SPY"], start="2026-04-10")["SPY"]
 
     # cycle boundaries: every 21 trading days from the anchor, on SPY's calendar
     cal = spy.index[spy.index >= GRID_START]
@@ -120,7 +119,12 @@ def shadow(account: int, strategy_id: str, retired: str, benchmark: str) -> str:
     if len(post) < 2:
         return ""
     ret = float((1 + post).prod() - 1)
-    bm = yf.download(benchmark, start=str(r0.date()), progress=False, auto_adjust=True)["Close"].squeeze()
+    if benchmark == "BTC-USD":
+        from data.alpaca_crypto_bars import get_btc_bars
+        bm = get_btc_bars(start=str(r0.date()))
+    else:
+        from data.alpaca_equity_bars import get_equity_closes
+        bm = get_equity_closes([benchmark], start=str(r0.date()))[benchmark]
     bm_ret = float(bm.iloc[-1] / bm.iloc[0] - 1) if len(bm) > 1 else float("nan")
     in_market = float((post != 0).mean())
     print(f"\n=== SHADOW A{account} ({strategy_id}, retired {r0.date()} — signal-only, would-have-been) ===")

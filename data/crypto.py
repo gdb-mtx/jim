@@ -11,7 +11,6 @@ See DATA_SOURCES.md.
 """
 
 import pandas as pd
-import yfinance as yf
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
@@ -167,19 +166,10 @@ def download_crypto_prices(
             banked = _drop_unsettled(old)
 
     if len(banked) == 0:
-        # Bootstrap (cache missing/corrupt): pre-Alpaca history only exists
-        # on yfinance. Full universe from the 2020 floor regardless of the
-        # caller's start/symbols — a short-lookback or subset caller must
-        # never shrink the shared cache (2026-08-10 incident). Require >=80%
-        # of the 9-coin universe returned; less means a yfinance hiccup.
-        print(f"Bootstrapping crypto cache from yfinance ({len(CRYPTO_UNIVERSE)} coins, 2020-01-01)...")
-        from data.pipeline import download_with_retry
-        banked = download_with_retry(
-            CRYPTO_UNIVERSE, start="2020-01-01", end=None, min_coverage_ratio=0.8
+        raise RuntimeError(
+            f"{cache_path} missing/corrupt — the pre-Alpaca crypto history is banked "
+            f"in this file (yfinance retired 2026-10-20); restore it from backup."
         )
-        coverage = banked.notna().sum() / len(banked)
-        banked = banked[coverage[coverage >= 0.50].index].dropna(how="all")
-        banked = _drop_unsettled(banked)
 
     print(f"Refreshing crypto cache from Alpaca ({len(LIVE_CRYPTO_UNIVERSE)} coins) over banked history...")
     alpaca = _drop_unsettled(get_crypto_bars(list(LIVE_CRYPTO_UNIVERSE), start="2021-01-01"))
@@ -189,19 +179,9 @@ def download_crypto_prices(
             f"Alpaca returned no bars for {sorted(missing)} — refusing to write crypto cache"
         )
 
-    # BNB: best-effort yfinance append (backtest-only coin, HISTORY.md C11).
-    # Failure keeps the banked BNB column as-is and never blocks the refresh.
+    # BNB (no Alpaca listing, HISTORY.md C11) is frozen at its banked history
+    # since 2026-10-20 — yfinance is gone from every live/validation path.
     bnb = pd.DataFrame()
-    try:
-        recent = (pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
-                  - pd.Timedelta(days=14)).strftime("%Y-%m-%d")
-        raw = yf.download("BNB-USD", start=recent, auto_adjust=True, progress=False)
-        if raw is not None and len(raw) > 0:
-            closes = raw["Close"] if "Close" in raw else raw
-            bnb = _drop_unsettled(closes)[["BNB-USD"]].astype(float)
-    except Exception as e:
-        print(f"BNB yfinance append failed ({e}) — keeping banked BNB values")
-
     # Precedence: Alpaca > fresh BNB > banked. combine_first aligns on the
     # union index, so per-coin Alpaca listing gaps fall through to banked.
     prices = alpaca.combine_first(bnb).combine_first(banked) if len(bnb) else alpaca.combine_first(banked)
@@ -292,13 +272,10 @@ def download_btc_prices(
             banked = _drop_unsettled(old)
 
     if len(banked) == 0:
-        # Bootstrap (cache missing/corrupt): pre-2021 history only exists on
-        # yfinance (Alpaca's BTC floor is 2021-01-01; ours is 2018).
-        print("Bootstrapping BTC cache from yfinance (2018-01-01)...")
-        from data.pipeline import download_with_retry
-        banked = download_with_retry(["BTC-USD"], start="2018-01-01", min_coverage_ratio=1.0)
-        banked.columns = ["BTC-USD"]
-        banked = _drop_unsettled(banked)
+        raise RuntimeError(
+            f"{cache_path} missing/corrupt — the pre-2021 BTC history is banked in this "
+            f"file (yfinance retired 2026-10-20); restore it from backup."
+        )
 
     print("Refreshing BTC cache from Alpaca over banked history...")
     fresh = _drop_unsettled(get_btc_bars(start="2021-01-01").to_frame())

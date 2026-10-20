@@ -17,7 +17,6 @@ import logging
 import threading
 import time
 import pandas as pd
-import yfinance as yf
 import requests
 from pathlib import Path
 
@@ -34,6 +33,8 @@ _SP500_REFRESH_LOCK = threading.Lock()
 # every validation/scorecard/backtest then ran on 2024+ data. Same class as
 # the 2026-08-10 etf_prices incident (fixed in download_and_cache).
 SP500_CACHE_FLOOR = "2010-01-01"
+# Last day of the banked yfinance segment's overlap with Alpaca (splice window).
+BANKED_OVERLAP_END = "2016-03-31"
 
 
 def _is_truncated(prices: pd.DataFrame) -> bool:
@@ -159,42 +160,21 @@ def download_sp500_prices(
         if max_tickers:
             tickers = tickers[:max_tickers]
 
-        # Download from the floor of (caller start, SP500_CACHE_FLOOR) so a
-        # short-lookback caller can never truncate the shared cache.
-        dl_start = min(start, SP500_CACHE_FLOOR)
-        print(f"Downloading prices for {len(tickers)} S&P 500 stocks from {dl_start}...")
-        print("This may take a few minutes on first run...")
-
-        # Batched download; raise on persistent batch failure rather than write a truncated cache.
-        from data.pipeline import download_with_retry
-        batch_size = 50
-        all_prices = []
-        failed_batches: list[int] = []
-
-        for i in range(0, len(tickers), batch_size):
-            batch = tickers[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            total_batches = (len(tickers) - 1) // batch_size + 1
-            print(f"  Batch {batch_num}/{total_batches}: {len(batch)} tickers")
-
-            try:
-                batch_prices = download_with_retry(
-                    batch, start=dl_start, end=end, min_coverage_ratio=0.5
-                )
-            except Exception as e:
-                print(f"  Batch {batch_num} exhausted retries: {e}")
-                failed_batches.append(batch_num)
-            else:
-                all_prices.append(batch_prices)
-
-        if failed_batches:
+        # Alpaca SIP from the 2016 floor, spliced onto the one-time banked
+        # yfinance segment (data/banked/, scripts/bank_pre2016.py). The full
+        # Alpaca range is re-pulled every refresh because adjusted closes are
+        # re-based by every dividend — a partial append would mix bases.
+        # 2026-10-20: yfinance retired from this path (DATA_SOURCES.md).
+        from data.alpaca_equity_bars import ALPACA_EQUITY_FLOOR, get_equity_closes, splice_banked
+        banked_path = DATA_DIR / "banked" / "sp500_pre2016.parquet"
+        if not banked_path.exists():
             raise RuntimeError(
-                f"S&P 500 download failed for batches {failed_batches} after "
-                f"retries exhausted. Refusing to write a truncated cache. "
-                f"Retry later (likely yfinance rate-limit) or investigate."
+                f"{banked_path} missing — pre-2016 history is banked once from a trusted "
+                f"yfinance cache (scripts/bank_pre2016.py); restore it from backup."
             )
-
-        prices = pd.concat(all_prices, axis=1)
+        print(f"Downloading {len(tickers)} S&P 500 stocks from Alpaca SIP ({ALPACA_EQUITY_FLOOR}+)...")
+        fresh = get_equity_closes(tickers, start=ALPACA_EQUITY_FLOOR, end=end)
+        prices = splice_banked(pd.read_parquet(banked_path), fresh, BANKED_OVERLAP_END)
 
         # Trailing-window coverage gate so recent S&P additions can qualify; pre-IPO NaNs are NaN-safe.
         coverage_window = min(500, len(prices))
@@ -279,10 +259,11 @@ def download_vix(
             print(f"VIX cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
 
     print("Downloading VIX data...")
-    from data.pipeline import download_with_retry, write_parquet_atomic
+    from data.pipeline import write_parquet_atomic
     from data.plausibility import assert_plausible
-    prices = download_with_retry(["^VIX"], start=start, min_coverage_ratio=1.0)
-    vix = prices.iloc[:, 0]
+    from data.cboe import fetch_cboe_index
+    # CBOE's own CSV — the primary publisher; yfinance republished it (2026-10-20).
+    vix = fetch_cboe_index("VIX").loc[start:]
     vix.name = "^VIX"  # keep ticker name for plausibility lookup
 
     # Plausibility guard. VIX band 5-100; anything outside is yfinance garbage.
@@ -296,3 +277,42 @@ def download_vix(
     print(f"Cached VIX: {len(vix)} rows")
 
     return vix
+
+
+def download_spy(force_refresh: bool = False) -> pd.DataFrame:
+    """SPY daily closes for the 200d trend filter — single-column frame
+    (`SPY`), cache `spy_filter.parquet`, 16h TTL + settled-session content
+    check. Alpaca SIP from 2016 spliced onto the banked yfinance segment
+    (2005-2016). Replaces `download_and_cache(["SPY"], cache_name="spy_filter")`
+    at every live/validation call site (2026-10-20). Live code may still
+    overlay the latest Alpaca price on the last row (compute_spy_trend_filter).
+    """
+    import time
+
+    cache_path = DATA_DIR / "raw" / "spy_filter.parquet"
+    max_age_hours = 16
+    if not force_refresh and cache_path.exists():
+        age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+        if age_hours < max_age_hours:
+            cached = pd.read_parquet(cache_path)
+            from data.pipeline import content_is_stale
+            if len(cached) > 0 and list(cached.columns) == ["SPY"] and not content_is_stale(cached):
+                return cached
+            print("SPY cache stale/invalid — refreshing")
+        else:
+            print(f"SPY cache is {age_hours:.1f}h old (>{max_age_hours}h) — refreshing...")
+
+    from data.alpaca_equity_bars import ALPACA_EQUITY_FLOOR, get_equity_closes, splice_banked
+    from data.pipeline import write_parquet_atomic
+    from data.plausibility import assert_plausible_df
+    from data.trading_dates import drop_unsettled_equity_rows
+    banked_path = DATA_DIR / "banked" / "spy_pre2016.parquet"
+    if not banked_path.exists():
+        raise RuntimeError(f"{banked_path} missing — run scripts/bank_pre2016.py from a trusted cache")
+    fresh = get_equity_closes(["SPY"], start=ALPACA_EQUITY_FLOOR)
+    spy = splice_banked(pd.read_parquet(banked_path)[["SPY"]], fresh, BANKED_OVERLAP_END)
+    spy = drop_unsettled_equity_rows(spy)
+    assert_plausible_df(spy)
+    write_parquet_atomic(spy, cache_path)
+    print(f"Cached SPY: {len(spy)} rows")
+    return spy
