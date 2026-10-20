@@ -243,6 +243,17 @@ async def get_scheduler():
                 else:
                     last_status = "success"
                 error = execute_error
+            from execution import scheduler_state
+            heartbeat = scheduler_state.read_heartbeat()
+            preflight = scheduler_state.read_preflight()
+            if heartbeat is None or heartbeat.get("stale"):
+                health = "stale_heartbeat"
+            elif heartbeat.get("decision") in ("error", "blocked"):
+                health = "scheduler_error"
+            elif preflight and preflight.get("status") == "fail":
+                health = "preflight_failed"
+            else:
+                health = "ok"
             scheduled_rebalance["jobs"].append({
                 "id": job_id,
                 "label": label,
@@ -252,6 +263,10 @@ async def get_scheduler():
                 "last_finished": last_finished,
                 "last_status": last_status,
                 "error": error,
+                # 2026-10-20: the scheduler's decisions, not just its trades
+                "heartbeat": heartbeat,
+                "preflight": preflight,
+                "health": health,
             })
 
         # --- launchd block (filter monitors) ---

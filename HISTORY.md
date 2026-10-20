@@ -271,6 +271,18 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-10-20 — Scheduler heartbeat + pre-flight: decisions made visible
+
+The 09-21 (closed lid) and 10-20 (cache missing the grid bar) failures
+both looked like health on the Ops panel, which only knew about trades.
+`execution/scheduler_state.py`: every scheduler fire writes a heartbeat
+(decision + reason, crash included; stale > 30 min = red), and on the two
+sessions before a rebalance the scheduler pre-flights the chain —
+validation gate, caches hold the last completed session, ranking pipeline
+runs and is dated on the grid bar once settled, broker reachable, crontab
+entry — re-checking every ~3h and when the grid bar lands, notifying once
+per verdict change. Ops row shows both; `--preflight` runs it by hand.
+
 ## 2026-10-20 — yfinance retired from every live and validation path (Alpaca SIP + CBOE)
 
 Same day as the scheduler incident below, George called the class: no

@@ -35,6 +35,8 @@ function formatRelativePast(iso: string | null): string {
 }
 
 function toneForRebalanceJob(job: OpsSchedulerJob): StatusTone {
+  if (job.health === "stale_heartbeat" || job.health === "scheduler_error") return "red";
+  if (job.health === "preflight_failed") return "amber";
   if (job.last_status === "failed") return "red";
   // "partial" = orders submitted with ≥1 broker rejection (e.g. expected
   // sub-broker-minimum dust rejections — see CLAUDE.md). Same tone as
@@ -188,6 +190,25 @@ export default memo(function SchedulerPanel() {
                             <div className="text-xs text-[#8888a0]">
                               {job.label ?? job.id}
                             </div>
+                            {job.heartbeat !== undefined && (
+                              <div
+                                className={`text-xs ${job.heartbeat === null || job.heartbeat.stale ? "text-[#ff4d6a]" : "text-[#8888a0]"}`}
+                                title={job.heartbeat?.reason}
+                              >
+                                {job.heartbeat === null
+                                  ? "heartbeat: never fired"
+                                  : `heartbeat ${formatRelativePast(job.heartbeat.fired_at)}${job.heartbeat.stale ? " — STALE, cron is not running the script" : ` · ${job.heartbeat.decision.replace(/_/g, " ")}`}${job.heartbeat.next_rebalance ? ` · next ${job.heartbeat.next_rebalance}` : ""}`}
+                              </div>
+                            )}
+                            {job.preflight && (
+                              <div
+                                className={`text-xs ${job.preflight.status === "ok" ? "text-[#00d4aa]" : "text-[#ffc04d]"}`}
+                                title={job.preflight.checks.map((c) => `${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`).join("\n")}
+                              >
+                                pre-flight {job.preflight.target}: {job.preflight.status === "ok" ? "all checks OK" : `${job.preflight.checks.filter((c) => !c.ok).map((c) => c.name).join(", ")} FAILED`}
+                                {" "}({formatRelativePast(job.preflight.checked_at)})
+                              </div>
+                            )}
                           </td>
                           <td className="py-2 pr-3 text-[#c0c0d0]">
                             {formatRelativePast(job.last_finished ?? job.last_started)}

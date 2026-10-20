@@ -449,6 +449,28 @@ panel shows next run (calendar) and last run (journal) under "scheduled
 rebalance". Manual/off-cycle: `--force --account N`; `--dry-run` to see
 due-ness without trading.
 
+## Scheduler heartbeat + pre-flight (added 2026-10-20)
+
+Two files in `data/risk_state/`, both surfaced on the Ops panel's
+scheduled-rebalance row (`execution/scheduler_state.py`):
+
+- **`scheduler_heartbeat.json`** — written on *every* 10-minute fire,
+  crashes included (`decision` = not_due / due_waiting_window / executed /
+  blocked / error, plus the reason and the next rebalance date). Older
+  than 30 minutes = red: cron is not running the script (closed lid, TCC,
+  broken venv). "Last run 28d ago, success" can no longer hide that.
+- **`preflight_state.json`** — on the two sessions before a rebalance date
+  (and on the day until it executes), the scheduler checks the whole chain
+  every ~3h and immediately once the grid bar lands in the cache:
+  validation gate, the three price caches hold the last completed
+  session, the ranking pipeline runs and (once the grid bar is settled)
+  is dated exactly on it, broker reachable, crontab entry present. A new
+  verdict notifies once ("Jim Pre-flight OK" / "— ATTENTION"); repeats
+  don't. Manual: `uv run python3 scripts/scheduled_rebalance.py --preflight`.
+
+The eve-of check is the one that catches the recurring classes (stale
+cache, expired gate, lost crontab) while there is still a day to fix them.
+
 ## What you have to do
 
 **One manual action on the calendar, nothing daily:**

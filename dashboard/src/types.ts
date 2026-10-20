@@ -306,6 +306,23 @@ export interface OpsSchedulerJob {
   last_finished: string | null;
   last_status: "running" | "success" | "partial" | "skipped" | "failed" | null;
   error: string | null;
+  // Scheduled-rebalance job only (2026-10-20): decisions, not just trades
+  heartbeat?: {
+    fired_at: string;
+    age_s: number | null;
+    stale: boolean;
+    decision: string;
+    reason: string;
+    next_rebalance?: string;
+  } | null;
+  preflight?: {
+    target: string;
+    grid: string;
+    checked_at: string;
+    status: "ok" | "fail";
+    checks: { name: string; ok: boolean; detail: string }[];
+  } | null;
+  health?: "ok" | "stale_heartbeat" | "scheduler_error" | "preflight_failed";
 }
 
 export interface OpsLaunchdFlip {
