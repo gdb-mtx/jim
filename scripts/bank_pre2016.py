@@ -1,8 +1,8 @@
 """One-time: freeze the pre-Alpaca (before 2016-01-04) equity history from
 the yfinance caches into data/banked/. Includes a Jan-Mar 2016 overlap so
 `data.alpaca_equity_bars.splice_banked` can rescale the seam after every
-dividend-driven re-adjustment. Gitignored; regenerate only from a trusted
-yfinance cache (2026-10-20 — see DATA_SOURCES.md).
+dividend-driven re-adjustment. Committed (4.7 MB, frozen); regenerate only
+from a trusted yfinance cache (2026-10-20 — see DATA_SOURCES.md).
 
 Usage: uv run python3 scripts/bank_pre2016.py [--force]
 """

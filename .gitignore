@@ -67,5 +67,3 @@ data/mode2/transcripts/
 # Personal bridge-plan financials — never publish (stripped from history 2026-08-12)
 docs/archive/BRIDGE_STRATEGY_REVIEW.md
 
-# One-time banked pre-2016 equity history (scripts/bank_pre2016.py)
-data/banked/

@@ -38,8 +38,7 @@ Nothing on a cron or request path reads yfinance any more. The S&P panel,
 SPY and the macro ETFs come from Alpaca SIP daily bars (`data/alpaca_equity_bars.py`);
 VIX/VIX9D/VIX3M from CBOE's CSVs (`data/cboe.py`); crypto from Alpaca
 (`data/alpaca_crypto_bars.py`). Pre-2016 equity history is the one-time
-banked segment in `data/banked/` (gitignored; backup copy with a restore
-note in iCloud Drive `jim-banked/` since 2026-10-20 — it is load-bearing:
+banked segment in `data/banked/` (committed — 4.7 MB, frozen; it is load-bearing:
 without it the S&P refresh refuses to run and the scheduler stops). The SPY filter-cron leg
 warms the S&P cache after the close; the scheduler never reads a cache to
 decide due-ness. `DATA_SOURCES.md` has the full story.

@@ -78,7 +78,7 @@ from CBOE's own CSV matches the yfinance cache except two bad Yahoo prints.
 
 | Input | Source | Notes |
 |---|---|---|
-| S&P 500 panel (`sp500_prices`) | Alpaca SIP 2016→, full re-pull every refresh (~4.5 min at 200 req/min, per-symbol) | pre-2016 banked once from the last trusted yfinance cache (`data/banked/sp500_pre2016.parquet`, `scripts/bank_pre2016.py`), ratio-spliced over a Jan-Mar 2016 overlap because adjusted closes are re-based by every dividend (`data/alpaca_equity_bars.splice_banked`) |
+| S&P 500 panel (`sp500_prices`) | Alpaca SIP 2016→, full re-pull every refresh (~4.5 min at 200 req/min, per-symbol) | pre-2016 banked once from the last trusted yfinance cache (`data/banked/sp500_pre2016.parquet`, committed, `scripts/bank_pre2016.py`), ratio-spliced over a Jan-Mar 2016 overlap because adjusted closes are re-based by every dividend (`data/alpaca_equity_bars.splice_banked`) |
 | SPY (200d filter, `spy_filter`) | `data.sp500.download_spy` — Alpaca SIP + banked 2005-2016 | replaces `download_and_cache(["SPY"], cache_name="spy_filter")` at all seven call sites |
 | VIX, VIX9D, VIX3M | `data/cboe.py` — CBOE's daily CSVs (primary publisher, no key, 1990→) | Yahoo republished these |
 | Macro composite inputs (HYG/IEF/UUP/XLU/SPY) | Alpaca | was one yfinance call per 4-hourly cron fire |
