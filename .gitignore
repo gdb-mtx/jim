@@ -67,3 +67,6 @@ data/mode2/transcripts/
 # Personal bridge-plan financials — never publish (stripped from history 2026-08-12)
 docs/archive/BRIDGE_STRATEGY_REVIEW.md
 
+
+# Banked pre-2016 equity history is load-bearing and frozen: the one committed parquet (2026-10-20)
+!data/banked/*.parquet
