@@ -149,20 +149,24 @@ def content_is_stale(df: pd.DataFrame, asset_class: str = "equity") -> bool:
     """
     if len(df) < 2:
         return True
-    today_utc = pd.Timestamp.now(tz="UTC").normalize()
-    if today_utc.tzinfo is not None:
-        today_utc = today_utc.tz_localize(None)
     latest = pd.Timestamp(df.index[-1])
     if latest.tzinfo is not None:
         latest = latest.tz_localize(None)
+    if asset_class == "equity":
+        # Equity caches hold settled rows only (drop_unsettled_equity_rows),
+        # so a row dated today IS today's close. The crypto-era "a row dated
+        # today must be a forming bar, step back one" logic below made every
+        # post-close caller re-download the whole panel (2026-10-20 evening).
+        from data.trading_dates import last_completed_session
+        return latest < pd.Timestamp(last_completed_session())
+    today_utc = pd.Timestamp.now(tz="UTC").normalize()
+    if today_utc.tzinfo is not None:
+        today_utc = today_utc.tz_localize(None)
     if latest >= today_utc:
         latest = pd.Timestamp(df.index[-2])
         if latest.tzinfo is not None:
             latest = latest.tz_localize(None)
-    if asset_class == "crypto":
-        return latest < today_utc - pd.Timedelta(days=1)
-    from data.trading_dates import last_completed_session
-    return latest < pd.Timestamp(last_completed_session())
+    return latest < today_utc - pd.Timedelta(days=1)
 
 
 def download_and_cache(

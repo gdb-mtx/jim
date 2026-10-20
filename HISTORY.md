@@ -271,6 +271,24 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-10-20 (evening) — Post-close staleness bug: today's settled row read as a forming bar
+
+Found by the first manual pre-flight after the close hanging 5+ minutes:
+`content_is_stale` kept the crypto-era rule "a row dated today must be a
+partial bar — step back one", so an equity cache correctly holding
+today's settled close compared *yesterday* against the required
+last-completed session and refreshed — every post-close caller
+re-downloaded the whole S&P panel (pre-flight, preview, my own query).
+Equity caches have held settled rows only since 09-25, so the rule now
+compares the last row directly (crypto branch unchanged). Same session:
+the scheduler warms SPY/VIX/S&P at its first fire after the close
+(closing the 16:05→20:00 gap that would have raised a false pre-flight
+ATTENTION on every rebalance eve), and pre-flight tolerates a one-session
+VIX lag (CBOE publishes hours after Alpaca settles). Pattern worth
+naming: each of today's three bugs was a *correct* rule from one era
+meeting a *correct* rule from the next — the tests now pin the
+interaction, not the rule.
+
 ## 2026-10-20 — Scheduler heartbeat + pre-flight: decisions made visible
 
 The 09-21 (closed lid) and 10-20 (cache missing the grid bar) failures
