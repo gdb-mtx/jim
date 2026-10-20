@@ -26,13 +26,14 @@ function toneForEvent(e: OpsEvent): StatusTone {
   if (executeError) return "red";
   if (failed > 0) return "amber";
   if (e.source === "halt_reset") return "blue";
-  if (e.source === "scheduled") return "blue";
+  if (e.source === "scheduled" || e.source === "scheduled_rebalance") return "blue";
   return "green";
 }
 
 function sourceBadgeClasses(source: string): string {
   switch (source) {
     case "scheduled":
+    case "scheduled_rebalance":
       return "bg-[#7c4dff20] text-[#7c4dff]";
     case "filter_monitor":
       return "bg-[#4d8eff20] text-[#4d8eff]";

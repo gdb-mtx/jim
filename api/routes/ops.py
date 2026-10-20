@@ -166,12 +166,15 @@ def _next_run_iso(schedule: tuple, last_run_local: Optional[datetime]) -> Option
     if kind == "next_live_rebalance":
         # Next date on the live rebalance calendar, at the given ET wall time.
         from zoneinfo import ZoneInfo
-        from data.trading_dates import next_live_rebalance_date, today_et
+        from data.trading_dates import live_rebalance_dates, next_live_rebalance_date, today_et
         _, hour, minute = schedule
-        d = next_live_rebalance_date(today_et())
+        today = today_et()
         now_et = datetime.now(ZoneInfo("America/New_York"))
-        if d == today_et() and (now_et.hour, now_et.minute) >= (hour, minute):
-            d = next_live_rebalance_date(d)
+        dates = live_rebalance_dates(today)
+        if dates and dates[-1] == today and (now_et.hour, now_et.minute) < (hour, minute):
+            d = today  # rebalance day, window not reached yet
+        else:
+            d = next_live_rebalance_date(today)
         when = datetime.fromisoformat(f"{d}T{hour:02d}:{minute:02d}").replace(tzinfo=ZoneInfo("America/New_York"))
         return when.astimezone(timezone.utc).isoformat()
     if kind == "interval_seconds":

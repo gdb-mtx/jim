@@ -271,6 +271,29 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-10-20 — Scheduler couldn't see its own rebalance day (cache missing the grid bar)
+
+At 12:43 ET on rebalance day the Ops panel said "next run in 29d" and a
+dry-run said "not due — last grid 09-18 is 32d ago". Chain: the
+scheduler's due-check read the S&P cache through `download_sp500_prices()`;
+its 24h TTL expired at ~15:31 every day, so the 10-minute cron was always
+the first caller after expiry and re-downloaded *pre-close*; the 09-25
+unsettled-row guard then (correctly) dropped that day's bar; the TTL
+protected the gap for 24h; repeat. The cache was permanently one session
+short, so 10-19 — the grid bar for 10-20 — was never there. The 10-06 log
+shows the same path stuck 60 minutes in yfinance DNS timeouts, every 10
+minutes. Fix: (1) due-check is pure calendar (`live_rebalance_dates` +
+`previous_session`), no cache read; (2) equity `content_is_stale` now
+requires the last *completed* NYSE session (was "within 4 calendar days"),
+so the post-close filter-cron fire refreshes and the TTL settles after the
+close; (3) the filter cron warms the S&P cache only post-close; (4) the
+scheduler reads the cache file directly, refreshes once inside the window
+if the grid bar is missing, and the runner refuses to execute unless
+`signal_asof` equals the grid bar (`require_signal_asof`) — a stale cache
+can never put a month-old book on; (5) Ops "next run" shows today on a
+rebalance day before the window. Cache force-refreshed at 12:46 ET; the
+14:50 ET fire traded the 10-19 ranking.
+
 ## 2026-09-25 — Gremlin pass on A1: filter look-ahead, partial equity bars, intraday snapshots
 
 Asked whether more gremlins hid behind the 09-09 grid bug. Three found,

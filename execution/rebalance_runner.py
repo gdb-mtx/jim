@@ -31,10 +31,17 @@ def rebalance_account(
     source: str,
     dry_run: bool = False,
     log: logging.Logger | None = None,
+    require_signal_asof: str | None = None,
 ) -> dict:
     """Run a full rebalance for one account. Returns a result summary dict
     whose `status` is one of: dry_run, unvalidated, halted, position_mismatch,
-    price_error, price_drift, no_trades, executed, execute_error, locked, error.
+    price_error, price_drift, stale_ranking, no_trades, executed,
+    execute_error, locked, error.
+
+    `require_signal_asof` (ISO date): refuse to execute unless the ranking
+    being traded was computed on exactly that grid date — the scheduled
+    rebalance passes the session before its rebalance date, so a price cache
+    missing that bar can never put a month-old ranking on (2026-10-20).
     """
     log = log or _default_log
     strategy_id = ACCOUNT_INFO[account]["strategy"]
@@ -82,6 +89,12 @@ def rebalance_account(
                 if drifted:
                     log.error(f"  Account {account}: price drift detected: {drifted}")
                     return {"account": account, "status": "price_drift", "orders": 0}
+
+            if require_signal_asof and result.signal_asof != require_signal_asof:
+                log.error(f"  Account {account}: ranking as of {result.signal_asof or '?'}, "
+                          f"expected {require_signal_asof} — refusing to trade a stale book")
+                return {"account": account, "status": "stale_ranking", "orders": 0,
+                        "reason": f"ranking as of {result.signal_asof or '?'}, expected {require_signal_asof}"}
 
             if not result.orders:
                 log.info(f"  Account {account}: no trades needed")

@@ -227,8 +227,12 @@ def _daily_snapshot():
     # rebalance preview after expiry (the 2026-08-08 refresh pile-up).
     try:
         from data.sp500 import download_sp500_prices
+        from data.trading_dates import equity_session_closed_today
 
-        download_sp500_prices()
+        # Post-close only: a pre-close refresh drops today's row as unsettled
+        # and would be refreshed again after the close (two downloads/day).
+        if equity_session_closed_today():
+            download_sp500_prices()
     except Exception as e:
         log.error(f"S&P cache warm failed (filter run unaffected): {e}")
 

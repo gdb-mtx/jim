@@ -142,7 +142,10 @@ def content_is_stale(df: pd.DataFrame, asset_class: str = "equity") -> bool:
     but the actual data has a gap (the C10 pattern).
 
     crypto (24/7): latest settled bar should be >= yesterday UTC.
-    equity (M-F): latest bar should be within 4 calendar days of today.
+    equity (M-F): latest bar must be the last completed NYSE session. The
+    old "within 4 calendar days" rule let a cache written before the close
+    (today's row dropped as unsettled) sit TTL-fresh with yesterday missing
+    — on 2026-10-20 the scheduler couldn't find its grid bar (HISTORY.md).
     """
     if len(df) < 2:
         return True
@@ -158,7 +161,8 @@ def content_is_stale(df: pd.DataFrame, asset_class: str = "equity") -> bool:
             latest = latest.tz_localize(None)
     if asset_class == "crypto":
         return latest < today_utc - pd.Timedelta(days=1)
-    return latest < today_utc - pd.Timedelta(days=4)
+    from data.trading_dates import last_completed_session
+    return latest < pd.Timestamp(last_completed_session())
 
 
 def download_and_cache(

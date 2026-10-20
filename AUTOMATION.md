@@ -406,11 +406,12 @@ The **Ops** tab → Scheduler panel surfaces two health signals:
 15:10 ET fire lost the first automated rebalance day; cron never catches
 up a missed minute). Each fire decides for itself:
 
-1. **Due date** — the latest *settled* S&P bar is a re-ranking grid date
-   (the bar before a live rebalance date; `strategies/base.py
-   rebalance_dates`, phased to `REBALANCE_ANCHOR = 2026-04-21`), or was
-   within the last 7 calendar days (catch-up after a missed fire — trades
-   the same ranking a day late, never 21 days late).
+1. **Due date** — today is a live rebalance date on the NYSE calendar
+   (`data/trading_dates.live_rebalance_dates`, every 21 sessions from
+   `REBALANCE_ANCHOR = 2026-04-21`), or within 7 calendar days after one
+   (catch-up after a missed fire — trades the same ranking a day late,
+   never 21 days late). Pure calendar since 2026-10-20: the old cache-based
+   check went blind when the cache lacked the grid bar (HISTORY.md).
 2. **Not already done** — no journal entry for the account after that grid
    date. Manual, filter-monitor and scheduled rebalances all count, so a
    hand rebalance on the day doesn't get doubled.
@@ -418,6 +419,11 @@ up a missed minute). Each fire decides for itself:
    normal days, 12:00-13:00 ET early closes), via Alpaca's clock. If every
    fire in the window is missed (lid closed the whole hour), the 7-day
    catch-up trades the same ranking next day.
+
+Before trading, the S&P cache must hold the grid bar (the session before
+the rebalance date); if not, one forced refresh runs inside the window,
+and the runner refuses to execute unless the ranking is dated exactly on
+that bar (`require_signal_asof` → status `stale_ranking`).
 
 Execution is `execution/rebalance_runner.rebalance_account` — the same
 guarded path the filter monitor uses (validation gate, file lock,

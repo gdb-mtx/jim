@@ -83,3 +83,19 @@ def drop_unsettled_equity_rows(df):
     if len(df) == 0 or equity_session_closed_today():
         return df
     return df.loc[df.index < pd.Timestamp(today_et())]
+
+
+def previous_session(date: str) -> str:
+    """NYSE session immediately before `date` (ISO)."""
+    import pandas as pd
+    return pd.bdate_range(end=date, periods=2, freq="C", holidays=NYSE_HOLIDAYS)[0].strftime("%Y-%m-%d")
+
+
+def last_completed_session() -> str:
+    """Most recent NYSE session whose close has happened (16:05 ET rule)."""
+    import pandas as pd
+    today = today_et()
+    is_session = len(pd.bdate_range(today, today, freq="C", holidays=NYSE_HOLIDAYS)) == 1
+    if is_session and equity_session_closed_today():
+        return today
+    return previous_session(today)

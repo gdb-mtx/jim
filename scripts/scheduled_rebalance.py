@@ -11,16 +11,26 @@ sleep-tolerant. Every 10 minutes, not hourly: on 2026-09-21 the single
 (cron never catches up a missed minute). Six chances inside the window now.
 
 Due, per account, when all of:
-  1. The latest settled S&P bar is a re-ranking grid date — the bar before
-     a live rebalance date — or was within the last CATCHUP_DAYS (a missed
-     fire trades the same ranking a day or two late rather than 21 days
-     late). Computed with the strategies' own `rebalance_dates` on the
-     same cache, so "due" and "fresh ranking" can never disagree.
-  2. No rebalance is journaled for the account after that grid date —
-     manual, filter-monitor or scheduled all count.
+  1. Today is a live rebalance date on the NYSE calendar (every 21 sessions
+     from REBALANCE_ANCHOR — data/trading_dates.live_rebalance_dates), or
+     within CATCHUP_DAYS after one (a missed fire trades the same ranking
+     a day or two late rather than 21 days late). Pure calendar: no price
+     cache is read here. Until 2026-10-20 the due-check read the S&P cache
+     through download_sp500_prices(), whose 24h TTL expired at ~15:31 every
+     day — so the 10-minute cron re-downloaded pre-close, the unsettled-row
+     guard dropped that day's bar, and the next rebalance day's grid bar
+     was never in the cache ("not due" on 10-20; HISTORY.md).
+  2. No rebalance is journaled for the account after that date's grid bar
+     (the session before it) — manual, filter-monitor or scheduled all count.
   3. The market is open and closes within TRADE_WINDOW_MIN (15:00-16:00 ET
      on normal days, 12:00-13:00 ET on early closes). `--force` skips this
      check.
+
+Before trading, the S&P cache must hold the grid bar (read directly, no
+refresh path); if it doesn't, one forced refresh is attempted inside the
+window. The runner then refuses to execute unless the ranking's as-of
+date is exactly that grid bar (`require_signal_asof`), so a stale cache
+can never put a month-old book on.
 
 Usage:
   uv run python3 scripts/scheduled_rebalance.py --if-due            # cron mode
@@ -40,7 +50,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from data.trading_dates import ET, REBALANCE_PERIOD_DAYS, today_et  # noqa: E402
+from data.trading_dates import ET, live_rebalance_dates, previous_session, today_et  # noqa: E402
 from execution.alpaca_broker import ACCOUNT_INFO, AlpacaBroker, active_accounts  # noqa: E402
 from execution.notifications import notify_macos  # noqa: E402
 from execution.rebalance_runner import rebalance_account  # noqa: E402
@@ -59,36 +69,46 @@ logging.Formatter.converter = time.gmtime
 log = logging.getLogger("fire.scheduled_rebalance")
 
 
-def last_grid_date() -> pd.Timestamp:
-    """Most recent re-ranking grid date on settled S&P bars (before today ET)."""
-    from data.sp500 import download_sp500_prices
-    from strategies.base import rebalance_dates
+def expected_rebalance(today: str) -> tuple[str, str] | None:
+    """(live rebalance date, its grid bar) if a rebalance is scheduled for
+    `today` or was within the last CATCHUP_DAYS; else None. Calendar only."""
+    dates = live_rebalance_dates(today)
+    if not dates:
+        return None
+    d = dates[-1]
+    if (pd.Timestamp(today) - pd.Timestamp(d)).days > CATCHUP_DAYS:
+        return None
+    return d, previous_session(d)
 
-    idx = download_sp500_prices().index
-    settled = idx[idx < pd.Timestamp(today_et())]
-    return rebalance_dates(settled, REBALANCE_PERIOD_DAYS)[-1]
 
-
-def last_rebalance_after(account: int, grid: pd.Timestamp) -> str | None:
-    """Timestamp of the newest journal entry for `account` dated after the grid date, else None."""
+def last_rebalance_after(account: int, grid: str) -> str | None:
+    """Timestamp of the newest journal entry for `account` dated after the grid bar, else None."""
     from execution.rebalance_log import get_recent_rebalances
 
     for r in get_recent_rebalances(limit=300):
         if r.get("account") != account:
             continue
         ts = pd.Timestamp(r["timestamp"]).tz_convert(ET)
-        return r["timestamp"] if ts.date() > grid.date() else None
+        return r["timestamp"] if ts.date() > pd.Timestamp(grid).date() else None
     return None
 
 
-def is_due(account: int, grid: pd.Timestamp) -> tuple[bool, str]:
-    age = (pd.Timestamp(today_et()) - grid).days
-    if age > CATCHUP_DAYS:
-        return False, f"last grid {grid.date()} is {age}d ago — outside catch-up window"
+def is_due(account: int, today: str) -> tuple[bool, str]:
+    exp = expected_rebalance(today)
+    if exp is None:
+        return False, "no rebalance date today or within the catch-up window"
+    d, grid = exp
     done = last_rebalance_after(account, grid)
     if done:
-        return False, f"already rebalanced {done[:16]} (after grid {grid.date()})"
-    return True, f"grid {grid.date()} ranked {age}d ago and not yet traded"
+        return False, f"already rebalanced {done[:16]} (after grid {grid})"
+    late = (pd.Timestamp(today) - pd.Timestamp(d)).days
+    return True, f"rebalance date {d}, grid {grid}" + (f" — {late}d late (catch-up)" if late else "")
+
+
+def cache_has_bar(date: str) -> bool:
+    """Does the S&P cache hold `date`? Direct parquet read — never the refresh path."""
+    idx = pd.read_parquet(PROJECT_ROOT / "data" / "raw" / "sp500_prices.parquet").index
+    return pd.Timestamp(date) in idx
 
 
 def in_trade_window(broker: AlpacaBroker) -> tuple[bool, str]:
@@ -110,11 +130,13 @@ def main() -> int:
     args = ap.parse_args()
 
     accounts = args.account or list(active_accounts())
-    grid = last_grid_date()
+    today = today_et()
+    exp = expected_rebalance(today)
+    grid = exp[1] if exp else previous_session(today)
 
     due = {}
     for acct in accounts:
-        ok, why = (True, "forced") if args.force else is_due(acct, grid)
+        ok, why = (True, "forced") if args.force else is_due(acct, today)
         due[acct] = ok
         # cron mode fires 144x/day; only due-ness is worth a log line there
         (log.info if (ok or not args.if_due) else log.debug)(
@@ -129,8 +151,20 @@ def main() -> int:
         if not ok:
             return 0
 
-    log.info(f"Scheduled rebalance starting: accounts {todo} (grid {grid.date()}, ET {datetime.now(ET):%H:%M})")
-    results = [rebalance_account(a, source=SOURCE, dry_run=args.dry_run, log=log) for a in todo]
+    # The ranking must come from the grid bar. Refresh once if it's missing
+    # (slow — 5-45 min of yfinance — but inside the window beats a stale book).
+    if not args.dry_run and not cache_has_bar(grid):
+        log.warning(f"S&P cache lacks the grid bar {grid} — forcing a refresh inside the window")
+        from data.sp500 import download_sp500_prices
+        download_sp500_prices(force_refresh=True)
+        if not cache_has_bar(grid):
+            log.error(f"S&P cache still lacks {grid} after refresh — not trading")
+            notify_macos("Jim Scheduled Rebalance — ATTENTION", f"grid bar {grid} missing from S&P cache after refresh; no trade")
+            return 1
+
+    log.info(f"Scheduled rebalance starting: accounts {todo} (grid {grid}, ET {datetime.now(ET):%H:%M})")
+    results = [rebalance_account(a, source=SOURCE, dry_run=args.dry_run, log=log,
+                                 require_signal_asof=None if args.force else grid) for a in todo]
 
     parts = []
     for r in results:
