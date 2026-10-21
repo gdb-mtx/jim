@@ -271,6 +271,19 @@ Still open (none block paper or real-money operation):
   for crypto) silently drops sub-1-share positions; backtest assumes
   fractional. Cumulative impact <0.1% CAGR.
 
+## 2026-10-21 — A1 overlay research: sign-aware scaling rejected, idle cash priced
+
+`scripts/a1_overlay_research.py` (no look-ahead; reproduces the production
+scalar bit-for-bit, then re-applies it under gates). Every sign-aware gate
+— cap 1.0 below the SPY 200d, in own drawdowns of 3/5/8%, on a negative
+own 63d return, combined — costs 2.5–4pp OOS CAGR for 1–2.5pp less
+drawdown with Calmar flat (1.86–1.98 vs 1.92); A1's own de-risk stack
+already covers the regime, and at the cap the account is only ~46%
+invested. Item two of the A1 program closed. Idle cash at the 3-month
+T-bill (FRED DTB3): +2.5pp OOS CAGR, Calmar 1.92 → 2.12; ~0 in 2010–2015.
+Backtest stays yield-free (paper earns nothing); SGOV sweep goes on the
+real-money checklist. `docs/research/A1_OVERLAY_OCT2026.md`.
+
 ## 2026-10-20 (evening) — Post-close staleness bug: today's settled row read as a forming bar
 
 Found by the first manual pre-flight after the close hanging 5+ minutes:

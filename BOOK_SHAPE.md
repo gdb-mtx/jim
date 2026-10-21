@@ -1,5 +1,7 @@
 # Book Shape — What We Need to Find
 
+> **Update 2026-10-21:** sign-aware vol scaling tested and rejected for A1 (`docs/research/A1_OVERLAY_OCT2026.md`); idle cash is worth +2.5pp CAGR at today's T-bill — the cheapest real-money improvement in the system. The 10-20 session also retired yfinance from the live path (Alpaca SIP + CBOE) and automated the rebalance with heartbeat + pre-flight; A1 revalidated PASS 31.6% / Calmar 1.92 on the new data.
+>
 > **Update 2026-09-25:** A2 retired (structural, not a bad week — HISTORY.md 2026-09-25); live-tracking clock reset to 2026-09-21. **Gremlin pass the same day removed a one-day look-ahead in the backtest's SPY filter: the 09-10 numbers below carried it.** Honest A1 (10-20, on Alpaca data — yfinance retired from the live path that day): OOS 2023→ CAGR 31.6% / MaxDD −16.5% / **Calmar 1.92 vs SPY 1.19**; since 03-09 synthetic +21.1% vs SPY +15.6%. Still PASS on every gate; the "Calmar ~2 live" planning number turned out to be the backtest number. The 09-10 banner below is the program.
 >
 > **Update 2026-09-10 — the book is A1. Concentrate on refining A1.**
