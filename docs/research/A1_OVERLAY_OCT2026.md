@@ -62,6 +62,42 @@ interest rate) — it is the cheapest +2pp in the system and it carries no
 strategy risk. Note the gated variants hold more cash (51%), so the yield
 narrows but does not close their CAGR gap to production.
 
+## Real-money cash sweep — implementation notes (2026-10-21)
+
+**Instrument: SGOV** (iShares 0–3 Month Treasury). A rolling ladder of
+T-bills maturing within three months — essentially no rate risk, no
+credit risk; yield = 3-month T-bill minus 0.09% expenses (~4.0% at
+writing); $30B+ fund, penny spreads, trades on Alpaca like any ticker.
+BIL (older, 0.14% fee) and USFR (weekly-reset floating-rate Treasuries)
+are interchangeable for this purpose. Chart shape is a sawtooth: ~+0.3%
+drift over the month as interest accrues, then a drop of the same size on
+the monthly ex-dividend date when it pays out; day-to-day moves 1–2 bp.
+Treasury interest is state-tax exempt.
+
+**Alternative: do nothing.** Alpaca pays interest on idle cash in live
+accounts. Check the rate at funding time — if it is within ~0.5% of the
+T-bill, the sweep is not worth the engine change.
+
+**Engine change (~1 day, only once real money is funded):**
+- `compute_rebalance` treats SGOV as cash: excluded from the strategy's
+  target weights, from the plausibility/price checks, and from the
+  position-reconciliation guard (it must not read as an "unexpected"
+  position and must never be sold to reach a target of zero).
+- After each rebalance's stock orders: buy SGOV with the leftover cash;
+  before the next cycle's buys: sell SGOV to fund them. A1 is a margin
+  account, so T+1 settlement does not block same-day reuse.
+- Snapshot/scorecard: SGOV's return is part of live equity, so the live
+  line will carry the yield while the signal line stays yield-free —
+  report the cash fraction × T-bill as a known, expected gap (the research
+  harness already computes it) rather than letting it look like drag.
+- The scalar can exceed 1.0 (gross up to ~1.05 in calm regimes): the sweep
+  is sized on *positive* residual cash only; SGOV is marginable, so it
+  can stay as collateral rather than be sold on those days.
+
+**Not before the measuring window closes (11-18, 12-18) and not on paper:**
+the paper account earns nothing on cash, so adding the sweep now would
+only open a gap between live and the signal during the parity proof.
+
 ## What this does not say
 
 Both runs are one strategy on one 16-year sample with one rate regime in
